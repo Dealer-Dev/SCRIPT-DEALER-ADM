@@ -1984,7 +1984,7 @@ print('OK')
                 echo -e "  ${NEON}◈${NC} ${W}Password:${NC} ${Y}$HM_PASS${NC}"
                 echo -e "  ${NEON}◈${NC} ${W}IP:${NC}       ${Y}$HM_IP${NC}"
                 echo -e "  ${NEON}◈${NC} ${W}Puerto:${NC}   ${Y}36712${NC}"
-                HM_OBFS_NOW=$(python3 -c "import json; c=json.load(open('/etc/hysteria/config.json')); print(c.get('obfs','ltmudp'))" 2>/dev/null || echo "ltmudp")
+                HM_OBFS_NOW=$(python3 -c "import json; c=json.load(open('/etc/hysteria/config.json')); print(c.get('obfs','DealerServicesUDP'))" 2>/dev/null || echo "DealerServicesUDP")
                 echo -e "  ${NEON}◈${NC} ${W}Obfs:${NC}     ${Y}${HM_OBFS_NOW}${NC}"
                 echo -e "  ${NEON}◈${NC} ${W}Expira:${NC}   ${Y}$HM_EXP${NC}"
                 echo -e "${NEON}◆━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━◆${NC}"
@@ -2001,7 +2001,7 @@ for u in users: print('  ' + u)
                 echo ""; read -p "  ENTER..." ;;
             7)
                 banner; sep; echo -e "  ${Y}CAMBIAR OBFS${NC}"; sep; echo ""
-                CURRENT_OBFS=$(grep -o '"obfs":"[^"]*"' /etc/hysteria/config.json 2>/dev/null | cut -d'"' -f4 || echo "ltmudp")
+                CURRENT_OBFS=$(grep -o '"obfs":"[^"]*"' /etc/hysteria/config.json 2>/dev/null | cut -d'"' -f4 || echo "DealerServicesUDP")
                 echo -e "  ${NEON}◈${NC} ${W}Obfs actual:${NC} ${Y}$CURRENT_OBFS${NC}"; echo ""
                 read -p "  Nuevo obfs: " NEW_OBFS
                 [ -z "$NEW_OBFS" ] && echo -e "  ${R}Cancelado${NC}" && sleep 1 && continue
@@ -2189,8 +2189,8 @@ menu_herramientas() {
         printf " ${NEON}◈${NC} ${W}WebSocket${NC}  %-12b ${NEON}◈${NC} ${W}BadVPN 7200${NC} %b\n" "$(status_port 80)" "$(status_service badvpn-7200)"
         printf " ${NEON}◈${NC} ${W}UDP Custom${NC} %-11b ${NEON}◈${NC} ${W}BadVPN 7300${NC} %b\n" "$(ps aux | grep -i UDP-Custom | grep -v grep | grep -q . && echo -e "${NEON}◆ ON${NC}" || echo -e "${R}◇ OFF${NC}")" "$(status_service badvpn-7300)"
         printf " ${NEON}◈${NC} ${W}SSL/TLS${NC}    %-12b ${NEON}◈${NC} ${W}V2Ray${NC}       %b\n" "$(status_service stunnel4)" "$(status_service v2ray)"
-        printf " ${NEON}◈${NC} ${W}ZIV VPN${NC}   %-12b ${NEON}◈${NC} ${W}SlowDNS${NC}     %b\n" "$(status_service zivpn)" "$(status_service server-sldns)"
-        printf " ${NEON}◈${NC} ${W}Dropbear${NC}  %-12b ${NEON}◈${NC} ${W}LTMUDPv1${NC}    %b\n" "$(status_service dropbear)" "$(status_service hysteria-server)"
+        printf " ${NEON}◈${NC} ${W}ZIVPN${NC}   %-12b ${NEON}◈${NC} ${W}SlowDNS${NC}     %b\n" "$(status_service zivpn)" "$(status_service server-sldns)"
+        printf " ${NEON}◈${NC} ${W}Dropbear${NC}  %-12b ${NEON}◈${NC} ${W}UDP-HYSTERIA${NC}    %b\n" "$(status_service dropbear)" "$(status_service hysteria-server)"
         echo ""; sep
         printf " \033[1;97m[1] %-22s [2] %s\033[0m\n" "WebSocket Python" "BadVPN UDP"
         printf " \033[1;97m[3] %-22s [4] %s\033[0m\n" "UDP Custom" "SSL/TLS Stunnel"
