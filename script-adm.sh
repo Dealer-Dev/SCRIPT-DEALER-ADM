@@ -1935,7 +1935,7 @@ menu_udp_hysteria_mod() {
         [ "$HM_ST" = "active" ] && echo -e "  ${NEON}◈${NC} ${W}UDP Hysteria Mod${NC} ${NEON}◆ ON${NC}" || echo -e "  ${NEON}◈${NC} ${W}UDP Hysteria Mod${NC} ${R}◇ OFF${NC}"
         HM_IP=$(hostname -I | awk '{print $1}')
         echo -e "  ${NEON}◈${NC} ${W}IP:${NC}   ${Y}${HM_IP}${NC}"
-        HM_OBFS_NOW=$(python3 -c "import json; c=json.load(open('/etc/hysteria/config.json')); print(c.get('obfs','ltmudp'))" 2>/dev/null || echo "ltmudp")
+        HM_OBFS_NOW=$(python3 -c "import json; c=json.load(open('/etc/hysteria/config.json')); print(c.get('obfs','DealerServicesUDP'))" 2>/dev/null || echo "DealerServicesUDP")
         echo -e "  ${NEON}◈${NC} ${W}Obfs:${NC} ${Y}${HM_OBFS_NOW}${NC}"
         echo ""; sep
         printf " ${Y}❬1❭ Instalar    ❬2❭ Iniciar    ❬3❭ Detener${NC}\n"
