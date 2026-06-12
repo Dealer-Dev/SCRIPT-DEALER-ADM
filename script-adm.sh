@@ -155,12 +155,12 @@ echo -e "  ${YELLOW}SERVIDOR INSTALADO EL${NC}   : ${WHITE}$INSTALL_DATE${NC}"
 echo -e "  ${YELLOW}FECHA/HORA ACTUAL${NC}        : ${WHITE}$CURRENT_DATE - $CURRENT_TIME${NC}"
 echo -e "  ${YELLOW}NOMBRE DEL SERVIDOR${NC}      : ${WHITE}$(hostname)${NC}"
 echo -e "  ${YELLOW}TIEMPO EN LINEA${NC}          : ${WHITE}$UPTIME${NC}"
-echo -e "  ${YELLOW}VERSION INSTALADA${NC}        : ${WHITE}V1.0.0${NC}"
+echo -e "  ${YELLOW}VERSION INSTALADA${NC}        : ${WHITE}V3.1${NC}"
 echo -e "  ${YELLOW}MEMORIA RAM LIBRE${NC}        : ${WHITE}$RAM_FREE${NC}"
-echo -e "  ${YELLOW}CREADOR DEL SCRIPT${NC}       : ${PURPLE}@DealerServices235 ❴LTM❵${NC}"
+echo -e "  ${YELLOW}CREADOR DEL SCRIPT${NC}       : ${PURPLE}@DealerServices235${NC}"
 echo -e "  ${GREEN}BIENVENIDO DE NUEVO!${NC}"
 echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo -e "  Teclee ${YELLOW}menu${NC} para ver el MENU LTM"
+echo -e "  Escribe ${YELLOW}menu${NC} para ver el menú"
 echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""
 MOTDSCRIPT
@@ -203,7 +203,7 @@ instalar_ws() {
     echo -e "  ${W}RESPONSE (101 para WebSocket, 200 default):${NC}"
     read -p "  RESPONSE: " STATUS_RESP; STATUS_RESP=${STATUS_RESP:-200}
     echo ""; read -p "  Mini-Banner: " BANNER_MSG
-    BANNER_MSG=${BANNER_MSG:-"SCRIPT DEALER ADM by DarkZFull"}
+    BANNER_MSG=${BANNER_MSG:-"<font color="#00ff00">SCRIPT DEALER ADM"}
     echo ""; sep
     echo -e "  ${W}Encabezado personalizado (ENTER para default):${NC}"
     read -p "  Cabecera: " CUSTOM_HEADER
@@ -571,7 +571,7 @@ except: pass
         printf " ${Y}❬1❭ ⚡ Instalar V2Ray      ❬2❭ ➕ Agregar inbound${NC}\n"
         printf " ${Y}❬3❭ 🗑  Eliminar inbound    ❬4❭ ▶  Iniciar${NC}\n"
         printf " ${Y}❬5❭ ⏹  Detener             ❬6❭ 🔄 Reiniciar${NC}\n"
-        printf " ${Y}❬7❭ 👤 Crear usuario        ❬8❭ 📋 Ver usuarios${NC}\n"
+        printf " ${Y}❬7❭ 👤 Crear usuario       ❬8❭ 📋 Ver usuarios${NC}\n"
         printf " ${R}❬9❭ 🗑  Desinstalar V2Ray${NC}\n"
         sep
         printf " ${R}❬0❭ Volver${NC}\n"; sep; echo ""
@@ -738,7 +738,7 @@ except Exception as e: print(f'Error: {e}')
 
 menu_ziv() {
     while true; do
-        banner; sep; echo -e "  ${Y}  ZIV VPN UDP${NC}"; sep; echo ""
+        banner; sep; echo -e "  ${Y}  ZIVPN UDP${NC}"; sep; echo ""
         echo -e "  ZIV VPN $(status_service zivpn)"
         [ -f /etc/zivpn/config.json ] && PORT=$(cat /etc/zivpn/config.json | python3 -c "import json,sys; print(json.load(sys.stdin).get('listen',':5667').replace(':',''))" 2>/dev/null) && echo -e "  Puerto: ${Y}${PORT}${NC}"
         echo ""; sep
@@ -803,7 +803,7 @@ with open("/etc/zivpn/users.json", "w") as f: json.dump(users, f, indent=2)
 PYEOF
     aplicar_passwords_ziv
     echo ""; sep
-    echo -e "  ${Y}  CREDENCIALES ZIV VPN${NC}"; sep
+    echo -e "  ${Y}  CREDENCIALES ZIVPN${NC}"; sep
     echo -e "  ${W}IP:${NC}       $SERVER_IP"
     echo -e "  ${W}Puerto:${NC}   5667"
     echo -e "  ${W}Pass:${NC}     $ZIV_PASS"
@@ -812,7 +812,7 @@ PYEOF
 }
 
 listar_users_ziv() {
-    banner; sep; echo -e "  ${Y}  USUARIOS ZIV VPN${NC}"; sep; echo ""
+    banner; sep; echo -e "  ${Y}  USUARIOS ZIVPN${NC}"; sep; echo ""
     [ ! -f /etc/zivpn/users.json ] && echo "[]" > /etc/zivpn/users.json
     python3 - << PYEOF
 import json, datetime
@@ -861,7 +861,7 @@ PYEOF
 
 menu_users_ziv() {
     while true; do
-        banner; sep; echo -e "  ${Y}  USUARIOS ZIV VPN${NC}"; sep; echo ""
+        banner; sep; echo -e "  ${Y}  USUARIOS ZIVPN${NC}"; sep; echo ""
         [ ! -f /etc/zivpn/users.json ] && echo "[]" > /etc/zivpn/users.json
         TOTAL=$(python3 -c "import json; print(len(json.load(open('/etc/zivpn/users.json'))))" 2>/dev/null || echo 0)
         echo -e "  Total usuarios: ${G}${TOTAL}${NC}"
