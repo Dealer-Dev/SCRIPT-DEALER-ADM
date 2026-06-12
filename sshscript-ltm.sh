@@ -25,7 +25,7 @@ mkdir -p $DIR_SCRIPTS
 # ══════════════════════════════════════════
 # VERIFICAR SI YA ESTÁ ACTIVADO
 # ══════════════════════════════════════════
-if [ -f /etc/sshfreeltm/.licensed ]; then
+if [ -f /etc/dealer-adm.licensed ]; then
     echo "✔ Sistema ya activado"
 else
 
@@ -34,7 +34,7 @@ else
 # VERIFICACION DE LICENCIA
 # ══════════════════════════════════════════
 
-if [ ! -f /etc/sshfreeltm/.licensed ]; then
+if [ ! -f /etc/dealer-adm.licensed ]; then
 clear
 echo -e "\033[1;96m"
 figlet -f small "LTM VPN TOOLS" 2>/dev/null || echo "LTM VPN TOOLS"
@@ -66,7 +66,7 @@ VALID=$(echo "$RESPONSE" | grep -o '"valid":true')
 
 if [[ "$VALID" == '"valid":true' ]]; then
     mkdir -p /etc/sshfreeltm
-    echo "$INPUT_KEY" > /etc/sshfreeltm/.licensed
+    echo "$INPUT_KEY" > /etc/dealer-adm.licensed
     echo -e "  \033[0;32m✅ Key valida — Bienvenido al SCRIPT DEALER\033[0m"
     sleep 2
 else
@@ -101,10 +101,10 @@ if [ -d /etc/letsencrypt ]; then
 fi
 
 # Migrar config V2Ray si solo tiene 8080
-if [ -f /usr/local/etc/v2ray/config.json ] && [ -f /etc/sshfreeltm/v2ray_domain ]; then
+if [ -f /usr/local/etc/v2ray/config.json ] && [ -f /etc/dealer-admv2ray_domain ]; then
     python3 - << MIGEOF
 import json, os
-domain = open('/etc/sshfreeltm/v2ray_domain').read().strip()
+domain = open('/etc/dealer-admv2ray_domain').read().strip()
 with open('/usr/local/etc/v2ray/config.json') as f: config = json.load(f)
 ports = [ib['port'] for ib in config['inbounds']]
 if 443 not in ports and domain:
@@ -127,27 +127,27 @@ if 443 not in ports and domain:
 MIGEOF
 fi
 # Preguntar nombre ASCII al instalar por primera vez
-if [ ! -f /etc/sshfreeltm/server_name ]; then
+if [ ! -f /etc/dealer-admserver_name ]; then
     mkdir -p /etc/sshfreeltm
     apt install -y figlet > /dev/null 2>&1
     echo ""
     echo -e "\033[1;33mEscribe el nombre del servidor:\033[0m"
     read -p "Nombre: " INSTALL_NAME
     INSTALL_NAME=${INSTALL_NAME:-"Dealer"}
-    echo "$INSTALL_NAME" > /etc/sshfreeltm/server_name
-    echo "$(date +%d-%m-%Y)" > /etc/sshfreeltm/install_date
+    echo "$INSTALL_NAME" > /etc/dealer-admserver_name
+    echo "$(date +%d-%m-%Y)" > /etc/dealer-adminstall_date
 fi
 
 # Preguntar nombre ASCII al instalar por primera vez
-if [ ! -f /etc/sshfreeltm/server_name ]; then
+if [ ! -f /etc/dealer-admserver_name ]; then
     mkdir -p /etc/sshfreeltm
     apt install -y figlet > /dev/null 2>&1
     echo ""
     echo -e "\033[1;33mEscribe el nombre del servidor:\033[0m"
     read -p "Nombre: " INSTALL_NAME
     INSTALL_NAME=${INSTALL_NAME:-"Dealer"}
-    echo "$INSTALL_NAME" > /etc/sshfreeltm/server_name
-    echo "$(date +%d-%m-%Y)" > /etc/sshfreeltm/install_date
+    echo "$INSTALL_NAME" > /etc/dealer-admserver_name
+    echo "$(date +%d-%m-%Y)" > /etc/dealer-adminstall_date
 fi
 
 # Instalar MOTD automáticamente
@@ -155,8 +155,8 @@ cat > /etc/profile.d/sshfree-motd.sh << 'MOTDSCRIPT'
 #!/bin/bash
 PURPLE='\033[0;35m' CYAN='\033[0;36m' GREEN='\033[0;32m'
 YELLOW='\033[1;33m' WHITE='\033[1;37m' NC='\033[0m'
-INSTALL_DATE=$(cat /etc/sshfreeltm/install_date 2>/dev/null || echo "N/A")
-SRV_NAME=$(cat /etc/sshfreeltm/server_name 2>/dev/null || echo "SSHFREE LTM")
+INSTALL_DATE=$(cat /etc/dealer-adminstall_date 2>/dev/null || echo "N/A")
+SRV_NAME=$(cat /etc/dealer-admserver_name 2>/dev/null || echo "SSHFREE LTM")
 CURRENT_DATE=$(date +%d-%m-%Y)
 CURRENT_TIME=$(date +%H:%M:%S)
 UPTIME=$(uptime -p | sed 's/up //')
@@ -183,7 +183,7 @@ chmod +x /etc/profile.d/sshfree-motd.sh
 
 banner() {
     clear
-    SRV_NAME=$(cat /etc/sshfreeltm/server_name 2>/dev/null || echo "SSHFREE LTM")
+    SRV_NAME=$(cat /etc/dealer-admserver_name 2>/dev/null || echo "SSHFREE LTM")
     echo -e "${NEON}"
     figlet -f small "$SRV_NAME" 2>/dev/null || echo "  $SRV_NAME"
     echo -e "${NC}"
@@ -622,7 +622,7 @@ CFGEOF
                 systemctl stop nginx 2>/dev/null
                 systemctl enable v2ray; systemctl start v2ray
                 mkdir -p /etc/sshfreeltm
-                echo "$DOMAIN" > /etc/sshfreeltm/v2ray_domain
+                echo "$DOMAIN" > /etc/dealer-admv2ray_domain
                 echo -e "  ${G}OK V2Ray instalado${NC}"; sleep 2 ;;
             2)
                 banner; sep
@@ -685,7 +685,7 @@ for i,ib in enumerate(c.get('inbounds',[])):
                 read -p "  Dias de validez (default 30): " V2_DAYS
                 V2_DAYS=${V2_DAYS:-30}
                 EXP_SHOW=$(date -d "+${V2_DAYS} days" +%d/%m/%Y)
-                VDOMAIN=$(cat /etc/sshfreeltm/v2ray_domain 2>/dev/null || hostname -I | awk '{print $1}')
+                VDOMAIN=$(cat /etc/dealer-admv2ray_domain 2>/dev/null || hostname -I | awk '{print $1}')
                 python3 - << VMEOF
 import json, uuid, base64, datetime
 idx, name, days, domain = int("$IB_IDX"), "$VNAME", int("$V2_DAYS"), "$VDOMAIN"
@@ -1001,8 +1001,8 @@ instalar_motd() {
     ASCII_NAME=$(figlet -f slant "$SRV_NAME" 2>/dev/null || echo "$SRV_NAME")
     
     # Guardar fecha de instalación
-    echo "$INSTALL_DATE" > /etc/sshfreeltm/install_date
-    echo "$SRV_NAME" > /etc/sshfreeltm/server_name
+    echo "$INSTALL_DATE" > /etc/dealer-adminstall_date
+    echo "$SRV_NAME" > /etc/dealer-admserver_name
     
     # Crear script MOTD dinámico
     cat > /etc/profile.d/sshfree-motd.sh << MOTDEOF
@@ -1014,8 +1014,8 @@ YELLOW='[1;33m'
 WHITE='[1;37m'
 NC='[0m'
 
-INSTALL_DATE=\$(cat /etc/sshfreeltm/install_date 2>/dev/null || echo "N/A")
-SRV_NAME=\$(cat /etc/sshfreeltm/server_name 2>/dev/null || echo "SSHFREE LTM")
+INSTALL_DATE=\$(cat /etc/dealer-adminstall_date 2>/dev/null || echo "N/A")
+SRV_NAME=\$(cat /etc/dealer-admserver_name 2>/dev/null || echo "SSHFREE LTM")
 CURRENT_DATE=\$(date +%d-%m-%Y)
 CURRENT_TIME=\$(date +%H:%M:%S)
 UPTIME=\$(uptime -p | sed 's/up //')
@@ -1512,7 +1512,7 @@ menu_dropbear() {
         echo -e "  ${Y}  DROPBEAR SSH${NC}"; sep; echo ""
         DB_ST=$(systemctl is-active dropbear 2>/dev/null)
         [ "$DB_ST" = "active" ] && echo -e "  Estado: ${G}[ACTIVO]${NC}" || echo -e "  Estado: ${R}[INACTIVO]${NC}"
-        DB_PORT=$(cat /etc/sshfreeltm/dropbear_port 2>/dev/null || echo "444")
+        DB_PORT=$(cat /etc/dealer-admdropbear_port 2>/dev/null || echo "444")
         echo -e "  Puerto: ${W}${DB_PORT}${NC}"
         echo ""; sep
         echo -e "  ${W}[1]${NC} Instalar Dropbear"
@@ -1531,7 +1531,7 @@ menu_dropbear() {
                 read -p "  Puerto Dropbear (default 444): " DB_PORT
                 DB_PORT=${DB_PORT:-444}
                 mkdir -p /etc/sshfreeltm
-                echo "$DB_PORT" > /etc/sshfreeltm/dropbear_port
+                echo "$DB_PORT" > /etc/dealer-admdropbear_port
                 # Configurar
                 sed -i "s/NO_START=1/NO_START=0/" /etc/default/dropbear 2>/dev/null
                 sed -i "s/DROPBEAR_PORT=.*/DROPBEAR_PORT=$DB_PORT/" /etc/default/dropbear 2>/dev/null
@@ -1566,7 +1566,7 @@ EOF
             4) systemctl restart dropbear && echo -e "  ${G}Reiniciado${NC}"; sleep 1 ;;
             5)
                 read -p "  Nuevo puerto: " NEW_PORT
-                echo "$NEW_PORT" > /etc/sshfreeltm/dropbear_port
+                echo "$NEW_PORT" > /etc/dealer-admdropbear_port
                 sed -i "s/DROPBEAR_PORT=.*/DROPBEAR_PORT=$NEW_PORT/" /etc/default/dropbear 2>/dev/null
                 sed -i "s/-p [0-9]*/-p $NEW_PORT/" /etc/systemd/system/dropbear.service 2>/dev/null
                 systemctl daemon-reload
@@ -2088,7 +2088,7 @@ menu_dropbear() {
         echo -e "  ${Y}  DROPBEAR SSH${NC}"; sep; echo ""
         DB_ST=$(systemctl is-active dropbear 2>/dev/null)
         [ "$DB_ST" = "active" ] && echo -e "  Estado: ${G}[ACTIVO]${NC}" || echo -e "  Estado: ${R}[INACTIVO]${NC}"
-        DB_PORT=$(cat /etc/sshfreeltm/dropbear_port 2>/dev/null || echo "444")
+        DB_PORT=$(cat /etc/dealer-admdropbear_port 2>/dev/null || echo "444")
         echo -e "  Puerto: ${W}${DB_PORT}${NC}"
         echo ""; sep
         echo -e "  ${W}[1]${NC} Instalar Dropbear"
@@ -2107,7 +2107,7 @@ menu_dropbear() {
                 read -p "  Puerto Dropbear (default 444): " DB_PORT
                 DB_PORT=${DB_PORT:-444}
                 mkdir -p /etc/sshfreeltm
-                echo "$DB_PORT" > /etc/sshfreeltm/dropbear_port
+                echo "$DB_PORT" > /etc/dealer-admdropbear_port
                 # Configurar
                 sed -i "s/NO_START=1/NO_START=0/" /etc/default/dropbear 2>/dev/null
                 sed -i "s/DROPBEAR_PORT=.*/DROPBEAR_PORT=$DB_PORT/" /etc/default/dropbear 2>/dev/null
@@ -2142,7 +2142,7 @@ EOF
             4) systemctl restart dropbear && echo -e "  ${G}Reiniciado${NC}"; sleep 1 ;;
             5)
                 read -p "  Nuevo puerto: " NEW_PORT
-                echo "$NEW_PORT" > /etc/sshfreeltm/dropbear_port
+                echo "$NEW_PORT" > /etc/dealer-admdropbear_port
                 sed -i "s/DROPBEAR_PORT=.*/DROPBEAR_PORT=$NEW_PORT/" /etc/default/dropbear 2>/dev/null
                 sed -i "s/-p [0-9]*/-p $NEW_PORT/" /etc/systemd/system/dropbear.service 2>/dev/null
                 systemctl daemon-reload
