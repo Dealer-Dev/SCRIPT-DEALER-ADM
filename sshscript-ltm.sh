@@ -136,18 +136,6 @@ if [ ! -f /etc/dealer-adm/server_name ]; then
     echo "$(date +%d-%m-%Y)" > /etc/dealer-adm/install_date
 fi
 
-# Preguntar nombre ASCII al instalar por primera vez
-
-    mkdir -p /etc/dealer-adm
-    apt install -y figlet > /dev/null 2>&1
-    echo ""
-    echo -e "\033[1;33mEscribe el nombre que aparecera en el menu:\033[0m"
-    read -p "Nombre: " INSTALL_NAME
-    INSTALL_NAME=${INSTALL_NAME:-"SCRIPT DEALER ADM"}
-    echo "$INSTALL_NAME" > /etc/dealer-adm/server_name
-    echo "$(date +%d-%m-%Y)" > /etc/dealer-adm/install_date
-fi
-
 # Instalar MOTD automáticamente
 cat > /etc/profile.d/sshfree-motd.sh << 'MOTDSCRIPT'
 #!/bin/bash
@@ -3097,7 +3085,6 @@ menu_principal() {
             4) menu_herramientas ;;
             9) instalar_motd ;;
             10) desinstalar_script ;;
-            11) actualizar_script ;;
             11) actualizar_script ;;
             0) echo -e "\n  ${G}Hasta luego! — DarkZFull${NC}\n"; exit 0 ;;
             *) echo -e "  ${R}Opcion invalida${NC}"; sleep 1 ;;
