@@ -1008,13 +1008,51 @@ crear_usuario() {
 }
 
 eliminar_usuario() {
-    banner; sep; echo -e "  ${R}  ELIMINAR USUARIO SSH${NC}"; sep; echo ""
-    awk -F: '$3>=1000 && $1!="nobody" {print $1}' /etc/passwd | while read user; do printf "  ${Y}%-20s${NC}\n" "$user"; done
-    echo ""; read -p "  Usuario a eliminar: " DEL_USR
+    banner
+    sep
+    echo -e "  ${R}  ELIMINAR USUARIO SSH${NC}"
+    sep
+    echo ""
+
+    awk -F: '$3>=1000 && $1!="nobody" {print $1}' /etc/passwd | while read user; do
+        printf "  ${Y}%-20s${NC}\n" "$user"
+    done
+
+    echo ""
+    read -p "  Usuario a eliminar: " DEL_USR
+
     if id "$DEL_USR" &>/dev/null; then
-        pkill -u "$DEL_USR" 2>/dev/null; userdel -f "$DEL_USR" 2>/dev/null
+
+        pkill -u "$DEL_USR" 2>/dev/null
+        userdel -f "$DEL_USR" 2>/dev/null
+
+        # ==========================================
+        # ELIMINAR TAMBIÉN DE HYSTERIA
+        # ==========================================
+        if [ -f /etc/hysteria/config.json ] && command -v jq >/dev/null 2>&1; then
+
+            TMPFILE=$(mktemp)
+
+            jq --arg user "$DEL_USR" '
+                .auth.config |= map(
+                    select(startswith($user + ":") | not)
+                )
+            ' /etc/hysteria/config.json > "$TMPFILE"
+
+            mv "$TMPFILE" /etc/hysteria/config.json
+
+            systemctl restart hysteria-server >/dev/null 2>&1
+
+            echo -e "  ${G}✓ Usuario eliminado de Hysteria${NC}"
+        fi
+        # ==========================================
+
         echo -e "  ${G}OK Usuario $DEL_USR eliminado${NC}"
-    else echo -e "  ${R}Usuario no encontrado${NC}"; fi
+
+    else
+        echo -e "  ${R}Usuario no encontrado${NC}"
+    fi
+
     sleep 2
 }
 
