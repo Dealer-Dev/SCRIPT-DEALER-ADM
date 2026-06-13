@@ -910,34 +910,101 @@ listar_usuarios() {
 
 crear_usuario() {
     banner; sep; echo -e "  ${Y}  CREAR USUARIO SSH${NC}"; sep; echo ""
+
     read -p "  Nombre de usuario: " USR_NAME
     [ -z "$USR_NAME" ] && echo -e "  ${R}Nombre requerido${NC}" && sleep 1 && return
+
     read -p "  Contraseña (ENTER para generar): " USR_PASS
     [ -z "$USR_PASS" ] && USR_PASS=$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 10 | head -n 1) && echo -e "  ${G}Generada: ${W}${USR_PASS}${NC}"
-    read -p "  Dias de validez (default 30): " USR_DAYS; USR_DAYS=${USR_DAYS:-30}
+
+    read -p "  Dias de validez (default 30): " USR_DAYS
+    USR_DAYS=${USR_DAYS:-30}
+
     EXP_DATE=$(date -d "+${USR_DAYS} days" +%Y-%m-%d)
     EXP_SHOW=$(date -d "+${USR_DAYS} days" +%d/%m/%Y)
+
     SERVER_IP=$(curl -s -4 ifconfig.me 2>/dev/null || ip -4 addr show scope global | grep inet | awk '{print $2}' | cut -d/ -f1 | head -1)
-    echo ""; echo -e "  ${C}Creando usuario...${NC}"
+
+    echo ""
+    echo -e "  ${C}Creando usuario...${NC}"
+
     if id "$USR_NAME" &>/dev/null; then
-        usermod -e $EXP_DATE $USR_NAME; echo "$USR_NAME:$USR_PASS" | chpasswd
-    else
-        useradd -M -s /bin/false -e $EXP_DATE $USR_NAME
+        usermod -e $EXP_DATE "$USR_NAME"
         echo "$USR_NAME:$USR_PASS" | chpasswd
-        chage -E $EXP_DATE -M 99999 $USR_NAME; usermod -f 0 $USR_NAME
+    else
+        useradd -M -s /bin/false -e "$EXP_DATE" "$USR_NAME"
+        echo "$USR_NAME:$USR_PASS" | chpasswd
+        chage -E "$EXP_DATE" -M 99999 "$USR_NAME"
+        usermod -f 0 "$USR_NAME"
     fi
-    echo ""; sep; echo -e "  ${Y}  CREDENCIALES${NC}"; sep
+
+    # =====================================================
+    # SINCRONIZAR USUARIO CON HYSTERIA
+    # =====================================================
+    if [ -f /etc/hysteria/config.json ] && command -v jq >/dev/null 2>&1; then
+
+        if ! jq -e --arg user "$USR_NAME" '
+            .auth.config[] | startswith($user + ":")
+        ' /etc/hysteria/config.json >/dev/null 2>&1; then
+
+            TMPFILE=$(mktemp)
+
+            jq --arg user "$USR_NAME" --arg pass "$USR_PASS" '
+                .auth.config += [($user + ":" + $pass)]
+            ' /etc/hysteria/config.json > "$TMPFILE"
+
+            mv "$TMPFILE" /etc/hysteria/config.json
+
+            systemctl restart hysteria-server >/dev/null 2>&1
+
+            echo -e "  ${G}✓ Usuario agregado a Hysteria${NC}"
+        else
+            echo -e "  ${Y}✓ Usuario ya existe en Hysteria${NC}"
+        fi
+
+    fi
+    # =====================================================
+
+    echo ""
+    sep
+    echo -e "  ${Y}  CREDENCIALES${NC}"
+    sep
+
     echo -e "  ${W}Usuario:${NC}  $USR_NAME"
     echo -e "  ${W}Password:${NC} $USR_PASS"
     echo -e "  ${W}IP:${NC}       $SERVER_IP"
     echo -e "  ${W}Expira:${NC}   $EXP_SHOW ($USR_DAYS dias)"
-    echo ""; sep; echo -e "  ${Y}  CONEXIONES DISPONIBLES${NC}"; sep; echo ""
-    echo -e "  ${C}SSH Directo:${NC}"; echo -e "  ${W}$SERVER_IP:22@$USR_NAME:$USR_PASS${NC}"; echo ""
+
+    echo ""
+    sep
+    echo -e "  ${Y}  CONEXIONES DISPONIBLES${NC}"
+    sep
+    echo ""
+
+    echo -e "  ${C}SSH Directo:${NC}"
+    echo -e "  ${W}$SERVER_IP:22@$USR_NAME:$USR_PASS${NC}"
+    echo ""
+
     ss -tlnp | grep -q ":80 " && echo -e "  ${C}WS Puerto 80:${NC}" && echo -e "  ${W}$SERVER_IP:80@$USR_NAME:$USR_PASS${NC}" && echo ""
+
     systemctl is-active --quiet stunnel4 2>/dev/null && echo -e "  ${C}SSL/TLS 443:${NC}" && echo -e "  ${W}$SERVER_IP:443@$USR_NAME:$USR_PASS${NC}" && echo ""
+
     ps aux | grep -i "udp-custom\|UDP-Custom" | grep -v grep | grep -q . && echo -e "  ${C}UDP Custom:${NC}" && echo -e "  ${W}$SERVER_IP:1-65535@$USR_NAME:$USR_PASS${NC}" && echo ""
-    (systemctl is-active --quiet badvpn-7200 2>/dev/null || systemctl is-active --quiet badvpn-7300 2>/dev/null) && echo -e "  ${C}BadVPN:${NC}" && systemctl is-active --quiet badvpn-7200 && echo -e "  ${W}Puerto 7200 activo${NC}" && systemctl is-active --quiet badvpn-7300 && echo -e "  ${W}Puerto 7300 activo${NC}" && echo ""
-    sep; read -p "  ENTER..."
+
+    (systemctl is-active --quiet badvpn-7200 2>/dev/null || systemctl is-active --quiet badvpn-7300 2>/dev/null) && \
+    echo -e "  ${C}BadVPN:${NC}" && \
+    systemctl is-active --quiet badvpn-7200 && echo -e "  ${W}Puerto 7200 activo${NC}" && \
+    systemctl is-active --quiet badvpn-7300 && echo -e "  ${W}Puerto 7300 activo${NC}" && echo ""
+
+    # Mostrar acceso Hysteria
+    if [ -f /etc/hysteria/config.json ]; then
+        echo -e "  ${C}UDP Hysteria:${NC}"
+        echo -e "  ${W}$SERVER_IP@$USR_NAME:$USR_PASS${NC}"
+        echo ""
+    fi
+
+    sep
+    read -p "  ENTER..."
 }
 
 eliminar_usuario() {
