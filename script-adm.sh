@@ -38,11 +38,11 @@ EXP=$(grep '^fecha:' "$FILE" | awk '{print $2}')
 
 cat > /etc/dealer-adm/banner.txt << BANNER
 <font color="#0095b6"><b>Usuario:</b></font>
-<font color="#00ff00">$USR</font><br>
-<font color="#ff8000"><b>Expira:</b></font>
+<font color="#ff8000">$USR</font><br>
+<font color="#ff0000"><b>Expira:</b></font>
 <font color="#ff0000">$EXP</font><br>
 <center>
-<font color="#00ff00"><b>Script Dealer Adm</b></font>
+<font color="#00ff00"><b>                  Script Dealer Adm</b></font>
 </center>
 
 BANNER
