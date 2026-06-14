@@ -936,24 +936,35 @@ menu_users_ziv() {
 # ══════════════════════════════════════════
 
 listar_usuarios() {
-    banner; sep; echo -e "  ${Y}  USUARIOS SSH ACTIVOS${NC}"; sep; echo ""
-    printf "  %-20s %-15s %s\n" "Usuario" "Expira" "Estado"
+    banner
     sep
+    echo -e "  ${Y}  USUARIOS SSH ACTIVOS${NC}"
+    sep
+    echo ""
+
+    printf "  %-18s %-15s %-15s\n" "Usuario" "Password" "Expira"
+    sep
+
     awk -F: '$3>=1000 && $1!="nobody" {print $1}' /etc/passwd | while read user; do
-        EXP=$(chage -l $user 2>/dev/null | grep "Account expires" | cut -d: -f2 | xargs)
-        if [ "$EXP" = "never" ] || [ -z "$EXP" ]; then
-            printf "  ${Y}%-20s${NC} %-15s\n" "$user" "Sin expirar"
-        else
-            EXP_TS=$(date -d "$EXP" +%s 2>/dev/null || echo 0)
-            NOW_TS=$(date +%s)
-            if [ $EXP_TS -lt $NOW_TS ]; then
-                printf "  ${R}%-20s${NC} %-15s ${R}[EXPIRADO]${NC}\n" "$user" "$EXP"
-            else
-                printf "  ${G}%-20s${NC} %-15s\n" "$user" "$EXP"
-            fi
+
+        PASS="---"
+
+        if [ -f "/etc/dealer-adm/userDIR/$user" ]; then
+            PASS=$(grep '^password:' "/etc/dealer-adm/userDIR/$user" | cut -d' ' -f2-)
         fi
+
+        EXP=$(chage -l "$user" 2>/dev/null | grep "Account expires" | cut -d: -f2 | xargs)
+
+        EXP_SHOW=$(date -d "$EXP" +%d-%m-%Y 2>/dev/null)
+        [ -z "$EXP_SHOW" ] && EXP_SHOW="$EXP"
+
+        printf "  ${G}%-18s${NC} %-15s %-15s\n" "$user" "$PASS" "$EXP_SHOW"
+
     done
-    echo ""; sep; read -p "  ENTER..."
+
+    echo ""
+    sep
+    read -p "  ENTER..."
 }
 
 crear_usuario() {
@@ -992,8 +1003,11 @@ fi
 # ==========================================
 mkdir -p /etc/dealer-adm/userDIR
 
-echo "usuario: $USR_NAME" > /etc/dealer-adm/userDIR/$USR_NAME
-echo "fecha: $EXP_DATE" >> /etc/dealer-adm/userDIR/$USR_NAME
+cat > /etc/dealer-adm/userDIR/$USR_NAME << EOF
+usuario: $USR_NAME
+password: $USR_PASS
+fecha: $EXP_DATE
+EOF
 # ==========================================
 # SINCRONIZAR USUARIO CON HYSTERIA
 # ==========================================
