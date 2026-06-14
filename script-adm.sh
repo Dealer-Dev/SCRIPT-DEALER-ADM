@@ -1005,9 +1005,9 @@ if [ -f /etc/hysteria/config.json ] && command -v jq >/dev/null 2>&1; then
 
         systemctl restart hysteria-server >/dev/null 2>&1
 
-        echo -e "  ${G}✓ Usuario agregado a Hysteria${NC}"
+        echo -e "  ${G}Usuario agregado con éxito${NC}"
     else
-        echo -e "  ${Y}✓ Usuario ya existe en Hysteria${NC}"
+        echo -e "  ${Y}El usuario ya existe${NC}"
     fi
 
 fi
@@ -1022,13 +1022,11 @@ echo -e "  ${W}Usuario:${NC}  $USR_NAME"
 echo -e "  ${W}Password:${NC} $USR_PASS"
 echo -e "  ${W}IP:${NC}       $SERVER_IP"
 echo -e "  ${W}Expira:${NC}   $EXP_SHOW ($USR_DAYS dias)"
-
 echo ""
 sep
 echo -e "  ${Y}  CONEXIONES DISPONIBLES${NC}"
 sep
 echo ""
-
 echo -e "  ${C}SSH Directo:${NC}"
 echo -e "  ${W}$SERVER_IP:22@$USR_NAME:$USR_PASS${NC}"
 echo ""
