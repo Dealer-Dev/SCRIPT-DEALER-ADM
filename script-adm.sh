@@ -110,14 +110,14 @@ if [ ! -f /etc/dealer-adm/.licensed ]; then
     echo -e "\033[0m"
 
     echo -e "\033[1;96m◆━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━◆\033[0m"
-    echo -e "  \033[1;97m⚡ SCRIPT DEALER ADM v3.1\033[0m"
+    echo -e "  \033[1;97m SCRIPT DEALER ADM v3.1\033[0m"
     echo -e "\033[1;96m◆━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━◆\033[0m"
     echo ""
-    echo -e "  \033[1;33m🔐 Se requiere una KEY de licencia\033[0m"
+    echo -e "  \033[1;33m A continuación ingresa tu Key\033[0m"
     echo -e "  \033[2;37m   Obtén tu KEY con @DealerServices235\033[0m"
     echo ""
 
-    read -p "  🗝️  Ingresa tu KEY: " INPUT_KEY
+    read -p "  Ingresa tu KEY: " INPUT_KEY
     echo ""
 
     command -v curl >/dev/null 2>&1 || apt install -y curl >/dev/null 2>&1
@@ -135,8 +135,7 @@ if [ ! -f /etc/dealer-adm/.licensed ]; then
         echo "$INPUT_KEY" > /etc/dealer-adm/.licensed
 
         echo ""
-        echo -e "  \033[0;32m✅ Key válida\033[0m"
-        echo -e "  \033[0;32m✅ Licencia activada permanentemente\033[0m"
+        echo -e "  \033[0;32m Key válida ✅\033[0m"
 
         sleep 2
 
