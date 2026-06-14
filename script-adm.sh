@@ -40,7 +40,7 @@ EXP_SHOW=$(date -d "$EXP" +%d-%m-%Y 2>/dev/null)
 [ -z "$EXP_SHOW" ] && EXP_SHOW="$EXP"
 
 cat > /etc/dealer-adm/banner.txt << BANNER
-<font color="#0095b6">☢☢☢☢☢☢☢☢☢☢☢☢☢☢☢☢☢☢☢☢☢☢☢☢☢☢☢☢☢</font>
+<font color="#0095b6">☢☢☢☢☢☢☢☢☢☢☢☢☢☢☢☢☢☢☢☢☢☢</font><br>
 <font color="#0095b6"><b>Usuario:</b></font>
 <font color="#ff8000">$USR</font><br>
 
