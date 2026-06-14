@@ -1087,9 +1087,9 @@ usuarios_ssh_online_count() {
 
     ONLINE_USERS=0
 
-    for user in $(awk -F: '$3>=1000 && $1!="nobody" {print $1}' /etc/passwd); do
+    for user in $(awk -F: '$3>=1000 && $1!="nobody" {print $1}'); do
 
-        ONLINE=$(who | awk '{print $1}' | grep -cx "$user")
+        ONLINE=$(ps -ef | grep "sshd: $user$" | grep -v grep | wc -l)
 
         [ "$ONLINE" -eq 0 ] && continue
 
@@ -1102,13 +1102,16 @@ usuarios_ssh_online_count() {
 
         printf "  ${G}%-20s${NC} [%s/%s]\n" "$user" "$ONLINE" "$LIMIT"
 
-        ONLINE_USERS=$((ONLINE_USERS+1))
+        ONLINE_USERS=$((ONLINE_USERS + 1))
     done
 
     echo ""
 
     if [ "$ONLINE_USERS" -eq 0 ]; then
         echo -e "  ${R}No hay usuarios conectados${NC}"
+        echo ""
+    else
+        echo -e "  ${C}Usuarios conectados:${NC} $ONLINE_USERS"
         echo ""
     fi
 
