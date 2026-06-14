@@ -1,7 +1,7 @@
 #!/bin/bash
 # ═══════════════════════════════════════════════════════
 #   SCRIPT DEALER ADM — Gestor de Servicios VPN/SSH
-#   by DarkZFull • @DealerServices235
+#   by Dealer • @DealerServices235
 #   Ubuntu 22/24/25
 # ═══════════════════════════════════════════════════════
 
@@ -1289,7 +1289,7 @@ actualizar_script() {
     echo -e "  ${Y}  ACTUALIZAR SCRIPT${NC}"; sep; echo ""
     echo -e "  ${C}Descargando ultima version...${NC}"
     echo -e "  ${C}Descargando ultima version...${NC}"
-    wget -q -O /usr/local/bin/menu "https://raw.githubusercontent.com/DarkFull0726/SSHSCRIPT-LTM/main/sshscript-ltm.sh?$(date +%s)"
+    wget -q -O /usr/local/bin/menu "https://raw.githubusercontent.com/Dealer-Dev/SCRIPT-DEALER-ADM/main/script-adm.sh?$(date +%s)"
     chmod +x /usr/local/bin/menu
     mkdir -p /etc/dealer-adm
     touch /etc/dealer-adm/.licensed
@@ -1303,7 +1303,7 @@ actualizar_script() {
     echo -e "  ${Y}  ACTUALIZAR SCRIPT${NC}"; sep; echo ""
     echo -e "  ${C}Descargando ultima version...${NC}"
     echo -e "  ${C}Descargando ultima version...${NC}"
-    wget -q -O /usr/local/bin/menu "https://raw.githubusercontent.com/DarkFull0726/SSHSCRIPT-LTM/main/sshscript-ltm.sh?$(date +%s)"
+    wget -q -O /usr/local/bin/menu "https://raw.githubusercontent.com/Dealer-Dev/SCRIPT-DEALER-ADM/main/script-adm.sh?$(date +%s)"
     chmod +x /usr/local/bin/menu
     mkdir -p /etc/dealer-adm
     touch /etc/dealer-adm/.licensed
@@ -1500,7 +1500,7 @@ actualizar_script() {
     echo -e "  ${Y}  ACTUALIZAR SCRIPT${NC}"; sep; echo ""
     echo -e "  ${C}Descargando ultima version...${NC}"
     echo -e "  ${C}Descargando ultima version...${NC}"
-    wget -q -O /usr/local/bin/menu "https://raw.githubusercontent.com/DarkFull0726/SSHSCRIPT-LTM/main/sshscript-ltm.sh?$(date +%s)"
+    wget -q -O /usr/local/bin/menu "https://raw.githubusercontent.com/Dealer-Dev/SCRIPT-DEALER-ADM/main/script-adm.sh?$(date +%s)"
     chmod +x /usr/local/bin/menu
     mkdir -p /etc/dealer-adm
     touch /etc/dealer-adm/.licensed
@@ -3281,7 +3281,7 @@ menu_principal() {
             9) instalar_motd ;;
             10) desinstalar_script ;;
             11) actualizar_script ;;
-            0) echo -e "\n  ${G}Hasta luego! — DarkZFull${NC}\n"; exit 0 ;;
+            0) echo -e "\n  ${G}Hasta luego! — Dealer${NC}\n"; exit 0 ;;
             *) echo -e "  ${R}Opcion invalida${NC}"; sleep 1 ;;
         esac
     done
@@ -3291,6 +3291,6 @@ menu_principal() {
 menu_principal
 
 # Auto-instalar comando menu
-wget -q -O /usr/local/bin/menu "https://raw.githubusercontent.com/DarkFull0726/SSHSCRIPT-LTM/main/sshscript-ltm.sh"
+wget -q -O /usr/local/bin/menu "https://raw.githubusercontent.com/Dealer-Dev/SCRIPT-DEALER-ADM/main/script-adm.sh"
 chmod +x /usr/local/bin/menu
 echo -e "\033[0;32mComando menu instalado\033[0m"
