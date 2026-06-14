@@ -46,7 +46,7 @@ cat > /etc/dealer-adm/banner.txt << BANNER
 <font color="#ff0000"><b>Expira:</b></font>
 <font color="#ff0000">$EXP_SHOW</font><br>
 
-<font color="#0095b6">================</font><font color="#00ff00">Script Dealer Adm</font><font color="#0095b6">================</font>
+<font color="#0095b6">============</font><font color="#00ff00">Script Dealer Adm</font><font color="#0095b6">============</font>
 BANNER
 
 exit 0
