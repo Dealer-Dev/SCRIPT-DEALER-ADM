@@ -37,8 +37,21 @@ FILE="/etc/dealer-adm/userDIR/$USR"
 EXP=$(grep '^fecha:' "$FILE" | awk '{print $2}')
 
 cat > /etc/dealer-adm/banner.txt << BANNER
-Usuario: $USR
-Expira : $EXP
+<center>
+<font color="#0095b6"><b>Usuario:</b></font>
+<font color="#0095b6">$USR</font>
+
+<br><br>
+
+<font color="#ff8000"><b>Expira:</b></font>
+<font color="#ff0000">$EXP</font>
+
+<br><br><br>
+
+<font color="#00ff00">
+<b>Script Dealer Adm</b>
+</font>
+</center>
 BANNER
 
 exit 0
