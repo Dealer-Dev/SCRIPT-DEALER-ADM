@@ -980,6 +980,9 @@ read -p "  Contraseña (ENTER para generar): " USR_PASS
 read -p "  Dias de validez (default 30): " USR_DAYS
 USR_DAYS=${USR_DAYS:-30}
 
+read -p "  Limite de conexiones (default 1): " USR_LIMIT
+USR_LIMIT=${USR_LIMIT:-1}
+
 EXP_DATE=$(date -d "+${USR_DAYS} days" +%Y-%m-%d)
 EXP_SHOW=$(date -d "+${USR_DAYS} days" +%d/%m/%Y)
 
@@ -1007,6 +1010,7 @@ cat > /etc/dealer-adm/userDIR/$USR_NAME << EOF
 usuario: $USR_NAME
 password: $USR_PASS
 fecha: $EXP_DATE
+limite: $USR_LIMIT
 EOF
 # ==========================================
 # SINCRONIZAR USUARIO CON HYSTERIA
