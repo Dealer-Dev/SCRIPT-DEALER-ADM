@@ -1078,6 +1078,32 @@ sep
 read -p "  ENTER..."
 
 }
+usuarios_ssh_online_count() {
+    banner
+    sep
+    echo -e "  ${Y}  USUARIOS ONLINE${NC}"
+    sep
+    echo ""
+
+    awk -F: '$3>=1000 && $1!="nobody" {print $1}' /etc/passwd | while read user; do
+
+        LIMIT="1"
+
+        if [ -f "/etc/dealer-adm/userDIR/$user" ]; then
+            LIMIT=$(grep '^limite:' "/etc/dealer-adm/userDIR/$user" | awk '{print $2}')
+            [ -z "$LIMIT" ] && LIMIT=1
+        fi
+
+        ONLINE=$(ps aux | grep -E "sshd: $user|dropbear" | grep -v grep | wc -l)
+
+        printf "  ${G}%-20s${NC} [%s/%s]\n" "$user" "$ONLINE" "$LIMIT"
+
+    done
+
+    echo ""
+    sep
+    read -p "  ENTER..."
+}
 eliminar_usuario() {
 banner
 sep
