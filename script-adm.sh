@@ -1089,7 +1089,7 @@ usuarios_ssh_online_count() {
 
     for user in $(awk -F: '$3>=1000 && $1!="nobody" {print $1}' /etc/passwd); do
 
-        ONLINE=$(ps -u "$user" -o comm= 2>/dev/null | grep -c "^sshd$")
+        ONLINE=$(who | awk '{print $1}' | grep -cx "$user")
 
         [ "$ONLINE" -eq 0 ] && continue
 
