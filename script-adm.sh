@@ -3272,7 +3272,7 @@ menu_principal() {
         [ -z "$C1" ] && echo -e " ${DIM}  Sin servicios activos${NC}"
         sep
         printf " \033[1;97m❬1❭ ⚡  Usuarios SSH         ❬2❭ 📡 Usuarios VMess\033[0m\n"
-        printf " \033[1;97m❬3❭ 🔐 Usuarios ZIV VPN     ❬4❭ 🛠  Herramientas\033[0m\n"
+        printf " \033[1;97m❬3❭ 🔐 Usuarios ZIVPN     ❬4❭ 🛠  Herramientas\033[0m\n"
         printf " \033[1;97m❬5❭ 👤 SSH Online           ❬6❭ 📡 V2Ray Online\033[0m\n"
         printf " \033[1;97m❬7❭ 🔒 ZIV Online\033[0m\n"
         printf " ${NEON}❖ Version: ${Y}v%s ${NEON}❖${NC}\n" "$SCRIPT_VERSION"
