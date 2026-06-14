@@ -951,7 +951,7 @@ listar_usuarios() {
 crear_usuario() {
 banner; sep; echo -e "  ${Y}  CREAR USUARIO SSH${NC}"; sep; echo ""
 
-```
+
 read -p "  Nombre de usuario: " USR_NAME
 [ -z "$USR_NAME" ] && echo -e "  ${R}Nombre requerido${NC}" && sleep 1 && return
 
@@ -1052,7 +1052,6 @@ fi
 
 sep
 read -p "  ENTER..."
-```
 
 }
 eliminar_usuario() {
@@ -1062,7 +1061,7 @@ echo -e "  ${R}  ELIMINAR USUARIO SSH${NC}"
 sep
 echo ""
 
-```
+
 awk -F: '$3>=1000 && $1!="nobody" {print $1}' /etc/passwd | while read user; do
     printf "  ${Y}%-20s${NC}\n" "$user"
 done
@@ -1108,7 +1107,6 @@ else
 fi
 
 sleep 2
-```
 
 }
 renovar_usuario() {
@@ -1118,7 +1116,7 @@ echo -e "  ${Y}  RENOVAR USUARIO SSH${NC}"
 sep
 echo ""
 
-```
+
 awk -F: '$3>=1000 && $1!="nobody" {print $1}' /etc/passwd | while read user; do
     EXP=$(chage -l "$user" 2>/dev/null | grep "Account expires" | cut -d: -f2 | xargs)
     printf "  ${Y}%-20s${NC} %s\n" "$user" "$EXP"
@@ -1152,7 +1150,6 @@ fi
 
 echo -e "  ${G}OK $REN_USR renovado hasta $EXP_SHOW${NC}"
 sleep 2
-```
 
 }
 
