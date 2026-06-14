@@ -41,13 +41,13 @@ EXP_SHOW=$(date -d "$EXP" +%d-%m-%Y 2>/dev/null)
 
 cat > /etc/dealer-adm/banner.txt << BANNER
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<font color="#0095b6">❒════════════════════════❒</font><br>
-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<font color="#FFD700"><b>Usuario:</b></font>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<font color="#FFD700"><b>Usuario:</b></font>
 <font color="#ff8000">$USR</font><br>
 
-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<font color="#ff0000"><b>Expira:</b></font>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<font color="#ff0000"><b>Expira:</b></font>
 <font color="#ff0000">$EXP_SHOW</font><br>
 
-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<font color="#0095b6">❒══════</font><font color="#00ff00"> Script Dealer Adm </font><font color="#0095b6">══════❒</font>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<font color="#0095b6">❒══════</font><font color="#00ff00"> Script Dealer Adm </font><font color="#00ff00">══════❒</font>
 BANNER
 
 exit 0
