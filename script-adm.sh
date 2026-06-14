@@ -984,15 +984,8 @@ fi
 # ==========================================
 mkdir -p /etc/dealer-adm/userDIR
 
-cat > /etc/dealer-adm/userDIR/$USR_NAME << EOF
-```
-
-usuario: $USR_NAME
-fecha: $EXP_DATE
-EOF
-# ==========================================
-
-```
+echo "usuario: $USR_NAME" > /etc/dealer-adm/userDIR/$USR_NAME
+echo "fecha: $EXP_DATE" >> /etc/dealer-adm/userDIR/$USR_NAME
 # ==========================================
 # SINCRONIZAR USUARIO CON HYSTERIA
 # ==========================================
