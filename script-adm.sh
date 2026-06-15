@@ -30,10 +30,11 @@ cat > $DIR_SCRIPTS/checkuser.sh << 'EOF'
 
 USR="$PAM_USER"
 
-FILE="/etc/dealer-adm/userDIR/$USR"
+FILE=$(grep -l "^usuario: $USR$" /etc/dealer-adm/userDIR/* 2>/dev/null | head -1)
 
-[ ! -f "$FILE" ] && exit 0
+[ -z "$FILE" ] && exit 0
 
+NOMBRE=$(grep '^nombre:' "$FILE" | cut -d' ' -f2-)
 EXP=$(grep '^fecha:' "$FILE" | awk '{print $2}')
 
 EXP_SHOW=$(date -d "$EXP" +%d-%m-%Y 2>/dev/null)
@@ -42,7 +43,7 @@ EXP_SHOW=$(date -d "$EXP" +%d-%m-%Y 2>/dev/null)
 cat > /etc/dealer-adm/banner.txt << BANNER
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<font color="#0095b6">❒════════════════════════❒</font><br>
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<font color="#FF8000"><b>Usuario:</b></font>
-<font color="#FFD700">$USR</font><br>
+<font color="#FFD700">$NOMBRE</font><br>
 
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<font color="#ff00ff"><b>Expira:</b></font>
 <font color="#ff0000">$EXP_SHOW</font><br>
@@ -938,36 +939,91 @@ menu_users_ziv() {
 listar_usuarios() {
     banner
     sep
-    echo -e "  ${Y}  USUARIOS SSH ACTIVOS${NC}"
+    echo -e "  ${Y}  USUARIOS ACTIVOS${NC}"
     sep
     echo ""
 
-    printf "  %-18s %-15s %-15s\n" "Usuario" "Password" "Expira"
-    sep
+    NUM=1
 
-    awk -F: '$3>=1000 && $1!="nobody" {print $1}' /etc/passwd | while read user; do
+    for FILE in /etc/dealer-adm/userDIR/*; do
 
-        PASS="---"
+        [ ! -f "$FILE" ] && continue
 
-        if [ -f "/etc/dealer-adm/userDIR/$user" ]; then
-            PASS=$(grep '^password:' "/etc/dealer-adm/userDIR/$user" | cut -d' ' -f2-)
-        fi
+        TIPO=$(grep '^tipo:' "$FILE" | cut -d' ' -f2-)
+        NOMBRE=$(grep '^nombre:' "$FILE" | cut -d' ' -f2-)
+        USUARIO=$(grep '^usuario:' "$FILE" | cut -d' ' -f2-)
+        PASSWORD=$(grep '^password:' "$FILE" | cut -d' ' -f2-)
+        FECHA=$(grep '^fecha:' "$FILE" | cut -d' ' -f2-)
+        LIMITE=$(grep '^limite:' "$FILE" | cut -d' ' -f2-)
 
-        EXP=$(chage -l "$user" 2>/dev/null | grep "Account expires" | cut -d: -f2 | xargs)
+        FECHA_SHOW=$(date -d "$FECHA" +%d-%m-%Y 2>/dev/null)
+        [ -z "$FECHA_SHOW" ] && FECHA_SHOW="$FECHA"
 
-        EXP_SHOW=$(date -d "$EXP" +%d-%m-%Y 2>/dev/null)
-        [ -z "$EXP_SHOW" ] && EXP_SHOW="$EXP"
+        case "$TIPO" in
+            ssh)
+                COLOR_TIPO="${G}"
+                TIPO_SHOW="SSH"
+            ;;
+            token)
+                COLOR_TIPO="${Y}"
+                TIPO_SHOW="TOKEN"
+            ;;
+            hwid)
+                COLOR_TIPO="${C}"
+                TIPO_SHOW="HWID"
+            ;;
+            *)
+                COLOR_TIPO="${W}"
+                TIPO_SHOW="$TIPO"
+            ;;
+        esac
 
-        printf "  ${G}%-18s${NC} %-15s %-15s\n" "$user" "$PASS" "$EXP_SHOW"
+        echo -e "  ${W}[$NUM]${NC} ${G}$NOMBRE${NC}"
+        echo -e "      └ ${COLOR_TIPO}$TIPO_SHOW${NC} | ${W}$USUARIO${NC} | Limite:${LIMITE} | Expira:${FECHA_SHOW}"
+        echo ""
+
+        ((NUM++))
 
     done
 
-    echo ""
     sep
     read -p "  ENTER..."
 }
-
 crear_usuario() {
+
+    while true; do
+
+        banner
+        sep
+        echo -e "  ${Y}  CREAR USUARIO${NC}"
+        sep
+        echo ""
+
+        echo -e "  ${W}[1]${NC} SSH | DROPBEAR"
+        echo -e "  ${W}[2]${NC} HWID"
+        echo -e "  ${W}[3]${NC} TOKEN"
+        echo -e "  ${W}[4]${NC} PASSWORD TOKEN"
+        echo -e "  ${W}[0]${NC} Volver"
+
+        echo ""
+        sep
+
+        read -p "  Opcion: " OP
+
+        case $OP in
+
+            1) crear_usuario_ssh ;;
+            2) crear_usuario_hwid ;;
+            3) crear_usuario_token ;;
+            4) modificar_password_token ;;
+            0) break ;;
+
+        esac
+
+    done
+
+}
+crear_usuario_ssh() {
 banner; sep; echo -e "  ${Y}  CREAR USUARIO SSH${NC}"; sep; echo ""
 
 
@@ -1007,6 +1063,8 @@ fi
 mkdir -p /etc/dealer-adm/userDIR
 
 cat > /etc/dealer-adm/userDIR/$USR_NAME << EOF
+tipo: ssh
+nombre: $USR_NAME
 usuario: $USR_NAME
 password: $USR_PASS
 fecha: $EXP_DATE
@@ -1078,6 +1136,214 @@ sep
 read -p "  ENTER..."
 
 }
+crear_usuario_hwid() {
+
+    banner
+    sep
+    echo -e "  ${Y}  CREAR USUARIO HWID${NC}"
+    sep
+    echo ""
+
+    read -p "  Nombre: " NOMBRE
+    [ -z "$NOMBRE" ] && return
+
+    read -p "  HWID: " HWID
+    [ -z "$HWID" ] && return
+
+    read -p "  Dias de validez (default 30): " USR_DAYS
+    USR_DAYS=${USR_DAYS:-30}
+
+    EXP_DATE=$(date -d "+${USR_DAYS} days" +%Y-%m-%d)
+    EXP_SHOW=$(date -d "+${USR_DAYS} days" +%d/%m/%Y)
+
+    SERVER_IP=$(curl -s -4 ifconfig.me 2>/dev/null || ip -4 addr show scope global | grep inet | awk '{print $2}' | cut -d/ -f1 | head -1)
+
+    echo ""
+    echo -e "  ${C}Creando usuario HWID...${NC}"
+
+    if id "$HWID" &>/dev/null; then
+
+        usermod -e "$EXP_DATE" "$HWID"
+        echo "$HWID:$HWID" | chpasswd
+
+    else
+
+        useradd -M -s /bin/false -e "$EXP_DATE" "$HWID"
+        echo "$HWID:$HWID" | chpasswd
+
+        chage -E "$EXP_DATE" -M 99999 "$HWID"
+        usermod -f 0 "$HWID"
+
+    fi
+
+    cat > /etc/dealer-adm/userDIR/$HWID << EOF
+tipo: hwid
+nombre: $NOMBRE
+usuario: $HWID
+password: $HWID
+fecha: $EXP_DATE
+limite: 1
+EOF
+
+    if [ -f /etc/hysteria/config.json ] && command -v jq >/dev/null 2>&1; then
+
+        if ! jq -e --arg user "$HWID" '
+            .auth.config[] | startswith($user + ":")
+        ' /etc/hysteria/config.json >/dev/null 2>&1; then
+
+            TMPFILE=$(mktemp)
+
+            jq --arg user "$HWID" --arg pass "$HWID" '
+                .auth.config += [($user + ":" + $pass)]
+            ' /etc/hysteria/config.json > "$TMPFILE"
+
+            mv "$TMPFILE" /etc/hysteria/config.json
+
+            systemctl restart hysteria-server >/dev/null 2>&1
+        fi
+
+    fi
+
+    echo ""
+    sep
+    echo -e "  ${Y}  DATOS HWID${NC}"
+    sep
+
+    echo -e "  ${W}Nombre:${NC}   $NOMBRE"
+    echo -e "  ${W}HWID:${NC}     $HWID"
+    echo -e "  ${W}Expira:${NC}   $EXP_SHOW"
+
+    echo ""
+    echo -e "  ${C}Hysteria:${NC}"
+    echo -e "  ${W}$SERVER_IP@$HWID:$HWID${NC}"
+
+    echo ""
+    sep
+    read -p "  ENTER..."
+
+}
+crear_usuario_token() {
+
+    banner
+    sep
+    echo -e "  ${Y}  CREAR USUARIO TOKEN${NC}"
+    sep
+    echo ""
+
+    if [ ! -f /etc/dealer-adm/token_password ]; then
+
+        echo -e "  ${Y}No existe contraseña TOKEN global${NC}"
+        echo ""
+
+        read -p "  Crear contraseña TOKEN: " TOKEN_PASS
+
+        [ -z "$TOKEN_PASS" ] && return
+
+        echo "$TOKEN_PASS" > /etc/dealer-adm/token_password
+
+    fi
+
+    TOKEN_PASS=$(cat /etc/dealer-adm/token_password)
+
+    read -p "  Nombre: " NOMBRE
+    [ -z "$NOMBRE" ] && return
+
+    read -p "  Token: " TOKEN
+    [ -z "$TOKEN" ] && return
+
+    read -p "  Dias de validez (default 30): " USR_DAYS
+    USR_DAYS=${USR_DAYS:-30}
+
+    EXP_DATE=$(date -d "+${USR_DAYS} days" +%Y-%m-%d)
+    EXP_SHOW=$(date -d "+${USR_DAYS} days" +%d/%m/%Y)
+
+    SERVER_IP=$(curl -s -4 ifconfig.me 2>/dev/null || ip -4 addr show scope global | grep inet | awk '{print $2}' | cut -d/ -f1 | head -1)
+
+    echo ""
+    echo -e "  ${C}Creando usuario TOKEN...${NC}"
+
+    if id "$TOKEN" &>/dev/null; then
+
+        usermod -e "$EXP_DATE" "$TOKEN"
+        echo "$TOKEN:$TOKEN_PASS" | chpasswd
+
+    else
+
+        useradd -M -s /bin/false -e "$EXP_DATE" "$TOKEN"
+        echo "$TOKEN:$TOKEN_PASS" | chpasswd
+
+        chage -E "$EXP_DATE" -M 99999 "$TOKEN"
+        usermod -f 0 "$TOKEN"
+
+    fi
+
+    cat > /etc/dealer-adm/userDIR/$TOKEN << EOF
+tipo: token
+nombre: $NOMBRE
+usuario: $TOKEN
+password: $TOKEN_PASS
+fecha: $EXP_DATE
+limite: 1
+EOF
+
+    if [ -f /etc/hysteria/config.json ] && command -v jq >/dev/null 2>&1; then
+
+        if ! jq -e --arg user "$TOKEN" '
+            .auth.config[] | startswith($user + ":")
+        ' /etc/hysteria/config.json >/dev/null 2>&1; then
+
+            TMPFILE=$(mktemp)
+
+            jq --arg user "$TOKEN" --arg pass "$TOKEN_PASS" '
+                .auth.config += [($user + ":" + $pass)]
+            ' /etc/hysteria/config.json > "$TMPFILE"
+
+            mv "$TMPFILE" /etc/hysteria/config.json
+
+            systemctl restart hysteria-server >/dev/null 2>&1
+        fi
+
+    fi
+
+    echo ""
+    sep
+    echo -e "  ${Y}  DATOS TOKEN${NC}"
+    sep
+
+    echo -e "  ${W}Nombre:${NC}      $NOMBRE"
+    echo -e "  ${W}Token:${NC}       $TOKEN"
+    echo -e "  ${W}Password:${NC}    $TOKEN_PASS"
+    echo -e "  ${W}Expira:${NC}      $EXP_SHOW"
+
+    echo ""
+    echo -e "  ${C}Hysteria:${NC}"
+    echo -e "  ${W}$SERVER_IP@$TOKEN:$TOKEN_PASS${NC}"
+
+    echo ""
+    sep
+    read -p "  ENTER..."
+
+}
+modificar_password_token() {
+
+    banner
+    sep
+    echo -e "  ${Y}  PASSWORD GLOBAL TOKEN${NC}"
+    sep
+    echo ""
+
+    read -p "  Nueva contraseña TOKEN: " TOKEN_PASS
+
+    [ -z "$TOKEN_PASS" ] && return
+
+    echo "$TOKEN_PASS" > /etc/dealer-adm/token_password
+
+    echo ""
+    echo -e "  ${G}Password actualizada${NC}"
+
+    sleep 2
+
+}
 usuarios_ssh_online_count() {
     banner
     sep
@@ -1100,7 +1366,28 @@ usuarios_ssh_online_count() {
             [ -z "$LIMIT" ] && LIMIT=1
         fi
 
-        printf "  ${G}%-20s${NC} [%s/%s]\n" "$user" "$ONLINE" "$LIMIT"
+        TIPO=$(grep '^tipo:' "/etc/dealer-adm/userDIR/$user" 2>/dev/null | awk '{print $2}')
+
+case "$TIPO" in
+    ssh)
+        ETIQUETA="${G}(SSH)${NC}"
+    ;;
+    token)
+        ETIQUETA="${Y}(TOKEN)${NC}"
+    ;;
+    hwid)
+        ETIQUETA="${C}(HWID)${NC}"
+    ;;
+    *)
+        ETIQUETA="${W}(?)${NC}"
+    ;;
+esac
+
+NOMBRE=$(grep '^nombre:' "/etc/dealer-adm/userDIR/$user" 2>/dev/null | cut -d' ' -f2-)
+
+[ -z "$NOMBRE" ] && NOMBRE="$user"
+
+printf "  ${W}%-20s${NC} %b [%s/%s]\n" "$NOMBRE" "$ETIQUETA" "$ONLINE" "$LIMIT"
 
         ENCONTRADO=1
     done
@@ -1121,105 +1408,237 @@ usuarios_ssh_online_count() {
     read -p "  ENTER..."
 }
 eliminar_usuario() {
-banner
-sep
-echo -e "  ${R}  ELIMINAR USUARIO SSH${NC}"
-sep
-echo ""
 
+    banner
+    sep
+    echo -e "  ${R}  ELIMINAR USUARIO${NC}"
+    sep
+    echo ""
 
-awk -F: '$3>=1000 && $1!="nobody" {print $1}' /etc/passwd | while read user; do
-    printf "  ${Y}%-20s${NC}\n" "$user"
-done
+    declare -A USERS
+    NUM=1
 
-echo ""
-read -p "  Usuario a eliminar: " DEL_USR
+    for FILE in /etc/dealer-adm/userDIR/*; do
 
-if id "$DEL_USR" &>/dev/null; then
+        [ ! -f "$FILE" ] && continue
 
-    pkill -u "$DEL_USR" 2>/dev/null
-    userdel -f "$DEL_USR" 2>/dev/null
+        USER=$(grep '^usuario:' "$FILE" | cut -d' ' -f2-)
+        NOMBRE=$(grep '^nombre:' "$FILE" | cut -d' ' -f2-)
+        TIPO=$(grep '^tipo:' "$FILE" | cut -d' ' -f2-)
 
-    # ==========================================
-    # ELIMINAR ARCHIVO CHECKUSER
-    # ==========================================
-    rm -f /etc/dealer-adm/userDIR/$DEL_USR
-    # ==========================================
+        case "$TIPO" in
+            ssh)
+                COLOR="${G}"
+                TIPO_SHOW="SSH"
+            ;;
+            token)
+                COLOR="${Y}"
+                TIPO_SHOW="TOKEN"
+            ;;
+            hwid)
+                COLOR="${C}"
+                TIPO_SHOW="HWID"
+            ;;
+            *)
+                COLOR="${W}"
+                TIPO_SHOW="$TIPO"
+            ;;
+        esac
 
-    # ==========================================
-    # ELIMINAR TAMBIÉN DE HYSTERIA
-    # ==========================================
-    if [ -f /etc/hysteria/config.json ] && command -v jq >/dev/null 2>&1; then
+        echo -e "  ${W}[$NUM]${NC} ${COLOR}$NOMBRE${NC} (${TIPO_SHOW})"
 
-        TMPFILE=$(mktemp)
+        USERS[$NUM]="$USER"
 
-        jq --arg user "$DEL_USR" '
-            .auth.config |= map(
-                select(startswith($user + ":") | not)
-            )
-        ' /etc/hysteria/config.json > "$TMPFILE"
+        ((NUM++))
 
-        mv "$TMPFILE" /etc/hysteria/config.json
+    done
 
-        systemctl restart hysteria-server >/dev/null 2>&1
+    echo ""
+    read -p "  Seleccione usuario: " OP
 
-        echo -e "  ${G}✓ Usuario eliminado de Hysteria${NC}"
+    DEL_USR="${USERS[$OP]}"
+
+    [ -z "$DEL_USR" ] && return
+
+    if id "$DEL_USR" &>/dev/null; then
+
+        pkill -u "$DEL_USR" 2>/dev/null
+
+        userdel -f "$DEL_USR" 2>/dev/null
+
+        rm -f "/etc/dealer-adm/userDIR/$DEL_USR"
+
+        # ==========================================
+        # ELIMINAR TAMBIÉN DE HYSTERIA
+        # ==========================================
+        if [ -f /etc/hysteria/config.json ] && command -v jq >/dev/null 2>&1; then
+
+            TMPFILE=$(mktemp)
+
+            jq --arg user "$DEL_USR" '
+                .auth.config |= map(
+                    select(startswith($user + ":") | not)
+                )
+            ' /etc/hysteria/config.json > "$TMPFILE"
+
+            mv "$TMPFILE" /etc/hysteria/config.json
+
+            systemctl restart hysteria-server >/dev/null 2>&1
+
+            echo -e "  ${G}✓ Usuario eliminado de Hysteria${NC}"
+        fi
+        # ==========================================
+
+        echo -e "  ${G}✓ Usuario eliminado correctamente${NC}"
+
+    else
+
+        echo -e "  ${R}Usuario no encontrado${NC}"
+
     fi
 
-    echo -e "  ${G}OK Usuario $DEL_USR eliminado${NC}"
-
-else
-    echo -e "  ${R}Usuario no encontrado${NC}"
-fi
-
-sleep 2
+    sleep 2
 
 }
 renovar_usuario() {
-banner
-sep
-echo -e "  ${Y}  RENOVAR USUARIO SSH${NC}"
-sep
-echo ""
 
+    banner
+    sep
+    echo -e "  ${Y}  RENOVAR USUARIO${NC}"
+    sep
+    echo ""
 
-awk -F: '$3>=1000 && $1!="nobody" {print $1}' /etc/passwd | while read user; do
-    EXP=$(chage -l "$user" 2>/dev/null | grep "Account expires" | cut -d: -f2 | xargs)
-    printf "  ${Y}%-20s${NC} %s\n" "$user" "$EXP"
-done
+    declare -A USERS
+    NUM=1
 
-echo ""
-read -p "  Usuario a renovar: " REN_USR
+    for FILE in /etc/dealer-adm/userDIR/*; do
 
-id "$REN_USR" &>/dev/null || {
-    echo -e "  ${R}No encontrado${NC}"
-    sleep 1
-    return
-}
+        [ ! -f "$FILE" ] && continue
 
-read -p "  Dias a agregar (default 30): " REN_DAYS
+        USER=$(grep '^usuario:' "$FILE" | cut -d' ' -f2-)
+        NOMBRE=$(grep '^nombre:' "$FILE" | cut -d' ' -f2-)
+        TIPO=$(grep '^tipo:' "$FILE" | cut -d' ' -f2-)
+        FECHA=$(grep '^fecha:' "$FILE" | cut -d' ' -f2-)
+
+        FECHA_SHOW=$(date -d "$FECHA" +%d-%m-%Y 2>/dev/null)
+        [ -z "$FECHA_SHOW" ] && FECHA_SHOW="$FECHA"
+
+        case "$TIPO" in
+            ssh)
+                COLOR="${G}"
+                TIPO_SHOW="SSH"
+            ;;
+            token)
+                COLOR="${Y}"
+                TIPO_SHOW="TOKEN"
+            ;;
+            hwid)
+                COLOR="${C}"
+                TIPO_SHOW="HWID"
+            ;;
+            *)
+                COLOR="${W}"
+                TIPO_SHOW="$TIPO"
+            ;;
+        esac
+
+        echo -e "  ${W}[$NUM]${NC} ${COLOR}$NOMBRE${NC} (${TIPO_SHOW}) - $FECHA_SHOW"
+
+        USERS[$NUM]="$USER"
+
+        ((NUM++))
+
+    done
+
+    echo ""
+    read -p "  Seleccione usuario: " OP
+
+    REN_USR="${USERS[$OP]}"
+
+    [ -z "$REN_USR" ] && return
+
+    read -p "  Dias a agregar (default 30): " REN_DAYS
 REN_DAYS=${REN_DAYS:-30}
 
-EXP_DATE=$(date -d "+${REN_DAYS} days" +%Y-%m-%d)
-EXP_SHOW=$(date -d "+${REN_DAYS} days" +%d/%m/%Y)
+CUR_EXP=$(grep '^fecha:' "/etc/dealer-adm/userDIR/$REN_USR" | cut -d' ' -f2-)
 
-usermod -e "$EXP_DATE" "$REN_USR"
-chage -E "$EXP_DATE" "$REN_USR"
+NOW_TS=$(date +%s)
+EXP_TS=$(date -d "$CUR_EXP" +%s 2>/dev/null)
 
-# ==========================================
-# ACTUALIZAR CHECKUSER
-# ==========================================
-if [ -f /etc/dealer-adm/userDIR/$REN_USR ]; then
-    sed -i "s/^fecha:.*/fecha: $EXP_DATE/" /etc/dealer-adm/userDIR/$REN_USR
+if [ -z "$EXP_TS" ] || [ "$EXP_TS" -lt "$NOW_TS" ]; then
+    BASE_DATE=$(date +%Y-%m-%d)
+else
+    BASE_DATE="$CUR_EXP"
 fi
-# ==========================================
 
-echo -e "  ${G}OK $REN_USR renovado hasta $EXP_SHOW${NC}"
-sleep 2
+EXP_DATE=$(date -d "$BASE_DATE +${REN_DAYS} days" +%Y-%m-%d)
+EXP_SHOW=$(date -d "$EXP_DATE" +%d-%m-%Y)
+
+    usermod -e "$EXP_DATE" "$REN_USR"
+    chage -E "$EXP_DATE" "$REN_USR"
+
+    if [ -f "/etc/dealer-adm/userDIR/$REN_USR" ]; then
+        sed -i "s/^fecha:.*/fecha: $EXP_DATE/" "/etc/dealer-adm/userDIR/$REN_USR"
+    fi
+
+    NOMBRE=$(grep '^nombre:' "/etc/dealer-adm/userDIR/$REN_USR" | cut -d' ' -f2-)
+
+    echo ""
+    echo -e "  ${G}✓ $NOMBRE renovado hasta $EXP_SHOW${NC}"
+
+    sleep 2
 
 }
+editar_limite() {
 
+    banner
+    sep
+    echo -e "  ${Y}  EDITAR LIMITE${NC}"
+    sep
+    echo ""
 
+    NUM=1
+
+    declare -A USERS
+
+    for FILE in /etc/dealer-adm/userDIR/*; do
+
+        [ ! -f "$FILE" ] && continue
+
+        USER=$(grep '^usuario:' "$FILE" | cut -d' ' -f2-)
+        NOMBRE=$(grep '^nombre:' "$FILE" | cut -d' ' -f2-)
+
+        LIMITE=$(grep '^limite:' "$FILE" | cut -d' ' -f2-)
+
+        echo -e "  ${W}[$NUM]${NC} $NOMBRE  [Limite:$LIMITE]"
+
+        USERS[$NUM]=$USER
+
+        ((NUM++))
+
+    done
+
+    echo ""
+
+    read -p "  Seleccione: " OP
+
+    USER=${USERS[$OP]}
+
+    [ -z "$USER" ] && return
+
+    read -p "  Nuevo limite: " NEW_LIMIT
+
+    [ -z "$NEW_LIMIT" ] && return
+
+    sed -i "s/^limite:.*/limite: $NEW_LIMIT/" \
+    /etc/dealer-adm/userDIR/$USER
+
+    echo ""
+    echo -e "  ${G}Limite actualizado${NC}"
+
+    sleep 2
+
+}
 menu_usuarios() {
     while true; do
         banner; sep; echo -e "  ${Y}  GESTIÓN DE USUARIOS SSH${NC}"; sep; echo ""
@@ -1229,6 +1648,7 @@ menu_usuarios() {
         echo -e "  ${W}[2]${NC} Listar usuarios"
         echo -e "  ${W}[3]${NC} Eliminar usuario"
         echo -e "  ${W}[4]${NC} Renovar usuario"
+        echo -e "  ${W}[5]${NC} Editar limite"
         echo -e "  ${W}[0]${NC} Volver"; sep
         read -p "  Opcion: " OPT
         case $OPT in
@@ -1236,6 +1656,7 @@ menu_usuarios() {
             2) listar_usuarios ;;
             3) eliminar_usuario ;;
             4) renovar_usuario ;;
+            5) editar_limite ;;
             0) break ;;
         esac
     done
