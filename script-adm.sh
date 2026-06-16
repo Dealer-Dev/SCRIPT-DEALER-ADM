@@ -1362,6 +1362,176 @@ modificar_password_token() {
     sleep 2
 
 }
+crear_usuario_ssh_api() {
+
+    USR_NAME="$1"
+    USR_PASS="$2"
+    USR_DAYS="${3:-30}"
+    USR_LIMIT="${4:-1}"
+
+    EXP_DATE=$(date -d "+${USR_DAYS} days" +%Y-%m-%d)
+
+    if id "$USR_NAME" &>/dev/null; then
+
+        usermod -e "$EXP_DATE" "$USR_NAME"
+        echo "$USR_NAME:$USR_PASS" | chpasswd
+
+    else
+
+        useradd -M -s /bin/false -e "$EXP_DATE" "$USR_NAME"
+        echo "$USR_NAME:$USR_PASS" | chpasswd
+
+        chage -E "$EXP_DATE" -M 99999 "$USR_NAME"
+        usermod -f 0 "$USR_NAME"
+
+    fi
+
+    mkdir -p /etc/dealer-adm/userDIR
+
+    cat > /etc/dealer-adm/userDIR/$USR_NAME << EOF
+tipo: ssh
+nombre: $USR_NAME
+usuario: $USR_NAME
+password: $USR_PASS
+fecha: $EXP_DATE
+limite: $USR_LIMIT
+EOF
+
+    if [ -f /etc/hysteria/config.json ] && command -v jq >/dev/null 2>&1; then
+
+        if ! jq -e --arg user "$USR_NAME" '
+            .auth.config[] | startswith($user + ":")
+        ' /etc/hysteria/config.json >/dev/null 2>&1; then
+
+            TMPFILE=$(mktemp)
+
+            jq --arg user "$USR_NAME" --arg pass "$USR_PASS" '
+                .auth.config += [($user + ":" + $pass)]
+            ' /etc/hysteria/config.json > "$TMPFILE"
+
+            mv "$TMPFILE" /etc/hysteria/config.json
+
+            systemctl restart hysteria-server >/dev/null 2>&1
+
+        fi
+
+    fi
+
+}
+crear_usuario_hwid_api() {
+
+    NOMBRE="$1"
+    HWID="$2"
+    USR_DAYS="${3:-30}"
+
+    EXP_DATE=$(date -d "+${USR_DAYS} days" +%Y-%m-%d)
+
+    if id "$HWID" &>/dev/null; then
+
+        usermod -e "$EXP_DATE" "$HWID"
+        echo "$HWID:$HWID" | chpasswd
+
+    else
+
+        useradd -M -s /bin/false -e "$EXP_DATE" "$HWID"
+        echo "$HWID:$HWID" | chpasswd
+
+        chage -E "$EXP_DATE" -M 99999 "$HWID"
+        usermod -f 0 "$HWID"
+
+    fi
+
+    mkdir -p /etc/dealer-adm/userDIR
+
+    cat > /etc/dealer-adm/userDIR/$HWID << EOF
+tipo: hwid
+nombre: $NOMBRE
+usuario: $HWID
+password: HWID
+fecha: $EXP_DATE
+limite: 1
+EOF
+
+    if [ -f /etc/hysteria/config.json ] && command -v jq >/dev/null 2>&1; then
+
+        if ! jq -e --arg user "$HWID" '
+            .auth.config[] | startswith($user + ":")
+        ' /etc/hysteria/config.json >/dev/null 2>&1; then
+
+            TMPFILE=$(mktemp)
+
+            jq --arg user "$HWID" --arg pass "$HWID" '
+                .auth.config += [($user + ":" + $pass)]
+            ' /etc/hysteria/config.json > "$TMPFILE"
+
+            mv "$TMPFILE" /etc/hysteria/config.json
+
+            systemctl restart hysteria-server >/dev/null 2>&1
+
+        fi
+
+    fi
+
+}
+crear_usuario_token_api() {
+
+    NOMBRE="$1"
+    TOKEN="$2"
+    USR_DAYS="${3:-30}"
+
+    [ ! -f /etc/dealer-adm/token_password ] && return 1
+
+    TOKEN_PASS=$(cat /etc/dealer-adm/token_password)
+
+    EXP_DATE=$(date -d "+${USR_DAYS} days" +%Y-%m-%d)
+
+    if id "$TOKEN" &>/dev/null; then
+
+        usermod -e "$EXP_DATE" "$TOKEN"
+        echo "$TOKEN:$TOKEN_PASS" | chpasswd
+
+    else
+
+        useradd -M -s /bin/false -e "$EXP_DATE" "$TOKEN"
+        echo "$TOKEN:$TOKEN_PASS" | chpasswd
+
+        chage -E "$EXP_DATE" -M 99999 "$TOKEN"
+        usermod -f 0 "$TOKEN"
+
+    fi
+
+    mkdir -p /etc/dealer-adm/userDIR
+
+    cat > /etc/dealer-adm/userDIR/$TOKEN << EOF
+tipo: token
+nombre: $NOMBRE
+usuario: $TOKEN
+password: $TOKEN_PASS
+fecha: $EXP_DATE
+limite: 1
+EOF
+
+    if [ -f /etc/hysteria/config.json ] && command -v jq >/dev/null 2>&1; then
+
+        if ! jq -e --arg user "$TOKEN" '
+            .auth.config[] | startswith($user + ":")
+        ' /etc/hysteria/config.json >/dev/null 2>&1; then
+
+            TMPFILE=$(mktemp)
+
+            jq --arg user "$TOKEN" --arg pass "$TOKEN_PASS" '
+                .auth.config += [($user + ":" + $pass)]
+            ' /etc/hysteria/config.json > "$TMPFILE"
+
+            mv "$TMPFILE" /etc/hysteria/config.json
+
+            systemctl restart hysteria-server >/dev/null 2>&1
+
+        fi
+
+    fi
+
+}
 usuarios_ssh_online_count() {
     banner
     sep
