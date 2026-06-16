@@ -1784,29 +1784,23 @@ desinstalar_script() {
     exit 0
 }
 actualizar_script() {
-    banner; sep
-    echo -e "  ${Y}  ACTUALIZAR SCRIPT${NC}"; sep; echo ""
-    echo -e "  ${C}Descargando ultima version...${NC}"
-    echo -e "  ${C}Descargando ultima version...${NC}"
-    wget -q -O /usr/local/bin/menu "https://raw.githubusercontent.com/Dealer-Dev/SCRIPT-DEALER-ADM/main/script-adm.sh?$(date +%s)"
-    chmod +x /usr/local/bin/menu
-    mkdir -p /etc/dealer-adm
-    touch /etc/dealer-adm/.licensed
-    echo -e "  ${G}OK Script actualizado a v$(grep SCRIPT_VERSION /usr/local/bin/menu | head -1 | grep -o '[0-9.]*')${NC}"
-    sleep 2
-    exec /usr/local/bin/menu
-}
+    banner
+    sep
+    echo -e "  ${Y}  ACTUALIZAR SCRIPT${NC}"
+    sep
+    echo ""
 
-actualizar_script() {
-    banner; sep
-    echo -e "  ${Y}  ACTUALIZAR SCRIPT${NC}"; sep; echo ""
     echo -e "  ${C}Descargando ultima version...${NC}"
-    echo -e "  ${C}Descargando ultima version...${NC}"
+
     wget -q -O /usr/local/bin/menu "https://raw.githubusercontent.com/Dealer-Dev/SCRIPT-DEALER-ADM/main/script-adm.sh?$(date +%s)"
+
     chmod +x /usr/local/bin/menu
+
     mkdir -p /etc/dealer-adm
     touch /etc/dealer-adm/.licensed
+
     echo -e "  ${G}OK Script actualizado a v$(grep SCRIPT_VERSION /usr/local/bin/menu | head -1 | grep -o '[0-9.]*')${NC}"
+
     sleep 2
     exec /usr/local/bin/menu
 }
@@ -1993,20 +1987,6 @@ EOF_JAIL
     done
 }
 
-
-actualizar_script() {
-    banner; sep
-    echo -e "  ${Y}  ACTUALIZAR SCRIPT${NC}"; sep; echo ""
-    echo -e "  ${C}Descargando ultima version...${NC}"
-    echo -e "  ${C}Descargando ultima version...${NC}"
-    wget -q -O /usr/local/bin/menu "https://raw.githubusercontent.com/Dealer-Dev/SCRIPT-DEALER-ADM/main/script-adm.sh?$(date +%s)"
-    chmod +x /usr/local/bin/menu
-    mkdir -p /etc/dealer-adm
-    touch /etc/dealer-adm/.licensed
-    echo -e "  ${G}OK Script actualizado a v$(grep SCRIPT_VERSION /usr/local/bin/menu | head -1 | grep -o '[0-9.]*')${NC}"
-    sleep 2
-    exec /usr/local/bin/menu
-}
 
 menu_atacantes() {
     banner; sep
@@ -2925,33 +2905,6 @@ menu_herramientas() {
     done
 }
 
-actualizar_script() {
-    banner; sep
-    echo -e "  ${Y}  ACTUALIZAR SCRIPT${NC}"; sep; echo ""
-    echo -e "  ${C}Descargando ultima version...${NC}"
-    echo -e "  ${C}Descargando ultima version...${NC}"
-    wget -q -O /usr/local/bin/menu "https://raw.githubusercontent.com/DarkFull0726/SSHSCRIPT-LTM/main/sshscript-ltm.sh?$(date +%s)"
-    chmod +x /usr/local/bin/menu
-    mkdir -p /etc/dealer-adm
-    touch /etc/dealer-adm/.licensed
-    echo -e "  ${G}OK Script actualizado a v$(grep SCRIPT_VERSION /usr/local/bin/menu | head -1 | grep -o '[0-9.]*')${NC}"
-    sleep 2
-    exec /usr/local/bin/menu
-}
-
-actualizar_script() {
-    banner; sep
-    echo -e "  ${Y}  ACTUALIZAR SCRIPT${NC}"; sep; echo ""
-    echo -e "  ${C}Descargando ultima version...${NC}"
-    echo -e "  ${C}Descargando ultima version...${NC}"
-    wget -q -O /usr/local/bin/menu "https://raw.githubusercontent.com/DarkFull0726/SSHSCRIPT-LTM/main/sshscript-ltm.sh?$(date +%s)"
-    chmod +x /usr/local/bin/menu
-    mkdir -p /etc/dealer-adm
-    touch /etc/dealer-adm/.licensed
-    echo -e "  ${G}OK Script actualizado a v$(grep SCRIPT_VERSION /usr/local/bin/menu | head -1 | grep -o '[0-9.]*')${NC}"
-    sleep 2
-    exec /usr/local/bin/menu
-}
 
 menu_atacantes() {
     banner; sep
@@ -3135,20 +3088,6 @@ EOF_JAIL
     done
 }
 
-
-actualizar_script() {
-    banner; sep
-    echo -e "  ${Y}  ACTUALIZAR SCRIPT${NC}"; sep; echo ""
-    echo -e "  ${C}Descargando ultima version...${NC}"
-    echo -e "  ${C}Descargando ultima version...${NC}"
-    wget -q -O /usr/local/bin/menu "https://raw.githubusercontent.com/DarkFull0726/SSHSCRIPT-LTM/main/sshscript-ltm.sh?$(date +%s)"
-    chmod +x /usr/local/bin/menu
-    mkdir -p /etc/dealer-adm
-    touch /etc/dealer-adm/.licensed
-    echo -e "  ${G}OK Script actualizado a v$(grep SCRIPT_VERSION /usr/local/bin/menu | head -1 | grep -o '[0-9.]*')${NC}"
-    sleep 2
-    exec /usr/local/bin/menu
-}
 
 menu_atacantes() {
     banner; sep
