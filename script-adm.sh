@@ -1532,6 +1532,79 @@ EOF
     fi
 
 }
+renovar_usuario_api() {
+
+    USER="$1"
+    DAYS="${2:-30}"
+
+    [ -z "$USER" ] && return 1
+
+    EXP_DATE=$(date -d "+${DAYS} days" +%Y-%m-%d)
+
+    if id "$USER" &>/dev/null; then
+        usermod -e "$EXP_DATE" "$USER"
+        chage -E "$EXP_DATE" "$USER"
+    fi
+
+    if [ -f "/etc/dealer-adm/userDIR/$USER" ]; then
+        sed -i "s/^fecha:.*/fecha: $EXP_DATE/" \
+        "/etc/dealer-adm/userDIR/$USER"
+    fi
+
+}
+eliminar_usuario_api() {
+
+    USER="$1"
+
+    [ -z "$USER" ] && return 1
+
+    pkill -u "$USER" 2>/dev/null
+
+    userdel -f "$USER" 2>/dev/null
+
+    rm -f "/etc/dealer-adm/userDIR/$USER"
+
+    if [ -f /etc/hysteria/config.json ] && command -v jq >/dev/null 2>&1; then
+
+        TMPFILE=$(mktemp)
+
+        jq --arg user "$USER" '
+            .auth.config |= map(
+                select(startswith($user + ":") | not)
+            )
+        ' /etc/hysteria/config.json > "$TMPFILE"
+
+        mv "$TMPFILE" /etc/hysteria/config.json
+
+        systemctl restart hysteria-server >/dev/null 2>&1
+
+    fi
+
+}
+obtener_usuario_api() {
+
+    USER="$1"
+
+    FILE="/etc/dealer-adm/userDIR/$USER"
+
+    [ ! -f "$FILE" ] && return 1
+
+    cat "$FILE"
+
+}
+listar_usuarios_api() {
+
+    for FILE in /etc/dealer-adm/userDIR/*; do
+
+        [ ! -f "$FILE" ] && continue
+
+        echo "----------------"
+
+        cat "$FILE"
+
+    done
+
+}
 usuarios_ssh_online_count() {
     banner
     sep
