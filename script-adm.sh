@@ -937,6 +937,7 @@ menu_users_ziv() {
 # ══════════════════════════════════════════
 
 listar_usuarios() {
+
     banner
     sep
     echo -e "  ${Y}  USUARIOS ACTIVOS${NC}"
@@ -955,6 +956,11 @@ listar_usuarios() {
         PASSWORD=$(grep '^password:' "$FILE" | cut -d' ' -f2-)
         FECHA=$(grep '^fecha:' "$FILE" | cut -d' ' -f2-)
         LIMITE=$(grep '^limite:' "$FILE" | cut -d' ' -f2-)
+
+        # Compatibilidad con usuarios antiguos
+        [ -z "$NOMBRE" ] && NOMBRE="$USUARIO"
+        [ -z "$TIPO" ] && TIPO="ssh"
+        [ -z "$LIMITE" ] && LIMITE="1"
 
         FECHA_SHOW=$(date -d "$FECHA" +%d-%m-%Y 2>/dev/null)
         [ -z "$FECHA_SHOW" ] && FECHA_SHOW="$FECHA"
@@ -978,16 +984,17 @@ listar_usuarios() {
             ;;
         esac
 
-        echo -e "  ${W}[$NUM]${NC} ${G}$NOMBRE${NC}"
-        echo -e "      └ ${COLOR_TIPO}$TIPO_SHOW${NC} | ${W}$USUARIO${NC} | Limite:${LIMITE} | Expira:${FECHA_SHOW}"
-        echo ""
+        echo -e " ${W}[$NUM]${NC} ${G}$NOMBRE${NC}"
+        echo -e "     └ ${COLOR_TIPO}${TIPO_SHOW}${NC} | ${W}$USUARIO${NC} | Limite:${LIMITE} | Expira:${FECHA_SHOW}"
 
         ((NUM++))
 
     done
 
+    echo ""
     sep
     read -p "  ENTER..."
+
 }
 crear_usuario() {
 
