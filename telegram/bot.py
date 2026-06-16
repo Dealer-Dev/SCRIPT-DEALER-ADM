@@ -29,9 +29,9 @@ API = "/etc/dealer-adm/bot/dealer_api.sh"
 
 def autorizado(update: Update):
 
-```
+
 return update.effective_user.id == ADMIN_ID
-```
+
 
 # ==========================================
 
@@ -41,7 +41,7 @@ return update.effective_user.id == ADMIN_ID
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-```
+
 if not autorizado(update):
     return
 
@@ -55,7 +55,7 @@ await update.message.reply_text(
     "/usuarios\n"
     "/online"
 )
-```
+
 
 # ==========================================
 
@@ -65,7 +65,7 @@ await update.message.reply_text(
 
 async def agregar(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-```
+
 if not autorizado(update):
     return
 
@@ -102,7 +102,7 @@ except Exception:
         "Uso:\n"
         "/agregar usuario password dias limite"
     )
-```
+
 
 # ==========================================
 
@@ -112,7 +112,7 @@ except Exception:
 
 async def token(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-```
+
 if not autorizado(update):
     return
 
@@ -145,7 +145,7 @@ except Exception:
         "Uso:\n"
         "/token nombre token dias"
     )
-```
+
 
 # ==========================================
 
@@ -155,7 +155,7 @@ except Exception:
 
 async def hwid(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-```
+
 if not autorizado(update):
     return
 
@@ -188,7 +188,7 @@ except Exception:
         "Uso:\n"
         "/hwid nombre hwid dias"
     )
-```
+
 
 # ==========================================
 
@@ -198,7 +198,7 @@ except Exception:
 
 async def renovar(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-```
+
 if not autorizado(update):
     return
 
@@ -229,7 +229,7 @@ except Exception:
         "Uso:\n"
         "/renovar usuario dias"
     )
-```
+
 
 # ==========================================
 
@@ -239,7 +239,7 @@ except Exception:
 
 async def eliminar(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-```
+
 if not autorizado(update):
     return
 
@@ -266,7 +266,7 @@ except Exception:
         "Uso:\n"
         "/eliminar usuario"
     )
-```
+
 
 # ==========================================
 
@@ -276,7 +276,7 @@ except Exception:
 
 async def usuarios(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-```
+
 if not autorizado(update):
     return
 
@@ -295,7 +295,7 @@ except Exception as e:
     await update.message.reply_text(
         f"Error:\n{e}"
     )
-```
+
 
 # ==========================================
 
@@ -305,7 +305,7 @@ except Exception as e:
 
 async def online(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-```
+
 if not autorizado(update):
     return
 
@@ -324,7 +324,7 @@ except Exception as e:
     await update.message.reply_text(
         f"Error:\n{e}"
     )
-```
+
 
 # ==========================================
 
@@ -334,7 +334,7 @@ except Exception as e:
 
 def main():
 
-```
+
 app = Application.builder().token(BOT_TOKEN).build()
 
 app.add_handler(CommandHandler("start", start))
@@ -350,7 +350,7 @@ app.add_handler(CommandHandler("usuarios", usuarios))
 app.add_handler(CommandHandler("online", online))
 
 app.run_polling()
-```
+
 
 if **name** == "**main**":
 main()
