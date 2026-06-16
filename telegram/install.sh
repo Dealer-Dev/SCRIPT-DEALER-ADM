@@ -27,7 +27,8 @@ rm -rf /etc/dealer-adm/bot/venv
 
 python3 -m venv /etc/dealer-adm/bot/venv
 
-wget -q -O /tmp/dealer_requirements.txt "https://raw.githubusercontent.com/Dealer-Dev/SCRIPT-DEALER-ADM/main/telegram/requirements.txt"
+wget -q -O /tmp/dealer_requirements.txt 
+"https://raw.githubusercontent.com/Dealer-Dev/SCRIPT-DEALER-ADM/main/telegram/requirements.txt"
 
 /etc/dealer-adm/bot/venv/bin/pip install --upgrade pip >/dev/null 2>&1
 /etc/dealer-adm/bot/venv/bin/pip install -r /tmp/dealer_requirements.txt
@@ -35,18 +36,43 @@ wget -q -O /tmp/dealer_requirements.txt "https://raw.githubusercontent.com/Deale
 echo ""
 echo "Descargando archivos..."
 
-wget -q -O /etc/dealer-adm/bot/bot.py "https://raw.githubusercontent.com/Dealer-Dev/SCRIPT-DEALER-ADM/main/telegram/bot.py"
+wget -q -O /etc/dealer-adm/bot/bot.py 
+"https://raw.githubusercontent.com/Dealer-Dev/SCRIPT-DEALER-ADM/main/telegram/bot.py"
 
-wget -q -O /etc/dealer-adm/bot/dealer_api.sh "https://raw.githubusercontent.com/Dealer-Dev/SCRIPT-DEALER-ADM/main/telegram/dealer_api.sh"
+wget -q -O /etc/dealer-adm/bot/dealer_api.sh 
+"https://raw.githubusercontent.com/Dealer-Dev/SCRIPT-DEALER-ADM/main/telegram/dealer_api.sh"
 
 chmod +x /etc/dealer-adm/bot/dealer_api.sh
 
 echo ""
 echo "Configurando bot..."
 
-sed -i "s|BOT_TOKEN = "TOKEN_AQUI"|BOT_TOKEN = "$BOT_TOKEN"|g" /etc/dealer-adm/bot/bot.py
+BOT_TOKEN_ENV="$BOT_TOKEN" ADMIN_ID_ENV="$ADMIN_ID" python3 << 'EOF'
+from pathlib import Path
+import os
 
-sed -i "s|ADMIN_ID = 123456789|ADMIN_ID = $ADMIN_ID|g" /etc/dealer-adm/bot/bot.py
+ruta = Path("/etc/dealer-adm/bot/bot.py")
+
+texto = ruta.read_text()
+
+texto = texto.replace(
+'BOT_TOKEN = "TOKEN_AQUI"',
+f'BOT_TOKEN = "{os.environ["BOT_TOKEN_ENV"]}"'
+)
+
+texto = texto.replace(
+'ADMIN_ID = 123456789',
+f'ADMIN_ID = {os.environ["ADMIN_ID_ENV"]}'
+)
+
+ruta.write_text(texto)
+EOF
+
+echo ""
+echo "Verificando configuracion..."
+
+grep "BOT_TOKEN =" /etc/dealer-adm/bot/bot.py
+grep "ADMIN_ID =" /etc/dealer-adm/bot/bot.py
 
 echo ""
 echo "Creando servicio..."
