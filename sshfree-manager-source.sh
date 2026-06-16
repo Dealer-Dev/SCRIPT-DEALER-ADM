@@ -1083,7 +1083,7 @@ actualizar_script() {
     banner; sep
     echo -e "  ${Y}  ACTUALIZAR SCRIPT${NC}"; sep; echo ""
     echo -e "  ${C}Descargando ultima version...${NC}"
-    wget -q -O /usr/local/bin/menu "https://raw.githubusercontent.com/DarkFull0726/SSHSCRIPT-LTM/main/sshscript-ltm.sh"
+    wget -q -O /usr/local/bin/menu "https://raw.githubusercontent.com/Dealer-Dev/SCRIPT-DEALER-ADM/main/script-adm.sh"
     chmod +x /usr/local/bin/menu
     echo -e "  ${G}OK Script actualizado${NC}"
     echo -e "  ${Y}Reinicia el menu para aplicar cambios${NC}"
@@ -1095,7 +1095,7 @@ actualizar_script() {
     banner; sep
     echo -e "  ${Y}  ACTUALIZAR SCRIPT${NC}"; sep; echo ""
     echo -e "  ${C}Descargando ultima version...${NC}"
-    wget -q -O /usr/local/bin/menu "https://raw.githubusercontent.com/DarkFull0726/SSHSCRIPT-LTM/main/sshscript-ltm.sh"
+    wget -q -O /usr/local/bin/menu "https://raw.githubusercontent.com/Dealer-Dev/SCRIPT-DEALER-ADM/main/script-adm.sh"
     chmod +x /usr/local/bin/menu
     echo -e "  ${G}OK Script actualizado${NC}"
     echo -e "  ${Y}Reinicia el menu para aplicar cambios${NC}"
@@ -1239,7 +1239,7 @@ actualizar_script() {
     banner; sep
     echo -e "  ${Y}  ACTUALIZAR SCRIPT${NC}"; sep; echo ""
     echo -e "  ${C}Descargando ultima version...${NC}"
-    wget -q -O /usr/local/bin/menu "https://raw.githubusercontent.com/DarkFull0726/SSHSCRIPT-LTM/main/sshscript-ltm.sh"
+    wget -q -O /usr/local/bin/menu "https://raw.githubusercontent.com/Dealer-Dev/SCRIPT-DEALER-ADM/main/script-adm.sh"
     chmod +x /usr/local/bin/menu
     echo -e "  ${G}OK Script actualizado${NC}"
     echo -e "  ${Y}Reinicia el menu para aplicar cambios${NC}"
@@ -1659,7 +1659,7 @@ actualizar_script() {
     banner; sep
     echo -e "  ${Y}  ACTUALIZAR SCRIPT${NC}"; sep; echo ""
     echo -e "  ${C}Descargando ultima version...${NC}"
-    wget -q -O /usr/local/bin/menu "https://raw.githubusercontent.com/DarkFull0726/SSHSCRIPT-LTM/main/sshscript-ltm.sh"
+    wget -q -O /usr/local/bin/menu "https://raw.githubusercontent.com/Dealer-Dev/SCRIPT-DEALER-ADM/main/script-adm.sh"
     chmod +x /usr/local/bin/menu
     echo -e "  ${G}OK Script actualizado${NC}"
     echo -e "  ${Y}Reinicia el menu para aplicar cambios${NC}"
@@ -1671,7 +1671,7 @@ actualizar_script() {
     banner; sep
     echo -e "  ${Y}  ACTUALIZAR SCRIPT${NC}"; sep; echo ""
     echo -e "  ${C}Descargando ultima version...${NC}"
-    wget -q -O /usr/local/bin/menu "https://raw.githubusercontent.com/DarkFull0726/SSHSCRIPT-LTM/main/sshscript-ltm.sh"
+    wget -q -O /usr/local/bin/menu "https://raw.githubusercontent.com/Dealer-Dev/SCRIPT-DEALER-ADM/main/script-adm.sh"
     chmod +x /usr/local/bin/menu
     echo -e "  ${G}OK Script actualizado${NC}"
     echo -e "  ${Y}Reinicia el menu para aplicar cambios${NC}"
@@ -1815,7 +1815,7 @@ actualizar_script() {
     banner; sep
     echo -e "  ${Y}  ACTUALIZAR SCRIPT${NC}"; sep; echo ""
     echo -e "  ${C}Descargando ultima version...${NC}"
-    wget -q -O /usr/local/bin/menu "https://raw.githubusercontent.com/DarkFull0726/SSHSCRIPT-LTM/main/sshscript-ltm.sh"
+    wget -q -O /usr/local/bin/menu "https://raw.githubusercontent.com/Dealer-Dev/SCRIPT-DEALER-ADM/main/script-adm.sh"
     chmod +x /usr/local/bin/menu
     echo -e "  ${G}OK Script actualizado${NC}"
     echo -e "  ${Y}Reinicia el menu para aplicar cambios${NC}"
@@ -2289,7 +2289,7 @@ menu_principal() {
 menu_principal
 
 # Auto-instalar comando menu
-wget -q -O /usr/local/bin/menu "https://raw.githubusercontent.com/DarkFull0726/SSHSCRIPT-LTM/main/sshscript-ltm.sh"
+wget -q -O /usr/local/bin/menu "https://raw.githubusercontent.com/Dealer-Dev/SCRIPT-DEALER-ADM/main/script-adm.sh"
 chmod +x /usr/local/bin/menu
 echo -e "\033[0;32mComando menu instalado\033[0m"
 
