@@ -13,9 +13,11 @@ from telegram.ext import (
 # CONFIG
 # ==========================================
 
-BOT_TOKEN = "TOKEN_AQUI"
+import os
 
-ADMIN_ID = 123456789
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+
+ADMIN_ID = int(os.getenv("ADMIN_ID"))
 
 API = "/etc/dealer-adm/bot/dealer_api.sh"
 
