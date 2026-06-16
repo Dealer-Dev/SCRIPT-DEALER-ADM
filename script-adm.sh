@@ -4036,7 +4036,7 @@ menu_principal() {
         printf " \033[1;97m❬1❭ Usuarios SSH            ❬2❭ Usuarios VMess\033[0m\n"
         printf " \033[1;97m❬3❭ Usuarios ZIVPN          ❬4❭ Instalar Protocolos\033[0m\n"
         printf " \033[1;97m❬5❭ Usuarios SSH Online     ❬6❭ V2Ray Online\033[0m\n"
-        printf " \033[1;97m❬7❭ ZIV Online              ❬8❭ V2Ray Online\033[0m\n"
+        printf " \033[1;97m❬7❭ ZIV Online              ❬8❭ 🤖 Telegram Bot\033[0m\n"
         printf " ${NEON}Version: ${Y}v%s ${NEON}${NC}\n" "$SCRIPT_VERSION"
         sep
         printf " ${Y}❬9❭ 🖥️  %-18s${NC} ${R}❬10❭ 🗑️  %s${NC}\n" "Configurar MOTD" "Desinstalar"
