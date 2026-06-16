@@ -2,13 +2,17 @@
 
 import subprocess
 
+from telegram import Update
 from telegram.ext import (
-    Updater,
-    CommandHandler
+Application,
+CommandHandler,
+ContextTypes
 )
 
 # ==========================================
+
 # CONFIG
+
 # ==========================================
 
 BOT_TOKEN = "TOKEN_AQUI"
@@ -18,267 +22,335 @@ ADMIN_ID = 123456789
 API = "/etc/dealer-adm/bot/dealer_api.sh"
 
 # ==========================================
+
 # SEGURIDAD
-# ==========================================
-
-def autorizado(update):
-
-    return update.effective_user.id == ADMIN_ID
 
 # ==========================================
+
+def autorizado(update: Update):
+
+```
+return update.effective_user.id == ADMIN_ID
+```
+
+# ==========================================
+
 # START
-# ==========================================
-
-def start(update, context):
-
-    if not autorizado(update):
-        return
-
-    update.message.reply_text(
-        "🤖 Dealer Adm Bot Online\n\n"
-        "/agregar user pass dias limite\n"
-        "/token nombre token dias\n"
-        "/hwid nombre hwid dias\n"
-        "/renovar usuario dias\n"
-        "/eliminar usuario\n"
-        "/usuarios\n"
-        "/online"
-    )
 
 # ==========================================
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+```
+if not autorizado(update):
+    return
+
+await update.message.reply_text(
+    "🤖 Dealer Adm Bot Online\n\n"
+    "/agregar usuario password dias limite\n"
+    "/token nombre token dias\n"
+    "/hwid nombre hwid dias\n"
+    "/renovar usuario dias\n"
+    "/eliminar usuario\n"
+    "/usuarios\n"
+    "/online"
+)
+```
+
+# ==========================================
+
 # AGREGAR SSH
+
 # ==========================================
 
-def agregar(update, context):
+async def agregar(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    if not autorizado(update):
-        return
+```
+if not autorizado(update):
+    return
 
-    try:
+try:
 
-        user = context.args[0]
-        passwd = context.args[1]
-        dias = context.args[2]
-        limite = context.args[3]
+    user = context.args[0]
+    passwd = context.args[1]
+    dias = context.args[2]
+    limite = context.args[3]
 
-        subprocess.run([
+    subprocess.run(
+        [
             API,
             "agregar",
             user,
             passwd,
             dias,
             limite
-        ])
+        ],
+        check=True
+    )
 
-        update.message.reply_text(
-            f"Usuario SSH creado\n\n"
-            f"Usuario: {user}\n"
-            f"Password: {passwd}\n"
-            f"Dias: {dias}\n"
-            f"Limite: {limite}"
-        )
+    await update.message.reply_text(
+        f"✅ Usuario SSH creado\n\n"
+        f"Usuario: {user}\n"
+        f"Password: {passwd}\n"
+        f"Días: {dias}\n"
+        f"Límite: {limite}"
+    )
 
-    except:
+except Exception:
 
-        update.message.reply_text(
-            "Uso:\n"
-            "/agregar usuario password dias limite"
-        )
+    await update.message.reply_text(
+        "Uso:\n"
+        "/agregar usuario password dias limite"
+    )
+```
 
 # ==========================================
+
 # TOKEN
+
 # ==========================================
 
-def token(update, context):
+async def token(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    if not autorizado(update):
-        return
+```
+if not autorizado(update):
+    return
 
-    try:
+try:
 
-        nombre = context.args[0]
-        tokenv = context.args[1]
-        dias = context.args[2]
+    nombre = context.args[0]
+    tokenv = context.args[1]
+    dias = context.args[2]
 
-        subprocess.run([
+    subprocess.run(
+        [
             API,
             "token",
             nombre,
             tokenv,
             dias
-        ])
+        ],
+        check=True
+    )
 
-        update.message.reply_text(
-            f"Usuario TOKEN creado\n\n"
-            f"Nombre: {nombre}\n"
-            f"Token: {tokenv}"
-        )
+    await update.message.reply_text(
+        f"✅ Usuario TOKEN creado\n\n"
+        f"Nombre: {nombre}\n"
+        f"Token: {tokenv}"
+    )
 
-    except:
+except Exception:
 
-        update.message.reply_text(
-            "Uso:\n"
-            "/token nombre token dias"
-        )
+    await update.message.reply_text(
+        "Uso:\n"
+        "/token nombre token dias"
+    )
+```
 
 # ==========================================
+
 # HWID
+
 # ==========================================
 
-def hwid(update, context):
+async def hwid(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    if not autorizado(update):
-        return
+```
+if not autorizado(update):
+    return
 
-    try:
+try:
 
-        nombre = context.args[0]
-        hwidv = context.args[1]
-        dias = context.args[2]
+    nombre = context.args[0]
+    hwidv = context.args[1]
+    dias = context.args[2]
 
-        subprocess.run([
+    subprocess.run(
+        [
             API,
             "hwid",
             nombre,
             hwidv,
             dias
-        ])
+        ],
+        check=True
+    )
 
-        update.message.reply_text(
-            f"Usuario HWID creado\n\n"
-            f"Nombre: {nombre}\n"
-            f"HWID: {hwidv}"
-        )
+    await update.message.reply_text(
+        f"✅ Usuario HWID creado\n\n"
+        f"Nombre: {nombre}\n"
+        f"HWID: {hwidv}"
+    )
 
-    except:
+except Exception:
 
-        update.message.reply_text(
-            "Uso:\n"
-            "/hwid nombre hwid dias"
-        )
+    await update.message.reply_text(
+        "Uso:\n"
+        "/hwid nombre hwid dias"
+    )
+```
 
 # ==========================================
+
 # RENOVAR
+
 # ==========================================
 
-def renovar(update, context):
+async def renovar(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    if not autorizado(update):
-        return
+```
+if not autorizado(update):
+    return
 
-    try:
+try:
 
-        usuario = context.args[0]
-        dias = context.args[1]
+    usuario = context.args[0]
+    dias = context.args[1]
 
-        subprocess.run([
+    subprocess.run(
+        [
             API,
             "renovar",
             usuario,
             dias
-        ])
+        ],
+        check=True
+    )
 
-        update.message.reply_text(
-            f"Renovado\n\n"
-            f"Usuario: {usuario}\n"
-            f"Dias: {dias}"
-        )
+    await update.message.reply_text(
+        f"✅ Usuario renovado\n\n"
+        f"Usuario: {usuario}\n"
+        f"Días: {dias}"
+    )
 
-    except:
+except Exception:
 
-        update.message.reply_text(
-            "Uso:\n"
-            "/renovar usuario dias"
-        )
+    await update.message.reply_text(
+        "Uso:\n"
+        "/renovar usuario dias"
+    )
+```
 
 # ==========================================
+
 # ELIMINAR
+
 # ==========================================
 
-def eliminar(update, context):
+async def eliminar(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    if not autorizado(update):
-        return
+```
+if not autorizado(update):
+    return
 
-    try:
+try:
 
-        usuario = context.args[0]
+    usuario = context.args[0]
 
-        subprocess.run([
+    subprocess.run(
+        [
             API,
             "eliminar",
             usuario
-        ])
+        ],
+        check=True
+    )
 
-        update.message.reply_text(
-            f"Usuario eliminado:\n{usuario}"
-        )
+    await update.message.reply_text(
+        f"❌ Usuario eliminado:\n{usuario}"
+    )
 
-    except:
+except Exception:
 
-        update.message.reply_text(
-            "Uso:\n"
-            "/eliminar usuario"
-        )
+    await update.message.reply_text(
+        "Uso:\n"
+        "/eliminar usuario"
+    )
+```
 
 # ==========================================
+
 # USUARIOS
+
 # ==========================================
 
-def usuarios(update, context):
+async def usuarios(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    if not autorizado(update):
-        return
+```
+if not autorizado(update):
+    return
+
+try:
 
     salida = subprocess.check_output(
         [API, "usuarios"]
     ).decode()
 
-    update.message.reply_text(
+    await update.message.reply_text(
         salida if salida else "Sin usuarios"
     )
 
+except Exception as e:
+
+    await update.message.reply_text(
+        f"Error:\n{e}"
+    )
+```
+
 # ==========================================
+
 # ONLINE
+
 # ==========================================
 
-def online(update, context):
+async def online(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    if not autorizado(update):
-        return
+```
+if not autorizado(update):
+    return
+
+try:
 
     salida = subprocess.check_output(
         [API, "online"]
     ).decode()
 
-    update.message.reply_text(
+    await update.message.reply_text(
         salida if salida else "Sin usuarios online"
     )
 
+except Exception as e:
+
+    await update.message.reply_text(
+        f"Error:\n{e}"
+    )
+```
+
 # ==========================================
+
 # MAIN
+
 # ==========================================
 
 def main():
 
-    updater = Updater(BOT_TOKEN)
+```
+app = Application.builder().token(BOT_TOKEN).build()
 
-    dp = updater.dispatcher
+app.add_handler(CommandHandler("start", start))
 
-    dp.add_handler(CommandHandler("start", start))
+app.add_handler(CommandHandler("agregar", agregar))
+app.add_handler(CommandHandler("token", token))
+app.add_handler(CommandHandler("hwid", hwid))
 
-    dp.add_handler(CommandHandler("agregar", agregar))
-    dp.add_handler(CommandHandler("token", token))
-    dp.add_handler(CommandHandler("hwid", hwid))
+app.add_handler(CommandHandler("renovar", renovar))
+app.add_handler(CommandHandler("eliminar", eliminar))
 
-    dp.add_handler(CommandHandler("renovar", renovar))
-    dp.add_handler(CommandHandler("eliminar", eliminar))
+app.add_handler(CommandHandler("usuarios", usuarios))
+app.add_handler(CommandHandler("online", online))
 
-    dp.add_handler(CommandHandler("usuarios", usuarios))
-    dp.add_handler(CommandHandler("online", online))
+app.run_polling()
+```
 
-    updater.start_polling()
-    updater.idle()
-
-if __name__ == "__main__":
-    main()
+if **name** == "**main**":
+main()
