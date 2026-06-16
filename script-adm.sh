@@ -2388,7 +2388,7 @@ menu_banner_ssh() {
                 echo -e "  ${C}(Texto que aparece al conectar por SSH)${NC}"; sep; echo ""
                 echo -e "  Ejemplo:"
                 echo -e "  ╔══════════════════════════════════╗"
-                echo -e "  ║   SERVIDOR PRIVADO - SCRIPT DEALER ADM ║"
+                echo -e "  ║        SCRIPT DEALER ADM         ║"
                 echo -e "  ╚══════════════════════════════════╝"
                 echo ""; sep
                 read -p "  Texto del banner: " BANNER_TXT
@@ -3688,18 +3688,18 @@ menu_principal() {
             V2P=$(python3 -c "import json; c=json.load(open('/usr/local/etc/v2ray/config.json')); print(','.join([str(ib['port']) for ib in c.get('inbounds',[])]))" 2>/dev/null)
             [ -n "$V2P" ] && { [ -z "$C1" ] && C1="${NEON}◈${NC} ${W}V2Ray:${V2P}${NC} ${NEON}◆ ON${NC}" || { [ -z "$C2" ] && C2="${NEON}◈${NC} ${W}V2Ray:${V2P}${NC} ${NEON}◆ ON${NC}" || { echo -e " $C1    $C2"; C1="${NEON}◈${NC} ${W}V2Ray:${V2P}${NC} ${NEON}◆ ON${NC}"; C2=""; }; }; }
         fi
-        systemctl is-active --quiet zivpn 2>/dev/null && { [ -z "$C1" ] && C1="${NEON}◈${NC} ${W}ZIV VPN:5667${NC} ${NEON}◆ ON${NC}" || { [ -z "$C2" ] && C2="${NEON}◈${NC} ${W}ZIV VPN:5667${NC} ${NEON}◆ ON${NC}" || { echo -e " $C1    $C2"; C1="${NEON}◈${NC} ${W}ZIV VPN:5667${NC} ${NEON}◆ ON${NC}"; C2=""; }; }; }
+        systemctl is-active --quiet zivpn 2>/dev/null && { [ -z "$C1" ] && C1="${NEON}◈${NC} ${W}ZIVPN:5667${NC} ${NEON}◆ ON${NC}" || { [ -z "$C2" ] && C2="${NEON}◈${NC} ${W}ZIVPN:5667${NC} ${NEON}◆ ON${NC}" || { echo -e " $C1    $C2"; C1="${NEON}◈${NC} ${W}ZIVPN:5667${NC} ${NEON}◆ ON${NC}"; C2=""; }; }; }
         systemctl is-active --quiet server-sldns 2>/dev/null && { [ -z "$C1" ] && C1="${NEON}◈${NC} ${W}SlowDNS:5300${NC} ${NEON}◆ ON${NC}" || { [ -z "$C2" ] && C2="${NEON}◈${NC} ${W}SlowDNS:5300${NC} ${NEON}◆ ON${NC}" || { echo -e " $C1    $C2"; C1="${NEON}◈${NC} ${W}SlowDNS:5300${NC} ${NEON}◆ ON${NC}"; C2=""; }; }; }
         systemctl is-active --quiet dropbear 2>/dev/null && { [ -z "$C1" ] && C1="${NEON}◈${NC} ${W}Dropbear:${DB_PORT}${NC} ${NEON}◆ ON${NC}" || { [ -z "$C2" ] && C2="${NEON}◈${NC} ${W}Dropbear:${DB_PORT}${NC} ${NEON}◆ ON${NC}" || { echo -e " $C1    $C2"; C1="${NEON}◈${NC} ${W}Dropbear:${DB_PORT}${NC} ${NEON}◆ ON${NC}"; C2=""; }; }; }
-        systemctl is-active --quiet hysteria-server 2>/dev/null && { [ -z "$C1" ] && C1="${NEON}◈${NC} ${W}LTMUDPv1:36712${NC} ${NEON}◆ ON${NC}" || { [ -z "$C2" ] && C2="${NEON}◈${NC} ${W}LTMUDPv1:36712${NC} ${NEON}◆ ON${NC}" || { echo -e " $C1    $C2"; C1="${NEON}◈${NC} ${W}LTMUDPv1:36712${NC} ${NEON}◆ ON${NC}"; C2=""; }; }; }
+        systemctl is-active --quiet hysteria-server 2>/dev/null && { [ -z "$C1" ] && C1="${NEON}◈${NC} ${W}HYSTERIA:36712${NC} ${NEON}◆ ON${NC}" || { [ -z "$C2" ] && C2="${NEON}◈${NC} ${W}HYSTERIA:36712${NC} ${NEON}◆ ON${NC}" || { echo -e " $C1    $C2"; C1="${NEON}◈${NC} ${W}HYSTERIA:36712${NC} ${NEON}◆ ON${NC}"; C2=""; }; }; }
         [ -n "$C1" ] && [ -n "$C2" ] && echo -e " $C1    $C2" || { [ -n "$C1" ] && echo -e " $C1"; }
         [ -z "$C1" ] && echo -e " ${DIM}  Sin servicios activos${NC}"
         sep
-        printf " \033[1;97m❬1❭ ⚡ Usuarios SSH            ❬2❭ 📡 Usuarios VMess\033[0m\n"
-        printf " \033[1;97m❬3❭ 🔐 Usuarios ZIVPN          ❬4❭ 🛠  Herramientas\033[0m\n"
-        printf " \033[1;97m❬5❭ 👤 Usuarios SSH Online     ❬6❭ 📡 V2Ray Online\033[0m\n"
-        printf " \033[1;97m❬7❭ 🔒 ZIV Online\033[0m\n"
-        printf " ${NEON}❖ Version: ${Y}v%s ${NEON}❖${NC}\n" "$SCRIPT_VERSION"
+        printf " \033[1;97m❬1❭ Usuarios SSH            ❬2❭ Usuarios VMess\033[0m\n"
+        printf " \033[1;97m❬3❭ Usuarios ZIVPN          ❬4❭ Instalar Protocolos\033[0m\n"
+        printf " \033[1;97m❬5❭ Usuarios SSH Online     ❬6❭ V2Ray Online\033[0m\n"
+        printf " \033[1;97m❬7❭ ZIV Online\033[0m\n"
+        printf " ${NEON}Version: ${Y}v%s ${NEON}${NC}\n" "$SCRIPT_VERSION"
         sep
         printf " ${Y}❬9❭ 🖥️  %-18s${NC} ${R}❬10❭ 🗑️  %s${NC}\n" "Configurar MOTD" "Desinstalar"
         printf " ${Y}❬11❭ 🔄 Actualizar Script${NC}\n"
@@ -3719,7 +3719,7 @@ menu_principal() {
             9) instalar_motd ;;
             10) desinstalar_script ;;
             11) actualizar_script ;;
-            0) echo -e "\n  ${G}Hasta luego! — Dealer${NC}\n"; exit 0 ;;
+            0) echo -e "\n  ${G}Hasta luego!${NC}\n"; exit 0 ;;
             *) echo -e "  ${R}Opcion invalida${NC}"; sleep 1 ;;
         esac
     done
