@@ -23,9 +23,10 @@ apt install -y \
 python3 \
 python3-pip >/dev/null 2>&1
 
-pip3 install -r \
-https://raw.githubusercontent.com/Dealer-Dev/SCRIPT-DEALER-ADM/main/telegram/requirements.txt \
->/dev/null 2>&1
+wget -q -O /tmp/dealer_requirements.txt \
+https://raw.githubusercontent.com/Dealer-Dev/SCRIPT-DEALER-ADM/main/telegram/requirements.txt
+
+pip3 install -r /tmp/dealer_requirements.txt
 
 mkdir -p /etc/dealer-adm/bot
 
