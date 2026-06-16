@@ -2642,8 +2642,8 @@ menu_udp_hysteria_mod() {
             1)
                 echo -e "\n  ${C}Instalando UDP Hysteria Mod...${NC}"
                 curl -sL https://raw.githubusercontent.com/JotchuaDevz/JT-UDP-DEV/refs/heads/main/install_udp.sh -o /tmp/ltmudp_install.sh
-                sed -i 's/DOMAIN="requestlab-x.space"/DOMAIN="ltm.darkfullhn.xyz"/' /tmp/ltmudp_install.sh
-                sed -i 's/OBFS="jt"/OBFS="ltmudp"/' /tmp/ltmudp_install.sh
+                sed -i 's/DOMAIN="requestlab-x.space"/DOMAIN="www.dealer-servic.es"/' /tmp/ltmudp_install.sh
+                sed -i 's/OBFS="jt"/OBFS="DealerServicesUDP"/' /tmp/ltmudp_install.sh
                 sed -i 's/PASSWORD="jt"/PASSWORD="ltmudp"/' /tmp/ltmudp_install.sh
                 bash /tmp/ltmudp_install.sh > /tmp/ltmudp_out.txt 2>&1
                 grep -v "JT-UDP\|Felicitaciones\|gestor\|udp'\|Ahora puedes\|Script del gestor\|Creando enlace\|Descargando script" /tmp/ltmudp_out.txt | sed 's/JT-UDP/LTMUDPv1/g'
