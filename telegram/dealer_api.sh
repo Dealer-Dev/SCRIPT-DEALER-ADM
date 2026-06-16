@@ -1,6 +1,6 @@
 #!/bin/bash
 
-source /usr/local/bin/menu >/dev/null 2>&1
+source /etc/dealer-adm/dealer_api_functions.sh
 
 ACCION="$1"
 
@@ -32,10 +32,6 @@ case "$ACCION" in
 
     online)
         usuarios_online_api
-    ;;
-
-    *)
-        echo "ERROR"
     ;;
 
 esac
