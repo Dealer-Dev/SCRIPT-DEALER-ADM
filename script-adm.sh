@@ -4065,6 +4065,13 @@ menu_principal() {
 }
 
 [ "$EUID" -ne 0 ] && echo -e "${R}Ejecuta como root${NC}" && exit 1
+# ==========================================
+# MODO API
+# ==========================================
+
+if [ "$DEALER_API_MODE" = "1" ]; then
+    return 0 2>/dev/null || exit 0
+fi
 menu_principal
 
 # Auto-instalar comando menu
