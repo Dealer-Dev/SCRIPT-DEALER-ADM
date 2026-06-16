@@ -5,7 +5,7 @@
 #   Ubuntu 22/24/25
 # ═══════════════════════════════════════════════════════
 
-SCRIPT_VERSION="1.3"
+SCRIPT_VERSION="1.4"
 R='\033[0;31m'
 G='\033[0;32m'
 Y='\033[1;33m'
@@ -946,7 +946,7 @@ listar_usuarios() {
 
     NUM=1
 
-    for FILE in /etc/dealer-adm/userDIR/*; do
+    for FILE in $(find /etc/dealer-adm/userDIR -type f -printf '%T@ %p\n' | sort -n | cut -d' ' -f2-); do
 
         [ ! -f "$FILE" ] && continue
 
@@ -958,6 +958,7 @@ listar_usuarios() {
         LIMITE=$(grep '^limite:' "$FILE" | cut -d' ' -f2-)
 
         # Compatibilidad con usuarios antiguos
+        [ -z "$USUARIO" ] && USUARIO=$(basename "$FILE")
         [ -z "$NOMBRE" ] && NOMBRE="$USUARIO"
         [ -z "$TIPO" ] && TIPO="ssh"
         [ -z "$LIMITE" ] && LIMITE="1"
@@ -966,26 +967,36 @@ listar_usuarios() {
         [ -z "$FECHA_SHOW" ] && FECHA_SHOW="$FECHA"
 
         case "$TIPO" in
-            ssh)
-                COLOR_TIPO="${G}"
-                TIPO_SHOW="SSH"
-            ;;
-            token)
-                COLOR_TIPO="${Y}"
-                TIPO_SHOW="TOKEN"
-            ;;
-            hwid)
-                COLOR_TIPO="${C}"
-                TIPO_SHOW="HWID"
-            ;;
-            *)
-                COLOR_TIPO="${W}"
-                TIPO_SHOW="$TIPO"
-            ;;
-        esac
 
-        echo -e " ${W}[$NUM]${NC} ${G}$NOMBRE${NC}"
-        echo -e "     └ ${COLOR_TIPO}${TIPO_SHOW}${NC} | ${W}$USUARIO${NC} | Limite:${LIMITE} | Expira:${FECHA_SHOW}"
+            ssh)
+
+                echo -e " ${W}[$NUM]${NC} ${G}$NOMBRE${NC}"
+                echo -e "     └ ${G}SSH${NC} | ${W}$PASSWORD${NC} | Limite:${LIMITE} | Expira:${FECHA_SHOW}"
+
+            ;;
+
+            token)
+
+                echo -e " ${W}[$NUM]${NC} ${Y}$NOMBRE${NC}"
+                echo -e "     └ ${Y}TOKEN${NC} | ${W}$USUARIO${NC} | Expira:${FECHA_SHOW}"
+
+            ;;
+
+            hwid)
+
+                echo -e " ${W}[$NUM]${NC} ${C}$NOMBRE${NC}"
+                echo -e "     └ ${C}HWID${NC} | ${W}$USUARIO${NC} | Expira:${FECHA_SHOW}"
+
+            ;;
+
+            *)
+
+                echo -e " ${W}[$NUM]${NC} ${G}$NOMBRE${NC}"
+                echo -e "     └ ${W}$TIPO${NC} | ${W}$USUARIO${NC} | Expira:${FECHA_SHOW}"
+
+            ;;
+
+        esac
 
         ((NUM++))
 
