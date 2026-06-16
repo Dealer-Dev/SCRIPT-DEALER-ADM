@@ -29,7 +29,7 @@ mkdir -p $DIR_SCRIPTS
 if [ ! -f /etc/sshfreeltm/.licensed ]; then
     clear
     echo -e "\033[1;96m"
-    figlet -f small "LTM VPN TOOLS" 2>/dev/null || echo "LTM VPN TOOLS"
+    figlet -f small "LTM VPN" 2>/dev/null || echo "LTM VPN XD"
     echo -e "\033[0m"
     echo -e "\033[1;96m◆━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━◆\033[0m"
     echo -e "  \033[1;97m⚡ LTM VPN TOOLS v2.5 by @DarkZFull\033[0m"
