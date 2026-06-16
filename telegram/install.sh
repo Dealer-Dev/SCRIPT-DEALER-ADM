@@ -45,36 +45,6 @@ wget -q -O /etc/dealer-adm/bot/dealer_api.sh
 chmod +x /etc/dealer-adm/bot/dealer_api.sh
 
 echo ""
-echo "Configurando bot..."
-
-BOT_TOKEN_ENV="$BOT_TOKEN" ADMIN_ID_ENV="$ADMIN_ID" python3 << 'EOF'
-from pathlib import Path
-import os
-
-ruta = Path("/etc/dealer-adm/bot/bot.py")
-
-texto = ruta.read_text()
-
-texto = texto.replace(
-'BOT_TOKEN = "TOKEN_AQUI"',
-f'BOT_TOKEN = "{os.environ["BOT_TOKEN_ENV"]}"'
-)
-
-texto = texto.replace(
-'ADMIN_ID = 123456789',
-f'ADMIN_ID = {os.environ["ADMIN_ID_ENV"]}'
-)
-
-ruta.write_text(texto)
-EOF
-
-echo ""
-echo "Verificando configuracion..."
-
-grep "BOT_TOKEN =" /etc/dealer-adm/bot/bot.py
-grep "ADMIN_ID =" /etc/dealer-adm/bot/bot.py
-
-echo ""
 echo "Creando servicio..."
 
 cat > /etc/systemd/system/dealer-bot.service << EOF
@@ -84,6 +54,8 @@ After=network.target
 
 [Service]
 Type=simple
+Environment="BOT_TOKEN=$BOT_TOKEN"
+Environment="ADMIN_ID=$ADMIN_ID"
 ExecStart=/etc/dealer-adm/bot/venv/bin/python /etc/dealer-adm/bot/bot.py
 WorkingDirectory=/etc/dealer-adm/bot
 Restart=always
