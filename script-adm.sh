@@ -3903,7 +3903,102 @@ EOF
         esac
     done
 }
+menu_telegram() {
 
+    while true; do
+
+        banner
+        sep
+        echo -e "  ${Y}  TELEGRAM BOT${NC}"
+        sep
+        echo ""
+
+        echo -e "  ${W}[1]${NC} Instalar Bot"
+        echo -e "  ${W}[2]${NC} Reiniciar Bot"
+        echo -e "  ${W}[3]${NC} Detener Bot"
+        echo -e "  ${W}[4]${NC} Estado Bot"
+        echo -e "  ${W}[5]${NC} Desinstalar Bot"
+        echo -e "  ${W}[0]${NC} Volver"
+
+        echo ""
+        sep
+
+        read -p "  Opcion: " OP
+
+        case $OP in
+
+            1) instalar_bot ;;
+            2) reiniciar_bot ;;
+            3) detener_bot ;;
+            4) estado_bot ;;
+            5) desinstalar_bot ;;
+            0) break ;;
+
+        esac
+
+    done
+
+}
+
+instalar_bot() {
+
+    bash <(wget -qO- https://raw.githubusercontent.com/Dealer-Dev/SCRIPT-DEALER-ADM/main/telegram/install.sh)
+
+}
+
+reiniciar_bot() {
+
+    systemctl restart dealer-bot
+
+    echo ""
+    echo -e "  ${G}Bot reiniciado correctamente${NC}"
+
+    sleep 2
+
+}
+
+detener_bot() {
+
+    systemctl stop dealer-bot
+
+    echo ""
+    echo -e "  ${G}Bot detenido${NC}"
+
+    sleep 2
+
+}
+
+estado_bot() {
+
+    banner
+    sep
+    echo -e "  ${Y}  ESTADO TELEGRAM BOT${NC}"
+    sep
+    echo ""
+
+    systemctl --no-pager status dealer-bot
+
+    echo ""
+    read -p "  ENTER..."
+
+}
+
+desinstalar_bot() {
+
+    systemctl stop dealer-bot 2>/dev/null
+    systemctl disable dealer-bot 2>/dev/null
+
+    rm -rf /etc/dealer-adm/bot
+    rm -f /etc/systemd/system/dealer-bot.service
+
+    systemctl daemon-reload
+
+    echo ""
+    echo -e "  ${G}Bot eliminado correctamente${NC}"
+
+    sleep 2
+
+}
 
 menu_principal() {
     while true; do
@@ -3941,7 +4036,7 @@ menu_principal() {
         printf " \033[1;97m❬1❭ Usuarios SSH            ❬2❭ Usuarios VMess\033[0m\n"
         printf " \033[1;97m❬3❭ Usuarios ZIVPN          ❬4❭ Instalar Protocolos\033[0m\n"
         printf " \033[1;97m❬5❭ Usuarios SSH Online     ❬6❭ V2Ray Online\033[0m\n"
-        printf " \033[1;97m❬7❭ ZIV Online\033[0m\n"
+        printf " \033[1;97m❬7❭ ZIV Online              ❬8❭ V2Ray Online\033[0m\n"
         printf " ${NEON}Version: ${Y}v%s ${NEON}${NC}\n" "$SCRIPT_VERSION"
         sep
         printf " ${Y}❬9❭ 🖥️  %-18s${NC} ${R}❬10❭ 🗑️  %s${NC}\n" "Configurar MOTD" "Desinstalar"
@@ -3958,6 +4053,7 @@ menu_principal() {
             5) usuarios_ssh_online_count ;;
             6) usuarios_v2ray_online_count ;;
             7) usuarios_ziv_online_count ;;
+            8) menu_telegram ;;
             4) menu_herramientas ;;
             9) instalar_motd ;;
             10) desinstalar_script ;;
