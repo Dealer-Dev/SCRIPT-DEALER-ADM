@@ -1,6 +1,8 @@
 #!/bin/bash
 
-source /etc/dealer-adm/dealer_api_functions.sh
+export DEALER_API_MODE=1
+
+source /usr/local/bin/menu
 
 ACCION="$1"
 
@@ -32,6 +34,10 @@ case "$ACCION" in
 
     online)
         usuarios_online_api
+    ;;
+
+    *)
+        echo "ERROR"
     ;;
 
 esac
