@@ -1726,6 +1726,93 @@ done
 
 
 }
+crear_admin_api() {
+
+    NOMBRE="$1"
+    ADMIN_ID="$2"
+    CREDITOS="${3:-0}"
+
+    mkdir -p /etc/dealer-adm/admins
+
+    ARCHIVO="/etc/dealer-adm/admins/$ADMIN_ID"
+
+    ACTUALES=0
+
+    if [ -f "$ARCHIVO" ]; then
+        ACTUALES=$(grep '^creditos:' "$ARCHIVO" | awk '{print $2}')
+        [ -z "$ACTUALES" ] && ACTUALES=0
+    fi
+
+    NUEVOS=$((ACTUALES + CREDITOS))
+
+    cat > "$ARCHIVO" << EOF
+nombre: $NOMBRE
+id: $ADMIN_ID
+creditos: $NUEVOS
+EOF
+
+}
+obtener_creditos_api() {
+
+    ADMIN_ID="$1"
+
+    ARCHIVO="/etc/dealer-adm/admins/$ADMIN_ID"
+
+    [ ! -f "$ARCHIVO" ] && {
+        echo 0
+        return
+    }
+
+    grep '^creditos:' "$ARCHIVO" | awk '{print $2}'
+
+}
+descontar_credito_api() {
+
+    ADMIN_ID="$1"
+
+    ARCHIVO="/etc/dealer-adm/admins/$ADMIN_ID"
+
+    [ ! -f "$ARCHIVO" ] && return 1
+
+    CREDITOS=$(grep '^creditos:' "$ARCHIVO" | awk '{print $2}')
+
+    [ -z "$CREDITOS" ] && CREDITOS=0
+
+    [ "$CREDITOS" -le 0 ] && return 1
+
+    NUEVOS=$((CREDITOS - 1))
+
+    sed -i "s/^creditos:.*/creditos: $NUEVOS/" "$ARCHIVO"
+
+}
+es_admin_api() {
+
+    ADMIN_ID="$1"
+
+    [ -f "/etc/dealer-adm/admins/$ADMIN_ID" ]
+
+}
+listar_admins_api() {
+
+    for FILE in /etc/dealer-adm/admins/*; do
+
+        [ ! -f "$FILE" ] && continue
+
+        echo "----------------"
+
+        cat "$FILE"
+
+    done
+
+}
+eliminar_admin_api() {
+
+    ADMIN_ID="$1"
+
+    rm -f "/etc/dealer-adm/admins/$ADMIN_ID"
+
+}
+
 
 eliminar_usuario() {
 
