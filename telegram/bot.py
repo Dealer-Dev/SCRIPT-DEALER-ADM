@@ -25,7 +25,115 @@ API = "/etc/dealer-adm/bot/dealer_api.sh"
 # SEGURIDAD
 # ==========================================
 
+# ==========================================
+# PERMISOS
+# ==========================================
+
+def es_owner(user_id):
+
+    return user_id == ADMIN_ID
+
+
+def es_admin(user_id):
+
+    try:
+
+        salida = subprocess.check_output(
+            [
+                API,
+                "esadmin",
+                str(user_id)
+            ]
+        ).decode().strip()
+
+        return salida == "1"
+
+    except:
+
+        return False
+
+
+def admin_activo(user_id):
+
+    try:
+
+        salida = subprocess.check_output(
+            [
+                API,
+                "activo",
+                str(user_id)
+            ]
+        ).decode().strip()
+
+        return salida == "1"
+
+    except:
+
+        return False
+
+
+def obtener_creditos(user_id):
+
+    try:
+
+        salida = subprocess.check_output(
+            [
+                API,
+                "creditosdisponibles",
+                str(user_id)
+            ]
+        ).decode().strip()
+
+        return int(salida)
+
+    except:
+
+        return 0
+
+
+def descontar_credito(user_id):
+
+    subprocess.run(
+        [
+            API,
+            "descontarcredito",
+            str(user_id)
+        ]
+    )
+
+
+def nombre_admin(user_id):
+
+    try:
+
+        salida = subprocess.check_output(
+            [
+                API,
+                "nombreadmin",
+                str(user_id)
+            ]
+        ).decode().strip()
+
+        return salida
+
+    except:
+
+        return ""
+
 def autorizado(update: Update):
+
+    user_id = update.effective_user.id
+
+    if es_owner(user_id):
+        return True
+
+    if es_admin(user_id) and admin_activo(user_id):
+        return True
+
+    return False
+
+def es_owner_update(update: Update):
+
     return update.effective_user.id == ADMIN_ID
 
 # ==========================================
@@ -35,10 +143,33 @@ def autorizado(update: Update):
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not autorizado(update):
-        return
 
     await update.message.reply_text(
+        "No tienes permisos en el bot."
+    )
+
+    return
+
+    if es_owner_update(update):
+
+    mensaje = (
         "🤖 Dealer Adm Bot Online\n\n"
+        "/agregar usuario password dias limite\n"
+        "/token nombre token dias\n"
+        "/hwid nombre hwid dias\n"
+        "/renovar usuario dias\n"
+        "/eliminar usuario\n"
+        "/usuarios\n"
+        "/online\n\n"
+        "/creditos nombre id cantidad\n"
+        "/admins\n"
+        "/eliminaradmin id"
+    )
+
+else:
+
+    mensaje = (
+        "🤖 Dealer Revendedor\n\n"
         "/agregar usuario password dias limite\n"
         "/token nombre token dias\n"
         "/hwid nombre hwid dias\n"
@@ -47,6 +178,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/usuarios\n"
         "/online"
     )
+
+await update.message.reply_text(mensaje)
 
 # ==========================================
 # AGREGAR SSH
