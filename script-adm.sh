@@ -1802,7 +1802,7 @@ admin_activo_api() {
 
     ARCHIVO="/etc/dealer-adm/admins/$ADMIN_ID"
 
-    [ ! -f "$ARCHIVO" ] && return 1
+    [ ! -f "$ARCHIVO" ] && return 2
 
     CREDITOS=$(grep '^creditos:' "$ARCHIVO" | awk '{print $2}')
 
