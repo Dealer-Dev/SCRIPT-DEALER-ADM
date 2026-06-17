@@ -122,6 +122,12 @@ case "$ACCION" in
 
     ;;
 
+    nombreadmin)
+
+        obtener_nombre_admin_api "$2"
+
+    ;;
+
     *)
 
         echo "ERROR"
