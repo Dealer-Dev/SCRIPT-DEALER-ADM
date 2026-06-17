@@ -1773,20 +1773,11 @@ es_admin_api() {
 
     ADMIN_ID="$1"
 
-    [ -f "/etc/dealer-adm/admins/$ADMIN_ID" ]
-
-}
-listar_admins_api() {
-
-    for FILE in /etc/dealer-adm/admins/*; do
-
-        [ ! -f "$FILE" ] && continue
-
-        echo "----------------"
-
-        cat "$FILE"
-
-    done
+    if [ -f "/etc/dealer-adm/admins/$ADMIN_ID" ]; then
+        echo "1"
+    else
+        echo "0"
+    fi
 
 }
 eliminar_admin_api() {
@@ -1802,14 +1793,18 @@ admin_activo_api() {
 
     ARCHIVO="/etc/dealer-adm/admins/$ADMIN_ID"
 
-    [ ! -f "$ARCHIVO" ] && return 2
+    [ ! -f "$ARCHIVO" ] && {
+        echo "0"
+        return
+    }
 
     CREDITOS=$(grep '^creditos:' "$ARCHIVO" | awk '{print $2}')
 
     [ -z "$CREDITOS" ] && CREDITOS=0
 
     if [ "$CREDITOS" -gt 0 ]; then
-        return 0
+        echo "1"
+        return
     fi
 
     HOY=$(date +%Y-%m-%d)
@@ -1827,13 +1822,13 @@ admin_activo_api() {
         [ -z "$FECHA" ] && continue
 
         if [[ "$FECHA" > "$HOY" || "$FECHA" == "$HOY" ]]; then
-            return 0
+            echo "1"
+            return
         fi
 
     done
 
-    return 1
-
+    echo "0"
 }
 
 
