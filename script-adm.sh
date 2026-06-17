@@ -1736,6 +1736,21 @@ creditos: $NUEVOS
 EOF
 
 }
+listar_admins_api() {
+
+    mkdir -p /etc/dealer-adm/admins
+
+    for FILE in /etc/dealer-adm/admins/*; do
+
+        [ ! -f "$FILE" ] && continue
+
+        echo "----------------"
+
+        cat "$FILE"
+
+    done
+
+}
 obtener_creditos_api() {
 
     ADMIN_ID="$1"
