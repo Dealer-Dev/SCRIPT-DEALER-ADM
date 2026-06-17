@@ -97,6 +97,17 @@ case "$ACCION" in
         eliminar_admin_api "$2"
 
     ;;
+    activo)
+
+    admin_activo_api "$2"
+
+;;
+
+creditosdisponibles)
+
+    obtener_creditos_api "$2"
+
+;;
 
     *)
         echo "ERROR"
