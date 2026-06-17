@@ -142,7 +142,8 @@ def es_owner_update(update: Update):
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    if not autorizado(update):
+
+if not autorizado(update):
 
     await update.message.reply_text(
         "No tienes permisos en el bot."
@@ -150,7 +151,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     return
 
-    if es_owner_update(update):
+if es_owner_update(update):
 
     mensaje = (
         "🤖 Dealer Adm Bot Online\n\n"
@@ -178,52 +179,96 @@ else:
         "/usuarios\n"
         "/online"
     )
-    await update.message.reply_text(mensaje)
 
+await update.message.reply_text(mensaje)
+app.add_handler(CommandHandler("creditos", creditos))
+app.add_handler(CommandHandler("admins", admins))
+app.add_handler(CommandHandler("eliminaradmin", eliminaradmin))
 
 
 # ==========================================
 # AGREGAR SSH
 # ==========================================
-
 async def agregar(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    if not autorizado(update):
-        return
 
-    try:
+if not autorizado(update):
 
-        user = context.args[0]
-        passwd = context.args[1]
-        dias = context.args[2]
-        limite = context.args[3]
+    await update.message.reply_text(
+        "No tienes permisos en el bot."
+    )
 
-        subprocess.run(
-            [
-                API,
-                "agregar",
-                user,
-                passwd,
-                dias,
-                limite
-            ],
-            check=True
+    return
+
+try:
+
+    user = context.args[0]
+    passwd = context.args[1]
+    dias = context.args[2]
+    limite = context.args[3]
+
+    user_id = update.effective_user.id
+    admin_nombre = update.effective_user.first_name
+
+    if not es_owner(user_id):
+
+        dias = str(min(int(dias), 30))
+
+        creditos = obtener_creditos(user_id)
+
+        if creditos <= 0:
+
+            await update.message.reply_text(
+                "❌ No tienes créditos disponibles."
+            )
+
+            return
+
+    subprocess.run(
+        [
+            API,
+            "agregar",
+            user,
+            passwd,
+            dias,
+            limite,
+            str(user_id),
+            admin_nombre
+        ],
+        check=True
+    )
+
+    if not es_owner(user_id):
+
+        descontar_credito(user_id)
+
+        creditos_restantes = obtener_creditos(user_id)
+
+    mensaje = (
+        f"✅ Usuario SSH creado\n\n"
+        f"Usuario: {user}\n"
+        f"Password: {passwd}\n"
+        f"Días: {dias}\n"
+        f"Límite: {limite}"
+    )
+
+    if not es_owner(user_id):
+
+        mensaje += (
+            f"\n\n💳 Créditos restantes: "
+            f"{creditos_restantes}"
         )
 
-        await update.message.reply_text(
-            f"✅ Usuario SSH creado\n\n"
-            f"Usuario: {user}\n"
-            f"Password: {passwd}\n"
-            f"Días: {dias}\n"
-            f"Límite: {limite}"
-        )
+    await update.message.reply_text(mensaje)
 
-    except Exception:
+except Exception as e:
 
-        await update.message.reply_text(
-            "Uso:\n"
-            "/agregar usuario password dias limite"
-        )
+    await update.message.reply_text(
+        f"Uso:\n"
+        f"/agregar usuario password dias limite\n\n"
+        f"Error: {e}"
+    )
+
 
 # ==========================================
 # TOKEN
@@ -231,46 +276,94 @@ async def agregar(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def token(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    if not autorizado(update):
-        return
 
-    try:
+if not autorizado(update):
 
-        nombre = context.args[0]
-        tokenv = context.args[1]
-        dias = context.args[2]
+    await update.message.reply_text(
+        "No tienes permisos en el bot."
+    )
 
-        subprocess.run(
-            [
-                API,
-                "token",
-                nombre,
-                tokenv,
-                dias
-            ],
-            check=True
+    return
+
+try:
+
+    nombre = context.args[0]
+    tokenv = context.args[1]
+    dias = context.args[2]
+
+    user_id = update.effective_user.id
+    admin_nombre = update.effective_user.first_name
+
+    if not es_owner(user_id):
+
+        dias = str(min(int(dias), 30))
+
+        creditos = obtener_creditos(user_id)
+
+        if creditos <= 0:
+
+            await update.message.reply_text(
+                "❌ No tienes créditos disponibles."
+            )
+
+            return
+
+    subprocess.run(
+        [
+            API,
+            "token",
+            nombre,
+            tokenv,
+            dias,
+            str(user_id),
+            admin_nombre
+        ],
+        check=True
+    )
+
+    if not es_owner(user_id):
+
+        descontar_credito(user_id)
+
+        creditos_restantes = obtener_creditos(user_id)
+
+    mensaje = (
+        f"✅ Usuario TOKEN creado\n\n"
+        f"Nombre: {nombre}\n"
+        f"Token: {tokenv}\n"
+        f"Días: {dias}"
+    )
+
+    if not es_owner(user_id):
+
+        mensaje += (
+            f"\n\n💳 Créditos restantes: "
+            f"{creditos_restantes}"
         )
 
-        await update.message.reply_text(
-            f"✅ Usuario TOKEN creado\n\n"
-            f"Nombre: {nombre}\n"
-            f"Token: {tokenv}"
-        )
+    await update.message.reply_text(mensaje)
 
-    except Exception:
+except Exception as e:
 
-        await update.message.reply_text(
-            "Uso:\n"
-            "/token nombre token dias"
-        )
+    await update.message.reply_text(
+        f"Uso:\n"
+        f"/token nombre token dias\n\n"
+        f"Error: {e}"
+    )
+
+
 
 # ==========================================
 # HWID
 # ==========================================
-
 async def hwid(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not autorizado(update):
+
+        await update.message.reply_text(
+            "No tienes permisos en el bot."
+        )
+
         return
 
     try:
@@ -279,30 +372,65 @@ async def hwid(update: Update, context: ContextTypes.DEFAULT_TYPE):
         hwidv = context.args[1]
         dias = context.args[2]
 
+        user_id = update.effective_user.id
+        admin_nombre = update.effective_user.first_name
+
+        if not es_owner(user_id):
+
+            dias = str(min(int(dias), 30))
+
+            creditos = obtener_creditos(user_id)
+
+            if creditos <= 0:
+
+                await update.message.reply_text(
+                    "❌ No tienes créditos disponibles."
+                )
+
+                return
+
         subprocess.run(
             [
                 API,
                 "hwid",
                 nombre,
                 hwidv,
-                dias
+                dias,
+                str(user_id),
+                admin_nombre
             ],
             check=True
         )
 
-        await update.message.reply_text(
+        if not es_owner(user_id):
+
+            descontar_credito(user_id)
+
+            creditos_restantes = obtener_creditos(user_id)
+
+        mensaje = (
             f"✅ Usuario HWID creado\n\n"
             f"Nombre: {nombre}\n"
-            f"HWID: {hwidv}"
+            f"HWID: {hwidv}\n"
+            f"Días: {dias}"
         )
 
-    except Exception:
+        if not es_owner(user_id):
+
+            mensaje += (
+                f"\n\n💳 Créditos restantes: "
+                f"{creditos_restantes}"
+            )
+
+        await update.message.reply_text(mensaje)
+
+    except Exception as e:
 
         await update.message.reply_text(
-            "Uso:\n"
-            "/hwid nombre hwid dias"
+            f"Uso:\n"
+            f"/hwid nombre hwid dias\n\n"
+            f"Error: {e}"
         )
-
 # ==========================================
 # RENOVAR
 # ==========================================
@@ -310,6 +438,11 @@ async def hwid(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def renovar(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not autorizado(update):
+
+        await update.message.reply_text(
+            "No tienes permisos en el bot."
+        )
+
         return
 
     try:
@@ -317,27 +450,61 @@ async def renovar(update: Update, context: ContextTypes.DEFAULT_TYPE):
         usuario = context.args[0]
         dias = context.args[1]
 
+        user_id = update.effective_user.id
+
+        if not es_owner(user_id):
+
+            dias = str(min(int(dias), 30))
+
+            creditos = obtener_creditos(user_id)
+
+            if creditos <= 0:
+
+                await update.message.reply_text(
+                    "❌ No tienes créditos disponibles."
+                )
+
+                return
+
         subprocess.run(
             [
                 API,
                 "renovar",
                 usuario,
-                dias
+                dias,
+                str(user_id),
+                str(ADMIN_ID)
             ],
             check=True
         )
 
-        await update.message.reply_text(
+        if not es_owner(user_id):
+
+            descontar_credito(user_id)
+
+            creditos_restantes = obtener_creditos(user_id)
+
+        mensaje = (
             f"✅ Usuario renovado\n\n"
             f"Usuario: {usuario}\n"
             f"Días: {dias}"
         )
 
-    except Exception:
+        if not es_owner(user_id):
+
+            mensaje += (
+                f"\n\n💳 Créditos restantes: "
+                f"{creditos_restantes}"
+            )
+
+        await update.message.reply_text(mensaje)
+
+    except Exception as e:
 
         await update.message.reply_text(
-            "Uso:\n"
-            "/renovar usuario dias"
+            f"Uso:\n"
+            f"/renovar usuario dias\n\n"
+            f"Error: {e}"
         )
 
 # ==========================================
@@ -347,17 +514,26 @@ async def renovar(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def eliminar(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not autorizado(update):
+
+        await update.message.reply_text(
+            "No tienes permisos en el bot."
+        )
+
         return
 
     try:
 
         usuario = context.args[0]
 
+        user_id = update.effective_user.id
+
         subprocess.run(
             [
                 API,
                 "eliminar",
-                usuario
+                usuario,
+                str(user_id),
+                str(ADMIN_ID)
             ],
             check=True
         )
@@ -366,11 +542,12 @@ async def eliminar(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"❌ Usuario eliminado:\n{usuario}"
         )
 
-    except Exception:
+    except Exception as e:
 
         await update.message.reply_text(
-            "Uso:\n"
-            "/eliminar usuario"
+            f"Uso:\n"
+            f"/eliminar usuario\n\n"
+            f"Error: {e}"
         )
 
 # ==========================================
@@ -380,12 +557,24 @@ async def eliminar(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def usuarios(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not autorizado(update):
+
+        await update.message.reply_text(
+            "No tienes permisos en el bot."
+        )
+
         return
 
     try:
 
+        user_id = update.effective_user.id
+
         salida = subprocess.check_output(
-            [API, "usuarios"]
+            [
+                API,
+                "usuarios",
+                str(user_id),
+                str(ADMIN_ID)
+            ]
         ).decode()
 
         await update.message.reply_text(
@@ -397,7 +586,6 @@ async def usuarios(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             f"Error:\n{e}"
         )
-
 # ==========================================
 # ONLINE
 # ==========================================
@@ -405,12 +593,24 @@ async def usuarios(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def online(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not autorizado(update):
+
+        await update.message.reply_text(
+            "No tienes permisos en el bot."
+        )
+
         return
 
     try:
 
+        user_id = update.effective_user.id
+
         salida = subprocess.check_output(
-            [API, "online"]
+            [
+                API,
+                "online",
+                str(user_id),
+                str(ADMIN_ID)
+            ]
         ).decode()
 
         await update.message.reply_text(
