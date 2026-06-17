@@ -1780,6 +1780,17 @@ es_admin_api() {
     fi
 
 }
+obtener_nombre_admin_api() {
+
+    ADMIN_ID="$1"
+
+    ARCHIVO="/etc/dealer-adm/admins/$ADMIN_ID"
+
+    [ ! -f "$ARCHIVO" ] && return
+
+    grep '^nombre:' "$ARCHIVO" | cut -d' ' -f2-
+
+}
 eliminar_admin_api() {
 
     ADMIN_ID="$1"
