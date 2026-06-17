@@ -611,7 +611,123 @@ async def online(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             f"Error:\n{e}"
         )
+# ==========================================
+# CREDITOS
+# ==========================================
 
+async def creditos(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    if not es_owner_update(update):
+
+        await update.message.reply_text(
+            "Solo el administrador principal puede usar este comando."
+        )
+
+        return
+
+    try:
+
+        nombre = context.args[0]
+        admin_id = context.args[1]
+        cantidad = context.args[2]
+
+        subprocess.run(
+            [
+                API,
+                "creditos",
+                nombre,
+                admin_id,
+                cantidad
+            ],
+            check=True
+        )
+
+        await update.message.reply_text(
+            f"✅ Créditos agregados\n\n"
+            f"Nombre: {nombre}\n"
+            f"ID: {admin_id}\n"
+            f"Créditos: {cantidad}"
+        )
+
+    except Exception as e:
+
+        await update.message.reply_text(
+            f"Uso:\n"
+            f"/creditos nombre id cantidad\n\n"
+            f"Error: {e}"
+        )
+
+# ==========================================
+# ADMINS
+# ==========================================
+
+async def admins(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    if not es_owner_update(update):
+
+        await update.message.reply_text(
+            "Solo el administrador principal puede usar este comando."
+        )
+
+        return
+
+    try:
+
+        salida = subprocess.check_output(
+            [
+                API,
+                "admins"
+            ]
+        ).decode()
+
+        await update.message.reply_text(
+            salida if salida else "No existen administradores."
+        )
+
+    except Exception as e:
+
+        await update.message.reply_text(
+            f"Error:\n{e}"
+        )
+
+# ==========================================
+# ELIMINAR ADMIN
+# ==========================================
+
+async def eliminaradmin(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    if not es_owner_update(update):
+
+        await update.message.reply_text(
+            "Solo el administrador principal puede usar este comando."
+        )
+
+        return
+
+    try:
+
+        admin_id = context.args[0]
+
+        subprocess.run(
+            [
+                API,
+                "eliminaradmin",
+                admin_id
+            ],
+            check=True
+        )
+
+        await update.message.reply_text(
+            f"❌ Administrador eliminado:\n{admin_id}"
+        )
+
+    except Exception as e:
+
+        await update.message.reply_text(
+            f"Uso:\n"
+            f"/eliminaradmin id\n\n"
+            f"Error: {e}"
+        )
 # ==========================================
 # MAIN
 # ==========================================
@@ -639,3 +755,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+
