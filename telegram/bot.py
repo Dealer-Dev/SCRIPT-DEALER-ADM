@@ -142,12 +142,13 @@ def es_owner_update(update: Update):
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not autorizado(update):
-
-    await update.message.reply_text(
+        await update.message.reply_text(
         "No tienes permisos en el bot."
     )
 
     return
+
+    
 
 if es_owner_update(update):
 
@@ -185,8 +186,7 @@ await update.message.reply_text(mensaje)
 # ==========================================
 async def agregar(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not autorizado(update):
-
-    await update.message.reply_text(
+        await update.message.reply_text(
         "No tienes permisos en el bot."
     )
 
@@ -268,8 +268,7 @@ except Exception as e:
 
 async def token(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not autorizado(update):
-
-    await update.message.reply_text(
+        await update.message.reply_text(
         "No tienes permisos en el bot."
     )
 
