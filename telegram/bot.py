@@ -17,7 +17,7 @@ import os
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
-ADMIN_ID = int(os.getenv("ADMIN_ID"))
+ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
 
 API = "/etc/dealer-adm/bot/dealer_api.sh"
 
@@ -178,8 +178,9 @@ else:
         "/usuarios\n"
         "/online"
     )
+    await update.message.reply_text(mensaje)
 
-await update.message.reply_text(mensaje)
+
 
 # ==========================================
 # AGREGAR SSH
