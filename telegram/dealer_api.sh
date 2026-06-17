@@ -10,8 +10,6 @@ case "$ACCION" in
 
     agregar)
 
-        # agregar user pass dias limite admin_id admin_nombre
-
         crear_usuario_ssh_api \
         "$2" \
         "$3" \
@@ -24,8 +22,6 @@ case "$ACCION" in
 
     token)
 
-        # token nombre token dias admin_id admin_nombre
-
         crear_usuario_token_api \
         "$2" \
         "$3" \
@@ -36,8 +32,6 @@ case "$ACCION" in
     ;;
 
     hwid)
-
-        # hwid nombre hwid dias admin_id admin_nombre
 
         crear_usuario_hwid_api \
         "$2" \
@@ -50,8 +44,6 @@ case "$ACCION" in
 
     renovar)
 
-        # renovar usuario dias admin_id owner_id
-
         renovar_usuario_api \
         "$2" \
         "$3" \
@@ -62,8 +54,6 @@ case "$ACCION" in
 
     eliminar)
 
-        # eliminar usuario admin_id owner_id
-
         eliminar_usuario_api \
         "$2" \
         "$3" \
@@ -73,8 +63,6 @@ case "$ACCION" in
 
     usuarios)
 
-        # usuarios admin_id owner_id
-
         listar_usuarios_api \
         "$2" \
         "$3"
@@ -83,11 +71,30 @@ case "$ACCION" in
 
     online)
 
-        # online admin_id owner_id
-
         usuarios_online_api \
         "$2" \
         "$3"
+
+    ;;
+
+    creditos)
+
+        crear_admin_api \
+        "$2" \
+        "$3" \
+        "$4"
+
+    ;;
+
+    admins)
+
+        listar_admins_api
+
+    ;;
+
+    eliminaradmin)
+
+        eliminar_admin_api "$2"
 
     ;;
 
