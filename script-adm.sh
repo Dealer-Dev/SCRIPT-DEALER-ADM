@@ -1624,6 +1624,7 @@ usuarios_online_api() {
     done
 
 }
+
 eliminar_usuario_api() {
 
 
@@ -1810,6 +1811,45 @@ eliminar_admin_api() {
     ADMIN_ID="$1"
 
     rm -f "/etc/dealer-adm/admins/$ADMIN_ID"
+
+}
+admin_activo_api() {
+
+    ADMIN_ID="$1"
+
+    ARCHIVO="/etc/dealer-adm/admins/$ADMIN_ID"
+
+    [ ! -f "$ARCHIVO" ] && return 1
+
+    CREDITOS=$(grep '^creditos:' "$ARCHIVO" | awk '{print $2}')
+
+    [ -z "$CREDITOS" ] && CREDITOS=0
+
+    if [ "$CREDITOS" -gt 0 ]; then
+        return 0
+    fi
+
+    HOY=$(date +%Y-%m-%d)
+
+    for FILE in /etc/dealer-adm/userDIR/*; do
+
+        [ ! -f "$FILE" ] && continue
+
+        CREADOR=$(grep '^creador_id:' "$FILE" | awk '{print $2}')
+
+        [ "$CREADOR" != "$ADMIN_ID" ] && continue
+
+        FECHA=$(grep '^fecha:' "$FILE" | cut -d' ' -f2)
+
+        [ -z "$FECHA" ] && continue
+
+        if [[ "$FECHA" > "$HOY" || "$FECHA" == "$HOY" ]]; then
+            return 0
+        fi
+
+    done
+
+    return 1
 
 }
 
