@@ -1548,8 +1548,6 @@ EOF
 
 }
 renovar_usuario_api() {
-
-
 USER="$1"
 DAYS="${2:-30}"
 
@@ -1581,50 +1579,7 @@ if id "$USER" &>/dev/null; then
 fi
 
 sed -i "s/^fecha:.*/fecha: $EXP_DATE/" "$USER_FILE"
-
-
 }
-usuarios_online_api() {
-
-    ADMIN_ID="${1:-0}"
-    OWNER_ID="${2:-0}"
-
-    for user in $(awk -F: '$3>=1000 && $1!="nobody" {print $1}' /etc/passwd); do
-
-        ONLINE=$(ps -ef | grep -E "sshd: ${user}$" | grep -v grep | wc -l)
-
-        [ "$ONLINE" -eq 0 ] && continue
-
-        USER_FILE="/etc/dealer-adm/userDIR/$user"
-
-        [ ! -f "$USER_FILE" ] && continue
-
-        CREADOR_ID=$(grep '^creador_id:' "$USER_FILE" | cut -d' ' -f2-)
-
-        # Compatibilidad con usuarios antiguos
-        [ -z "$CREADOR_ID" ] && CREADOR_ID="0"
-
-        # Si no es OWNER, solo muestra sus usuarios
-        if [ "$ADMIN_ID" != "$OWNER_ID" ]; then
-
-            [ "$CREADOR_ID" != "$ADMIN_ID" ] && continue
-
-        fi
-
-        NOMBRE=$(grep '^nombre:' "$USER_FILE" | cut -d' ' -f2-)
-        [ -z "$NOMBRE" ] && NOMBRE="$user"
-
-        LIMITE=$(grep '^limite:' "$USER_FILE" | awk '{print $2}')
-        [ -z "$LIMITE" ] && LIMITE="1"
-
-        TIPO=$(grep '^tipo:' "$USER_FILE" | awk '{print $2}')
-
-        echo "$NOMBRE | $TIPO | $ONLINE/$LIMITE"
-
-    done
-
-}
-
 eliminar_usuario_api() {
 
 
@@ -1672,6 +1627,47 @@ fi
 
 
 }
+usuarios_online_api() {
+
+    ADMIN_ID="${1:-0}"
+    OWNER_ID="${2:-0}"
+
+    for user in $(awk -F: '$3>=1000 && $1!="nobody" {print $1}' /etc/passwd); do
+
+        ONLINE=$(ps -ef | grep -E "sshd: ${user}$" | grep -v grep | wc -l)
+
+        [ "$ONLINE" -eq 0 ] && continue
+
+        USER_FILE="/etc/dealer-adm/userDIR/$user"
+
+        [ ! -f "$USER_FILE" ] && continue
+
+        CREADOR_ID=$(grep '^creador_id:' "$USER_FILE" | cut -d' ' -f2-)
+
+        # Compatibilidad con usuarios antiguos
+        [ -z "$CREADOR_ID" ] && CREADOR_ID="0"
+
+        # Si no es OWNER, solo muestra sus usuarios
+        if [ "$ADMIN_ID" != "$OWNER_ID" ]; then
+
+            [ "$CREADOR_ID" != "$ADMIN_ID" ] && continue
+
+        fi
+
+        NOMBRE=$(grep '^nombre:' "$USER_FILE" | cut -d' ' -f2-)
+        [ -z "$NOMBRE" ] && NOMBRE="$user"
+
+        LIMITE=$(grep '^limite:' "$USER_FILE" | awk '{print $2}')
+        [ -z "$LIMITE" ] && LIMITE="1"
+
+        TIPO=$(grep '^tipo:' "$USER_FILE" | awk '{print $2}')
+
+        echo "$NOMBRE | $TIPO | $ONLINE/$LIMITE"
+
+    done
+
+}
+
 
 obtener_usuario_api() {
 
@@ -1682,19 +1678,6 @@ obtener_usuario_api() {
     [ ! -f "$FILE" ] && return 1
 
     cat "$FILE"
-
-}
-listar_usuarios_api() {
-
-    for FILE in /etc/dealer-adm/userDIR/*; do
-
-        [ ! -f "$FILE" ] && continue
-
-        echo "----------------"
-
-        cat "$FILE"
-
-    done
 
 }
 listar_usuarios_api() {
