@@ -1369,6 +1369,9 @@ crear_usuario_ssh_api() {
     USR_DAYS="${3:-30}"
     USR_LIMIT="${4:-1}"
 
+    CREADOR_ID="${5:-0}"
+    CREADOR_NOMBRE="${6:-ADMIN}"
+
     EXP_DATE=$(date -d "+${USR_DAYS} days" +%Y-%m-%d)
 
     if id "$USR_NAME" &>/dev/null; then
@@ -1395,6 +1398,8 @@ usuario: $USR_NAME
 password: $USR_PASS
 fecha: $EXP_DATE
 limite: $USR_LIMIT
+creador_id: $CREADOR_ID
+creador_nombre: $CREADOR_NOMBRE
 EOF
 
     if [ -f /etc/hysteria/config.json ] && command -v jq >/dev/null 2>&1; then
@@ -1424,6 +1429,9 @@ crear_usuario_hwid_api() {
     HWID="$2"
     USR_DAYS="${3:-30}"
 
+    CREADOR_ID="${4:-0}"
+    CREADOR_NOMBRE="${5:-ADMIN}"
+
     EXP_DATE=$(date -d "+${USR_DAYS} days" +%Y-%m-%d)
 
     if id "$HWID" &>/dev/null; then
@@ -1450,6 +1458,8 @@ usuario: $HWID
 password: HWID
 fecha: $EXP_DATE
 limite: 1
+creador_id: $CREADOR_ID
+creador_nombre: $CREADOR_NOMBRE
 EOF
 
     if [ -f /etc/hysteria/config.json ] && command -v jq >/dev/null 2>&1; then
@@ -1478,6 +1488,9 @@ crear_usuario_token_api() {
     NOMBRE="$1"
     TOKEN="$2"
     USR_DAYS="${3:-30}"
+
+    CREADOR_ID="${4:-0}"
+    CREADOR_NOMBRE="${5:-ADMIN}"
 
     [ ! -f /etc/dealer-adm/token_password ] && return 1
 
@@ -1509,6 +1522,8 @@ usuario: $TOKEN
 password: $TOKEN_PASS
 fecha: $EXP_DATE
 limite: 1
+creador_id: $CREADOR_ID
+creador_nombre: $CREADOR_NOMBRE
 EOF
 
     if [ -f /etc/hysteria/config.json ] && command -v jq >/dev/null 2>&1; then
@@ -1534,53 +1549,129 @@ EOF
 }
 renovar_usuario_api() {
 
-    USER="$1"
-    DAYS="${2:-30}"
 
-    [ -z "$USER" ] && return 1
+USER="$1"
+DAYS="${2:-30}"
 
-    EXP_DATE=$(date -d "+${DAYS} days" +%Y-%m-%d)
+ADMIN_ID="${3:-0}"
+OWNER_ID="${4:-0}"
 
-    if id "$USER" &>/dev/null; then
-        usermod -e "$EXP_DATE" "$USER"
-        chage -E "$EXP_DATE" "$USER"
-    fi
+[ -z "$USER" ] && return 1
 
-    if [ -f "/etc/dealer-adm/userDIR/$USER" ]; then
-        sed -i "s/^fecha:.*/fecha: $EXP_DATE/" \
-        "/etc/dealer-adm/userDIR/$USER"
-    fi
+USER_FILE="/etc/dealer-adm/userDIR/$USER"
+
+[ ! -f "$USER_FILE" ] && return 1
+
+CREADOR_ID=$(grep '^creador_id:' "$USER_FILE" | cut -d' ' -f2-)
+
+# Si no es OWNER, solo puede renovar usuarios creados por él
+if [ "$ADMIN_ID" != "$OWNER_ID" ]; then
+
+    [ "$CREADOR_ID" != "$ADMIN_ID" ] && return 2
+
+fi
+
+EXP_DATE=$(date -d "+${DAYS} days" +%Y-%m-%d)
+
+if id "$USER" &>/dev/null; then
+
+    usermod -e "$EXP_DATE" "$USER"
+    chage -E "$EXP_DATE" "$USER"
+
+fi
+
+sed -i "s/^fecha:.*/fecha: $EXP_DATE/" "$USER_FILE"
+
+
+}
+usuarios_online_api() {
+
+    ADMIN_ID="${1:-0}"
+    OWNER_ID="${2:-0}"
+
+    for user in $(awk -F: '$3>=1000 && $1!="nobody" {print $1}' /etc/passwd); do
+
+        ONLINE=$(ps -ef | grep -E "sshd: ${user}$" | grep -v grep | wc -l)
+
+        [ "$ONLINE" -eq 0 ] && continue
+
+        USER_FILE="/etc/dealer-adm/userDIR/$user"
+
+        [ ! -f "$USER_FILE" ] && continue
+
+        CREADOR_ID=$(grep '^creador_id:' "$USER_FILE" | cut -d' ' -f2-)
+
+        # Compatibilidad con usuarios antiguos
+        [ -z "$CREADOR_ID" ] && CREADOR_ID="0"
+
+        # Si no es OWNER, solo muestra sus usuarios
+        if [ "$ADMIN_ID" != "$OWNER_ID" ]; then
+
+            [ "$CREADOR_ID" != "$ADMIN_ID" ] && continue
+
+        fi
+
+        NOMBRE=$(grep '^nombre:' "$USER_FILE" | cut -d' ' -f2-)
+        [ -z "$NOMBRE" ] && NOMBRE="$user"
+
+        LIMITE=$(grep '^limite:' "$USER_FILE" | awk '{print $2}')
+        [ -z "$LIMITE" ] && LIMITE="1"
+
+        TIPO=$(grep '^tipo:' "$USER_FILE" | awk '{print $2}')
+
+        echo "$NOMBRE | $TIPO | $ONLINE/$LIMITE"
+
+    done
 
 }
 eliminar_usuario_api() {
 
-    USER="$1"
 
-    [ -z "$USER" ] && return 1
+USER="$1"
 
-    pkill -u "$USER" 2>/dev/null
+ADMIN_ID="${2:-0}"
+OWNER_ID="${3:-0}"
 
-    userdel -f "$USER" 2>/dev/null
+[ -z "$USER" ] && return 1
 
-    rm -f "/etc/dealer-adm/userDIR/$USER"
+USER_FILE="/etc/dealer-adm/userDIR/$USER"
 
-    if [ -f /etc/hysteria/config.json ] && command -v jq >/dev/null 2>&1; then
+[ ! -f "$USER_FILE" ] && return 1
 
-        TMPFILE=$(mktemp)
+CREADOR_ID=$(grep '^creador_id:' "$USER_FILE" | cut -d' ' -f2-)
 
-        jq --arg user "$USER" '
-            .auth.config |= map(
-                select(startswith($user + ":") | not)
-            )
-        ' /etc/hysteria/config.json > "$TMPFILE"
+# Si no es OWNER, solo puede eliminar usuarios creados por él
+if [ "$ADMIN_ID" != "$OWNER_ID" ]; then
 
-        mv "$TMPFILE" /etc/hysteria/config.json
+    [ "$CREADOR_ID" != "$ADMIN_ID" ] && return 2
 
-        systemctl restart hysteria-server >/dev/null 2>&1
+fi
 
-    fi
+pkill -u "$USER" 2>/dev/null
+
+userdel -f "$USER" 2>/dev/null
+
+rm -f "$USER_FILE"
+
+if [ -f /etc/hysteria/config.json ] && command -v jq >/dev/null 2>&1; then
+
+    TMPFILE=$(mktemp)
+
+    jq --arg user "$USER" '
+        .auth.config |= map(
+            select(startswith($user + ":") | not)
+        )
+    ' /etc/hysteria/config.json > "$TMPFILE"
+
+    mv "$TMPFILE" /etc/hysteria/config.json
+
+    systemctl restart hysteria-server >/dev/null 2>&1
+
+fi
+
 
 }
+
 obtener_usuario_api() {
 
     USER="$1"
@@ -1605,69 +1696,37 @@ listar_usuarios_api() {
     done
 
 }
-usuarios_ssh_online_count() {
-    banner
-    sep
-    echo -e "  ${Y}  USUARIOS SSH ONLINE${NC}"
-    sep
-    echo ""
+listar_usuarios_api() {
 
-    ENCONTRADO=0
 
-    awk -F: '$3>=1000 && $1!="nobody" {print $1}' /etc/passwd | while read user; do
+ADMIN_ID="${1:-0}"
+OWNER_ID="${2:-0}"
 
-        ONLINE=$(ps -ef | grep -E "sshd: ${user}$" | grep -v grep | wc -l)
+for FILE in /etc/dealer-adm/userDIR/*; do
 
-        [ "$ONLINE" -eq 0 ] && continue
+    [ ! -f "$FILE" ] && continue
 
-        LIMIT=1
+    CREADOR_ID=$(grep '^creador_id:' "$FILE" | cut -d' ' -f2-)
 
-        if [ -f "/etc/dealer-adm/userDIR/$user" ]; then
-            LIMIT=$(grep '^limite:' "/etc/dealer-adm/userDIR/$user" | awk '{print $2}')
-            [ -z "$LIMIT" ] && LIMIT=1
-        fi
+    # Compatibilidad con usuarios antiguos
+    [ -z "$CREADOR_ID" ] && CREADOR_ID="0"
 
-        TIPO=$(grep '^tipo:' "/etc/dealer-adm/userDIR/$user" 2>/dev/null | awk '{print $2}')
+    # Si no es OWNER, solo muestra sus usuarios
+    if [ "$ADMIN_ID" != "$OWNER_ID" ]; then
 
-case "$TIPO" in
-    ssh)
-        ETIQUETA="${G}(SSH)${NC}"
-    ;;
-    token)
-        ETIQUETA="${Y}(TOKEN)${NC}"
-    ;;
-    hwid)
-        ETIQUETA="${C}(HWID)${NC}"
-    ;;
-    *)
-        ETIQUETA="${W}(?)${NC}"
-    ;;
-esac
+        [ "$CREADOR_ID" != "$ADMIN_ID" ] && continue
 
-NOMBRE=$(grep '^nombre:' "/etc/dealer-adm/userDIR/$user" 2>/dev/null | cut -d' ' -f2-)
-
-[ -z "$NOMBRE" ] && NOMBRE="$user"
-
-printf "  ${W}%-20s${NC} %b [%s/%s]\n" "$NOMBRE" "$ETIQUETA" "$ONLINE" "$LIMIT"
-
-        ENCONTRADO=1
-    done
-
-    echo ""
-
-    TOTAL_ONLINE=$(ps -ef | grep -E "sshd: [a-zA-Z0-9._-]+$" | grep -v grep | wc -l)
-
-    if [ "$TOTAL_ONLINE" -eq 0 ]; then
-        echo -e "  ${R}No hay usuarios conectados${NC}"
-        echo ""
-    else
-        echo -e "  ${C}Conexiones activas:${NC} $TOTAL_ONLINE"
-        echo ""
     fi
 
-    sep
-    read -p "  ENTER..."
+    echo "----------------"
+
+    cat "$FILE"
+
+done
+
+
 }
+
 eliminar_usuario() {
 
     banner
