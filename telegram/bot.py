@@ -141,207 +141,207 @@ def es_owner_update(update: Update):
 # ==========================================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
     if not autorizado(update):
+
         await update.message.reply_text(
-        "No tienes permisos en el bot."
-    )
+            "No tienes permisos en el bot."
+        )
 
-    return
+        return
 
-    
+    if es_owner_update(update):
 
-if es_owner_update(update):
+        mensaje = (
+            "🤖 Dealer Adm Bot Online\n\n"
+            "/agregar usuario password dias limite\n"
+            "/token nombre token dias\n"
+            "/hwid nombre hwid dias\n"
+            "/renovar usuario dias\n"
+            "/eliminar usuario\n"
+            "/usuarios\n"
+            "/online\n\n"
+            "/creditos nombre id cantidad\n"
+            "/admins\n"
+            "/eliminaradmin id"
+        )
 
-    mensaje = (
-        "🤖 Dealer Adm Bot Online\n\n"
-        "/agregar usuario password dias limite\n"
-        "/token nombre token dias\n"
-        "/hwid nombre hwid dias\n"
-        "/renovar usuario dias\n"
-        "/eliminar usuario\n"
-        "/usuarios\n"
-        "/online\n\n"
-        "/creditos nombre id cantidad\n"
-        "/admins\n"
-        "/eliminaradmin id"
-    )
+    else:
 
-else:
-
-    mensaje = (
-        "🤖 Dealer Revendedor\n\n"
-        "/agregar usuario password dias limite\n"
-        "/token nombre token dias\n"
-        "/hwid nombre hwid dias\n"
-        "/renovar usuario dias\n"
-        "/eliminar usuario\n"
-        "/usuarios\n"
-        "/online"
-    )
-
-await update.message.reply_text(mensaje)
-
-# ==========================================
-# AGREGAR SSH
-# ==========================================
-async def agregar(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not autorizado(update):
-        await update.message.reply_text(
-        "No tienes permisos en el bot."
-    )
-
-    return
-
-try:
-
-    user = context.args[0]
-    passwd = context.args[1]
-    dias = context.args[2]
-    limite = context.args[3]
-
-    user_id = update.effective_user.id
-    admin_nombre = update.effective_user.first_name
-
-    if not es_owner(user_id):
-
-        dias = str(min(int(dias), 30))
-
-        creditos = obtener_creditos(user_id)
-
-        if creditos <= 0:
-
-            await update.message.reply_text(
-                "❌ No tienes créditos disponibles."
-            )
-
-            return
-
-    subprocess.run(
-        [
-            API,
-            "agregar",
-            user,
-            passwd,
-            dias,
-            limite,
-            str(user_id),
-            admin_nombre
-        ],
-        check=True
-    )
-
-    if not es_owner(user_id):
-
-        descontar_credito(user_id)
-
-        creditos_restantes = obtener_creditos(user_id)
-
-    mensaje = (
-        f"✅ Usuario SSH creado\n\n"
-        f"Usuario: {user}\n"
-        f"Password: {passwd}\n"
-        f"Días: {dias}\n"
-        f"Límite: {limite}"
-    )
-
-    if not es_owner(user_id):
-
-        mensaje += (
-            f"\n\n💳 Créditos restantes: "
-            f"{creditos_restantes}"
+        mensaje = (
+            "🤖 Dealer Revendedor\n\n"
+            "/agregar usuario password dias limite\n"
+            "/token nombre token dias\n"
+            "/hwid nombre hwid dias\n"
+            "/renovar usuario dias\n"
+            "/eliminar usuario\n"
+            "/usuarios\n"
+            "/online"
         )
 
     await update.message.reply_text(mensaje)
+# ==========================================
+# AGREGAR SSH
+# ==========================================
 
-except Exception as e:
+async def agregar(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    await update.message.reply_text(
-        f"Uso:\n"
-        f"/agregar usuario password dias limite\n\n"
-        f"Error: {e}"
-    )
+    if not autorizado(update):
 
+        await update.message.reply_text(
+            "No tienes permisos en el bot."
+        )
+
+        return
+
+    try:
+
+        user = context.args[0]
+        passwd = context.args[1]
+        dias = context.args[2]
+        limite = context.args[3]
+
+        user_id = update.effective_user.id
+        admin_nombre = update.effective_user.first_name
+
+        if not es_owner(user_id):
+
+            dias = str(min(int(dias), 30))
+
+            creditos = obtener_creditos(user_id)
+
+            if creditos <= 0:
+
+                await update.message.reply_text(
+                    "❌ No tienes créditos disponibles."
+                )
+
+                return
+
+        subprocess.run(
+            [
+                API,
+                "agregar",
+                user,
+                passwd,
+                dias,
+                limite,
+                str(user_id),
+                admin_nombre
+            ],
+            check=True
+        )
+
+        if not es_owner(user_id):
+
+            descontar_credito(user_id)
+
+            creditos_restantes = obtener_creditos(user_id)
+
+        mensaje = (
+            f"✅ Usuario SSH creado\n\n"
+            f"Usuario: {user}\n"
+            f"Password: {passwd}\n"
+            f"Días: {dias}\n"
+            f"Límite: {limite}"
+        )
+
+        if not es_owner(user_id):
+
+            mensaje += (
+                f"\n\n💳 Créditos restantes: "
+                f"{creditos_restantes}"
+            )
+
+        await update.message.reply_text(mensaje)
+
+    except Exception as e:
+
+        await update.message.reply_text(
+            f"Uso:\n"
+            f"/agregar usuario password dias limite\n\n"
+            f"Error: {e}"
+        )
 
 # ==========================================
 # TOKEN
 # ==========================================
 
 async def token(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
     if not autorizado(update):
+
         await update.message.reply_text(
-        "No tienes permisos en el bot."
-    )
-
-    return
-
-try:
-
-    nombre = context.args[0]
-    tokenv = context.args[1]
-    dias = context.args[2]
-
-    user_id = update.effective_user.id
-    admin_nombre = update.effective_user.first_name
-
-    if not es_owner(user_id):
-
-        dias = str(min(int(dias), 30))
-
-        creditos = obtener_creditos(user_id)
-
-        if creditos <= 0:
-
-            await update.message.reply_text(
-                "❌ No tienes créditos disponibles."
-            )
-
-            return
-
-    subprocess.run(
-        [
-            API,
-            "token",
-            nombre,
-            tokenv,
-            dias,
-            str(user_id),
-            admin_nombre
-        ],
-        check=True
-    )
-
-    if not es_owner(user_id):
-
-        descontar_credito(user_id)
-
-        creditos_restantes = obtener_creditos(user_id)
-
-    mensaje = (
-        f"✅ Usuario TOKEN creado\n\n"
-        f"Nombre: {nombre}\n"
-        f"Token: {tokenv}\n"
-        f"Días: {dias}"
-    )
-
-    if not es_owner(user_id):
-
-        mensaje += (
-            f"\n\n💳 Créditos restantes: "
-            f"{creditos_restantes}"
+            "No tienes permisos en el bot."
         )
 
-    await update.message.reply_text(mensaje)
+        return
 
-except Exception as e:
+    try:
 
-    await update.message.reply_text(
-        f"Uso:\n"
-        f"/token nombre token dias\n\n"
-        f"Error: {e}"
-    )
+        nombre = context.args[0]
+        tokenv = context.args[1]
+        dias = context.args[2]
 
+        user_id = update.effective_user.id
+        admin_nombre = update.effective_user.first_name
 
+        if not es_owner(user_id):
 
+            dias = str(min(int(dias), 30))
+
+            creditos = obtener_creditos(user_id)
+
+            if creditos <= 0:
+
+                await update.message.reply_text(
+                    "❌ No tienes créditos disponibles."
+                )
+
+                return
+
+        subprocess.run(
+            [
+                API,
+                "token",
+                nombre,
+                tokenv,
+                dias,
+                str(user_id),
+                admin_nombre
+            ],
+            check=True
+        )
+
+        if not es_owner(user_id):
+
+            descontar_credito(user_id)
+
+            creditos_restantes = obtener_creditos(user_id)
+
+        mensaje = (
+            f"✅ Usuario TOKEN creado\n\n"
+            f"Nombre: {nombre}\n"
+            f"Token: {tokenv}\n"
+            f"Días: {dias}"
+        )
+
+        if not es_owner(user_id):
+
+            mensaje += (
+                f"\n\n💳 Créditos restantes: "
+                f"{creditos_restantes}"
+            )
+
+        await update.message.reply_text(mensaje)
+
+    except Exception as e:
+
+        await update.message.reply_text(
+            f"Uso:\n"
+            f"/token nombre token dias\n\n"
+            f"Error: {e}"
+        )
 # ==========================================
 # HWID
 # ==========================================
