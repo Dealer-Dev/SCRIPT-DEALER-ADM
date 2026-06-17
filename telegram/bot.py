@@ -141,9 +141,7 @@ def es_owner_update(update: Update):
 # ==========================================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-
-if not autorizado(update):
+    if not autorizado(update):
 
     await update.message.reply_text(
         "No tienes permisos en el bot."
@@ -181,18 +179,12 @@ else:
     )
 
 await update.message.reply_text(mensaje)
-app.add_handler(CommandHandler("creditos", creditos))
-app.add_handler(CommandHandler("admins", admins))
-app.add_handler(CommandHandler("eliminaradmin", eliminaradmin))
-
 
 # ==========================================
 # AGREGAR SSH
 # ==========================================
 async def agregar(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-
-if not autorizado(update):
+    if not autorizado(update):
 
     await update.message.reply_text(
         "No tienes permisos en el bot."
@@ -275,9 +267,7 @@ except Exception as e:
 # ==========================================
 
 async def token(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-
-if not autorizado(update):
+    if not autorizado(update):
 
     await update.message.reply_text(
         "No tienes permisos en el bot."
@@ -642,6 +632,9 @@ def main():
 
     app.add_handler(CommandHandler("usuarios", usuarios))
     app.add_handler(CommandHandler("online", online))
+    app.add_handler(CommandHandler("creditos", creditos))
+    app.add_handler(CommandHandler("admins", admins))
+    app.add_handler(CommandHandler("eliminaradmin", eliminaradmin))
 
     app.run_polling()
 
