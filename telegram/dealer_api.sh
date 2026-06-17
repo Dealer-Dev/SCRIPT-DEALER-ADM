@@ -97,20 +97,35 @@ case "$ACCION" in
         eliminar_admin_api "$2"
 
     ;;
+
     activo)
 
-    admin_activo_api "$2"
+        admin_activo_api "$2"
 
-;;
+    ;;
 
-creditosdisponibles)
+    creditosdisponibles)
 
-    obtener_creditos_api "$2"
+        obtener_creditos_api "$2"
 
-;;
+    ;;
+
+    descontarcredito)
+
+        descontar_credito_api "$2"
+
+    ;;
+
+    esadmin)
+
+        es_admin_api "$2"
+
+    ;;
 
     *)
+
         echo "ERROR"
+
     ;;
 
 esac
