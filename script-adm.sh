@@ -5,7 +5,7 @@
 #   Ubuntu 22/24/25
 # ═══════════════════════════════════════════════════════
 
-SCRIPT_VERSION="1.5"
+SCRIPT_VERSION="1.6"
 R='\033[0;31m'
 G='\033[0;32m'
 Y='\033[1;33m'
@@ -217,7 +217,7 @@ echo -e "  ${YELLOW}FECHA/HORA ACTUAL${NC}        : ${WHITE}$CURRENT_DATE - $CUR
 echo -e "  ${YELLOW}NOMBRE DEL SERVIDOR${NC}      : ${WHITE}$(hostname)${NC}"
 echo -e "  ${YELLOW}TIEMPO EN LINEA${NC}          : ${WHITE}$UPTIME${NC}"
 echo -e "  ${YELLOW}MEMORIA RAM LIBRE${NC}        : ${WHITE}$RAM_FREE${NC}"
-echo -e "  ${YELLOW}CREADOR DEL SCRIPT${NC}       : ${GREEN}@DealerServices235${NC}"
+echo -e "  ${YELLOW}CREADOR DEL SCRIPT${NC}       : ${GREEN}@DealerServices235 𓃹${NC}"
 echo -e "  ${GREEN}BIENVENIDO DE NUEVO!${NC}"
 echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo -e "  Escribe ${YELLOW}menu${NC} para ver el menú"
@@ -234,7 +234,7 @@ banner() {
     figlet -f small "$SRV_NAME" 2>/dev/null || echo "  $SRV_NAME"
     echo -e "${NC}"
     echo -e "${NEON}◆━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━◆${NC}"
-    echo -e "  ${W}Script de Gestión VPN${NC} ${DIM}by${NC} ${NEON}@DealerServices235${NC}"
+    echo -e "  ${W}Script de Gestión VPN${NC} ${DIM}by${NC} ${NEON}@DealerServices235${NC}" 𓃹
     echo -e "${NEON}◆━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━◆${NC}"
     echo ""
 }
