@@ -351,11 +351,19 @@ systemctl restart udp-custom.service 2>/dev/null
 systemctl restart zivpn.service 2>/dev/null
 
 # Configuración de iptables
-DEFAULT_IFACE=$(ip -4 route ls | grep default | grep -Po '(?<=dev )(\S+)' | head -1)
-iptables -t nat -A PREROUTING -i "$DEFAULT_IFACE" -p udp --dport 6000:19999 -j DNAT --to-destination :5667
-iptables -t nat -A PREROUTING -p udp --dport 6000:19999 -j DNAT --to-destination :5667
-ufw allow 6000:19999/udp
-ufw allow 5667/udp
+DEFAULT_IFACE=$(ip -4 route ls | awk '/default/ {print $5; exit}')
+
+# Eliminar regla anterior si existe
+iptables -t nat -D PREROUTING -i "$DEFAULT_IFACE" -p udp --dport 6000:19999 -j DNAT --to-destination :5667 2>/dev/null
+
+# Insertar ZiVPN con prioridad alta
+iptables -t nat -I PREROUTING 2 -i "$DEFAULT_IFACE" -p udp --dport 6000:19999 -j DNAT --to-destination :5667
+
+# Abrir puertos si UFW está instalado
+if command -v ufw >/dev/null 2>&1; then
+    ufw allow 6000:19999/udp >/dev/null 2>&1
+    ufw allow 5667/udp >/dev/null 2>&1
+fi
 
 #Instalar JQ para gestion en base de datos
 apt-get install -y jq > /dev/null 2>&1
