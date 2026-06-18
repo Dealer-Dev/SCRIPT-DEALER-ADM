@@ -5,7 +5,7 @@
 #   Ubuntu 22/24/25
 # ═══════════════════════════════════════════════════════
 
-SCRIPT_VERSION="1.5"
+SCRIPT_VERSION="1.6"
 R='\033[0;31m'
 G='\033[0;32m'
 Y='\033[1;33m'
@@ -1914,7 +1914,119 @@ admin_activo_api() {
 
     echo "0"
 }
+menu_zivpn() {
 
+    while true; do
+
+        clear
+
+        echo -e "${ORANGE}  ╭──────────────────────────────────────────────────╮${RESET}"
+        echo -e "${ORANGE}  │                    MENU ZIVPN                    │${RESET}"
+        echo -e "${ORANGE}  ╰──────────────────────────────────────────────────╯${RESET}"
+
+        echo ""
+
+        estado_servicio
+
+        echo ""
+
+        printf "   ${ORANGE}[1]${WHITE} Listar contraseñas        ${ORANGE}[6]${WHITE} Eliminar PASSWD\n"
+        printf "   ${ORANGE}[2]${WHITE} Agregar PASSWD (manual)   ${ORANGE}[7]${WHITE} Editar duración\n"
+        printf "   ${ORANGE}[3]${WHITE} Agregar PASSWD (random)   ${ORANGE}[8]${WHITE} Reiniciar servicio\n"
+        printf "   ${ORANGE}[4]${WHITE} Activar PASSWD            ${BRED}[9]${BRED} 🚨Desinstalar servicio\n"
+        printf "   ${ORANGE}[5]${WHITE} Desactivar PASSWD         ${ORANGE}[10]${WHITE} Instalar servicio\n"
+
+        echo ""
+
+        echo -e "${ORANGE}  ╭──────────────────────────────────────────────────╮${RESET}"
+        echo -e "${ORANGE}  │       ENTER) Volver al menú principal            │${RESET}"
+        echo -e "${ORANGE}  │       x) Salir del panel                         │${RESET}"
+        echo -e "${ORANGE}  ╰──────────────────────────────────────────────────╯${RESET}"
+
+        echo ""
+
+        read -p "      $(echo -e "${ORANGE}Seleccione una opción: ${RESET}")" opcion
+
+        if [[ -z "$opcion" ]]; then
+            return
+        fi
+
+        case "$opcion" in
+
+            1)
+                clear
+                listar_passwords
+                read -p "Presione ENTER para continuar..."
+            ;;
+
+            2)
+                clear
+                agregar_password
+                read -p "Presione ENTER para continuar..."
+            ;;
+
+            3)
+                clear
+                agregar_password random
+                read -p "Presione ENTER para continuar..."
+            ;;
+
+            4)
+                clear
+                activar_password
+                read -p "Presione ENTER para continuar..."
+            ;;
+
+            5)
+                clear
+                desactivar_password
+                read -p "Presione ENTER para continuar..."
+            ;;
+
+            6)
+                clear
+                eliminar_password
+                read -p "Presione ENTER para continuar..."
+            ;;
+
+            7)
+                clear
+                editar_duracion
+                read -p "Presione ENTER para continuar..."
+            ;;
+
+            8)
+                clear
+                reiniciar_servicio
+                read -p "Presione ENTER para continuar..."
+            ;;
+
+            9)
+                clear
+                remover_servicio
+                read -p "Presione ENTER para continuar..."
+            ;;
+
+            10)
+                clear
+                instalar_servicio
+                read -p "Presione ENTER para continuar..."
+            ;;
+
+            x|X)
+                exit
+            ;;
+
+            *)
+                echo -e "${RED}Opción inválida.${NC}"
+                sleep 1
+            ;;
+
+        esac
+
+    done
+
+}
 
 eliminar_usuario() {
 
@@ -4291,7 +4403,7 @@ menu_principal() {
         sep
         printf " \033[1;97m❬1❭ Usuarios SSH            ❬5❭ Usuarios SSH Online \033[0m\n"
         printf " \033[1;97m❬2❭ Usuarios VMess          ❬6❭ V2Ray Online\033[0m\n"
-        printf " \033[1;97m❬3❭ Usuarios ZIVPN          ❬7❭ ZIVPN Online\033[0m\n"
+        printf " \033[1;97m❬3❭ Menú ZIVPN              ❬7❭ ZIVPN Online\033[0m\n"
         printf " \033[1;97m❬4❭ Instalar Protocolos     ❬8❭ Telegram Bot Admin\033[0m\n"
         sep
         printf " ${Y}❬9❭ %-18s${NC} ${R}❬10❭ %s${NC}\n" "Configurar MOTD" "Desinstalar Script"
@@ -4304,11 +4416,11 @@ menu_principal() {
         case $OPT in
             1) menu_usuarios ;;
             2) menu_v2ray ;;
-            3) menu_users_ziv ;;
+            3) menu_zivpn ;;
             4) menu_herramientas ;;
             5) usuarios_ssh_online_count ;;
             6) usuarios_v2ray_online_count ;;
-            7) usuarios_ziv_online_count ;;
+            7) usuarios_ziv_online_cou ;;
             8) menu_telegram ;;
             9) instalar_motd ;;
             10) desinstalar_script ;;
