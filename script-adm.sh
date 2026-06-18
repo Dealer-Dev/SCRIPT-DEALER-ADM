@@ -1916,13 +1916,27 @@ admin_activo_api() {
 }
 menu_zivpn() {
 
+    if ! type estado_servicio >/dev/null 2>&1; then
+
+        echo ""
+        echo -e "${R}Módulo ZIVPN no cargado.${NC}"
+        echo -e "${Y}Verifique:${NC}"
+        echo ""
+        echo "source /etc/dealer-adm/scripts/zivpn_manager.sh"
+        echo ""
+
+        read -p "ENTER..."
+        return
+
+    fi
+
     while true; do
 
         clear
 
-        echo -e "${ORANGE}  ╭──────────────────────────────────────────────────╮${RESET}"
-        echo -e "${ORANGE}  │                    MENU ZIVPN                    │${RESET}"
-        echo -e "${ORANGE}  ╰──────────────────────────────────────────────────╯${RESET}"
+        echo -e "${ORANGE}  ╭──────────────────────────────────────────────────╮${NC}"
+        echo -e "${ORANGE}  │                    MENU ZIVPN                    │${NC}"
+        echo -e "${ORANGE}  ╰──────────────────────────────────────────────────╯${NC}"
 
         echo ""
 
@@ -1938,14 +1952,14 @@ menu_zivpn() {
 
         echo ""
 
-        echo -e "${ORANGE}  ╭──────────────────────────────────────────────────╮${RESET}"
-        echo -e "${ORANGE}  │       ENTER) Volver al menú principal            │${RESET}"
-        echo -e "${ORANGE}  │       x) Salir del panel                         │${RESET}"
-        echo -e "${ORANGE}  ╰──────────────────────────────────────────────────╯${RESET}"
+        echo -e "${ORANGE}  ╭──────────────────────────────────────────────────╮${NC}"
+        echo -e "${ORANGE}  │       ENTER) Volver al menú principal            │${NC}"
+        echo -e "${ORANGE}  │       x) Salir del panel                         │${NC}"
+        echo -e "${ORANGE}  ╰──────────────────────────────────────────────────╯${NC}"
 
         echo ""
 
-        read -p "      $(echo -e "${ORANGE}Seleccione una opción: ${RESET}")" opcion
+        read -p "      Seleccione una opción: " opcion
 
         if [[ -z "$opcion" ]]; then
             return
@@ -1956,60 +1970,70 @@ menu_zivpn() {
             1)
                 clear
                 listar_passwords
+                echo ""
                 read -p "Presione ENTER para continuar..."
             ;;
 
             2)
                 clear
                 agregar_password
+                echo ""
                 read -p "Presione ENTER para continuar..."
             ;;
 
             3)
                 clear
                 agregar_password random
+                echo ""
                 read -p "Presione ENTER para continuar..."
             ;;
 
             4)
                 clear
                 activar_password
+                echo ""
                 read -p "Presione ENTER para continuar..."
             ;;
 
             5)
                 clear
                 desactivar_password
+                echo ""
                 read -p "Presione ENTER para continuar..."
             ;;
 
             6)
                 clear
                 eliminar_password
+                echo ""
                 read -p "Presione ENTER para continuar..."
             ;;
 
             7)
                 clear
                 editar_duracion
+                echo ""
                 read -p "Presione ENTER para continuar..."
             ;;
 
             8)
                 clear
                 reiniciar_servicio
+                echo ""
                 read -p "Presione ENTER para continuar..."
             ;;
 
             9)
                 clear
                 remover_servicio
+                echo ""
                 read -p "Presione ENTER para continuar..."
             ;;
 
             10)
                 clear
                 instalar_servicio
+                echo ""
                 read -p "Presione ENTER para continuar..."
             ;;
 
@@ -2018,7 +2042,7 @@ menu_zivpn() {
             ;;
 
             *)
-                echo -e "${RED}Opción inválida.${NC}"
+                echo -e "${R}Opción inválida.${NC}"
                 sleep 1
             ;;
 
