@@ -5,7 +5,7 @@
 #   Ubuntu 22/24/25
 # ═══════════════════════════════════════════════════════
 
-SCRIPT_VERSION="2.4"
+SCRIPT_VERSION="2.5"
 R='\033[0;31m'
 G='\033[0;32m'
 Y='\033[1;33m'
@@ -112,7 +112,7 @@ if [ ! -f /etc/dealer-adm/.licensed ]; then
     echo -e "\033[0m"
 
     echo -e "\033[1;96m◆━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━◆\033[0m"
-    echo -e "  \033[1;97m SCRIPT DEALER ADM v3.1\033[0m"
+    echo -e "  \033[1;97m SCRIPT DEALER ADM ${Y}v${SCRIPT_VERSION}${NC}\033[0m"
     echo -e "\033[1;96m◆━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━◆\033[0m"
     echo ""
     echo -e "  \033[1;33m A continuación ingresa tu Key\033[0m"
@@ -180,7 +180,7 @@ if [ ! -f /etc/dealer-adm/server_name ]; then
     echo ""
     echo -e "\033[1;33mEscribe el nombre que aparecera en el menu:\033[0m"
     read -p "Nombre: " INSTALL_NAME
-    INSTALL_NAME=${INSTALL_NAME:-"SCRIPT DEALER ADM"}
+    INSTALL_NAME=${INSTALL_NAME:-"Dealer"}
     echo "$INSTALL_NAME" > /etc/dealer-adm/server_name
     echo "$(date +%d-%m-%Y)" > /etc/dealer-adm/install_date
 fi
@@ -191,7 +191,7 @@ cat > /etc/profile.d/sshfree-motd.sh << 'MOTDSCRIPT'
 PURPLE='\033[0;35m' CYAN='\033[0;36m' GREEN='\033[0;32m'
 YELLOW='\033[1;33m' WHITE='\033[1;37m' NC='\033[0m'
 INSTALL_DATE=$(cat /etc/dealer-adm/install_date 2>/dev/null || echo "N/A")
-SRV_NAME=$(cat /etc/dealer-adm/server_name 2>/dev/null || echo "SCRIPT DEALER ADM")
+SRV_NAME=$(cat /etc/dealer-adm/server_name 2>/dev/null || echo "Dealer")
 CURRENT_DATE=$(date +%d-%m-%Y)
 CURRENT_TIME=$(date +%H:%M:%S)
 UPTIME=$(uptime -p | sed 's/up //')
@@ -200,11 +200,11 @@ echo -e "${PURPLE}"
 figlet -f small "$SRV_NAME" 2>/dev/null || echo "  $SRV_NAME"
 echo -e "${NC}"
 echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo -e "  ${YELLOW}SERVIDOR INSTALADO EL${NC}   : ${WHITE}$INSTALL_DATE${NC}"
+echo -e "  ${YELLOW}SERVIDOR INSTALADO EL${NC}    : ${WHITE}$INSTALL_DATE${NC}"
 echo -e "  ${YELLOW}FECHA/HORA ACTUAL${NC}        : ${WHITE}$CURRENT_DATE - $CURRENT_TIME${NC}"
 echo -e "  ${YELLOW}NOMBRE DEL SERVIDOR${NC}      : ${WHITE}$(hostname)${NC}"
 echo -e "  ${YELLOW}TIEMPO EN LINEA${NC}          : ${WHITE}$UPTIME${NC}"
-echo -e "  ${YELLOW}VERSION INSTALADA${NC}        : ${WHITE}V3.1${NC}"
+echo -e "  ${YELLOW}VERSION INSTALADA${NC}        : ${WHITE}${SCRIPT_VERSION}{NC}"
 echo -e "  ${YELLOW}MEMORIA RAM LIBRE${NC}        : ${WHITE}$RAM_FREE${NC}"
 echo -e "  ${YELLOW}CREADOR DEL SCRIPT${NC}       : ${PURPLE}@DealerServices235${NC}"
 echo -e "  ${GREEN}BIENVENIDO DE NUEVO!${NC}"
@@ -223,7 +223,9 @@ banner() {
     figlet -f small "$SRV_NAME" 2>/dev/null || echo "  $SRV_NAME"
     echo -e "${NC}"
     echo -e "${NEON}◆━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━◆${NC}"
-    echo -e "  ${W}Gestor VPN/SSH${NC} ${DIM}by${NC} ${NEON}@DealerServices235${NC}  ${Y}v${SCRIPT_VERSION}${NC}"
+    echo -e "  ${W}Script de Gestión VPN${NC} ${DIM}by${NC} ${NEON}@DealerServices235${NC}  ${Y}v${SCRIPT_VERSION}${NC}"
+    echo -e "${NEON}◆━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━◆${NC}"
+    echo -e "${Y}Versión ${SCRIPT_VERSION}${NC}"
     echo -e "${NEON}◆━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━◆${NC}"
     echo ""
 }
@@ -2155,7 +2157,7 @@ echo -e "\${PURPLE}"
 figlet -f slant "\$SRV_NAME" 2>/dev/null || echo "\$SRV_NAME"
 echo -e "\${NC}"
 echo -e "\${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\${NC}"
-echo -e "  \${YELLOW}SERVIDOR INSTALADO EL\${NC}   : \${WHITE}\$INSTALL_DATE\${NC}"
+echo -e "  \${YELLOW}SERVIDOR INSTALADO EL\${NC}    : \${WHITE}\$INSTALL_DATE\${NC}"
 echo -e "  \${YELLOW}FECHA/HORA ACTUAL\${NC}        : \${WHITE}\$CURRENT_DATE - \$CURRENT_TIME\${NC}"
 echo -e "  \${YELLOW}NOMBRE DEL SERVIDOR\${NC}      : \${WHITE}\$HOSTNAME\${NC}"
 echo -e "  \${YELLOW}TIEMPO EN LINEA\${NC}          : \${WHITE}\$UPTIME\${NC}"
@@ -4208,7 +4210,7 @@ menu_principal() {
         SRV_RAM=$(free -h | awk '/^Mem:/{print $4}')
         SRV_UPTIME=$(uptime -p | sed 's/up //')
         sep
-        printf " ${NEON}◈${NC} ${DIM}SO:${NC}  ${W}%-20s${NC} ${NEON}◈${NC} ${DIM}IP:${NC}  ${NEON}%s${NC}\n" "$SRV_OS" "$SRV_IP"
+        printf " ${NEON}◈${NC} ${DIM}SO:${NC} ${W}%-20s${NC} ${NEON}◈${NC} ${DIM}IP:${NC}  ${NEON}%s${NC}\n" "$SRV_OS" "$SRV_IP"
         printf " ${NEON}◈${NC} ${DIM}CPU:${NC} ${W}%-19s${NC} ${NEON}◈${NC} ${DIM}Fecha:${NC} ${Y}%s${NC}\n" "$SRV_CPU cores" "$SRV_DATE"
         printf " ${NEON}◈${NC} ${DIM}RAM:${NC} ${W}%-19s${NC} ${NEON}◈${NC} ${DIM}Uptime:${NC} ${W}%s${NC}\n" "$SRV_RAM" "$SRV_UPTIME"
         sep
@@ -4231,14 +4233,13 @@ menu_principal() {
         [ -n "$C1" ] && [ -n "$C2" ] && echo -e " $C1    $C2" || { [ -n "$C1" ] && echo -e " $C1"; }
         [ -z "$C1" ] && echo -e " ${DIM}  Sin servicios activos${NC}"
         sep
-        printf " \033[1;97m❬1❭ Usuarios SSH            ❬2❭ Usuarios VMess\033[0m\n"
-        printf " \033[1;97m❬3❭ Usuarios ZIVPN          ❬4❭ Instalar Protocolos\033[0m\n"
-        printf " \033[1;97m❬5❭ Usuarios SSH Online     ❬6❭ V2Ray Online\033[0m\n"
-        printf " \033[1;97m❬7❭ ZIV Online              ❬8❭ Telegram Bot Admin\033[0m\n"
-        printf " ${NEON}Version: ${Y}v%s ${NEON}${NC}\n" "$SCRIPT_VERSION"
+        printf " \033[1;97m❬1❭ Usuarios SSH            ❬5❭ Usuarios SSH Online \033[0m\n"
+        printf " \033[1;97m❬2❭ Usuarios VMess          ❬6❭ V2Ray Online\033[0m\n"
+        printf " \033[1;97m❬3❭ Usuarios ZIVPN          ❬7❭ ZIV Online\033[0m\n"
+        printf " \033[1;97m❬4❭ Instalar Protocolos     ❬8❭ Telegram Bot Admin\033[0m\n"
         sep
-        printf " ${Y}❬9❭ 🖥️  %-18s${NC} ${R}❬10❭ 🗑️  %s${NC}\n" "Configurar MOTD" "Desinstalar"
-        printf " ${Y}❬11❭ 🔄 Actualizar Script${NC}\n"
+        printf " ${Y}❬9❭  %-18s${NC} ${R}❬10❭  %s${NC}\n" "Configurar MOTD" "Desinstalar Script"
+        printf " ${Y}❬11❭ Actualizar Script${NC}\n ${NEON}Version: ${Y}v%s ${NEON}${NC}\n" "$SCRIPT_VERSION"
         sep
         printf " ${R}❬0❭ ✖  Salir${NC}\n"
         sep
@@ -4248,11 +4249,11 @@ menu_principal() {
             1) menu_usuarios ;;
             2) menu_v2ray ;;
             3) menu_users_ziv ;;
+            4) menu_herramientas ;;
             5) usuarios_ssh_online_count ;;
             6) usuarios_v2ray_online_count ;;
             7) usuarios_ziv_online_count ;;
             8) menu_telegram ;;
-            4) menu_herramientas ;;
             9) instalar_motd ;;
             10) desinstalar_script ;;
             11) actualizar_script ;;
