@@ -4237,7 +4237,7 @@ menu_principal() {
         printf " \033[1;97m❬4❭ Instalar Protocolos     ❬8❭ Telegram Bot Admin\033[0m\n"
         sep
         printf " ${Y}❬9❭ %-18s${NC} ${R}❬10❭ %s${NC}\n" "Configurar MOTD" "Desinstalar Script"
-        printf " ${Y}❬11❭ Actualizar Script${NC} ${NEON}   Version: ${Y}%s ${NEON}${NC}$SCRIPT_VERSION\n"
+        printf " ${Y}❬11❭ Actualizar Script${NC} ${NEON}   Version:${Y}%s ${NEON}${NC}$SCRIPT_VERSION\n"
         sep
         printf " ${R}❬0❭ ✖  Salir${NC}\n"
         sep
