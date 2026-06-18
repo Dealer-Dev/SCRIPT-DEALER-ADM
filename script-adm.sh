@@ -5,7 +5,7 @@
 #   Ubuntu 22/24/25
 # ═══════════════════════════════════════════════════════
 
-SCRIPT_VERSION="1.9"
+SCRIPT_VERSION="1.6"
 R='\033[0;31m'
 G='\033[0;32m'
 Y='\033[1;33m'
@@ -204,7 +204,7 @@ echo -e "  ${YELLOW}SERVIDOR INSTALADO EL${NC}    : ${WHITE}$INSTALL_DATE${NC}"
 echo -e "  ${YELLOW}FECHA/HORA ACTUAL${NC}        : ${WHITE}$CURRENT_DATE - $CURRENT_TIME${NC}"
 echo -e "  ${YELLOW}NOMBRE DEL SERVIDOR${NC}      : ${WHITE}$(hostname)${NC}"
 echo -e "  ${YELLOW}TIEMPO EN LINEA${NC}          : ${WHITE}$UPTIME${NC}"
-echo -e "  ${YELLOW}VERSION INSTALADA${NC}        : ${WHITE}${SCRIPT_VERSION}"
+echo -e "  ${YELLOW}VERSION INSTALADA${NC}        : ${WHITE}$SCRIPT_VERSION${NC}"
 echo -e "  ${YELLOW}MEMORIA RAM LIBRE${NC}        : ${WHITE}$RAM_FREE${NC}"
 echo -e "  ${YELLOW}CREADOR DEL SCRIPT${NC}       : ${PURPLE}@DealerServices235${NC}"
 echo -e "  ${GREEN}BIENVENIDO DE NUEVO!${NC}"
