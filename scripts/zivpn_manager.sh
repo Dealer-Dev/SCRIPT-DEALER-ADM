@@ -90,6 +90,10 @@ agregar_password() {
 
 # Desactivar contraseña
 desactivar_password() {
+[[ ! -f "$DB_FILE" ]] && {
+        echo -e "${RED}Base de datos no encontrada.${NC}"
+        return
+    }
     listar_passwords
     read -p "Ingrese el número de la contraseña a desactivar: " num
     pass=$(awk -F"|" -v n="$num" 'NR==n {print $1}' "$DB_FILE")
@@ -112,6 +116,10 @@ desactivar_password() {
 
 # Activar contraseña
 activar_password() {
+[[ ! -f "$DB_FILE" ]] && {
+        echo -e "${RED}Base de datos no encontrada.${NC}"
+        return
+    }
     listar_passwords
     read -p "Ingrese el número de la contraseña a activar: " num
     pass=$(awk -F"|" -v n="$num" 'NR==n {print $1}' "$DB_FILE")
@@ -140,6 +148,10 @@ activar_password() {
 }
 # Eliminar completamente una contraseña
 eliminar_password() {
+[[ ! -f "$DB_FILE" ]] && {
+        echo -e "${RED}Base de datos no encontrada.${NC}"
+        return
+    }
 listar_passwords
 read -p "Ingrese el número de la contraseña a eliminar: " num
     pass=$(awk -F"|" -v n="$num" 'NR==n {print $1}' "$DB_FILE")
@@ -162,6 +174,10 @@ read -p "Ingrese el número de la contraseña a eliminar: " num
 
 # Editar duración (fecha de expiración) de una contraseña
 editar_duracion() {
+[[ ! -f "$DB_FILE" ]] && {
+        echo -e "${RED}Base de datos no encontrada.${NC}"
+        return
+    }
     listar_passwords
     read -p "Ingrese el número de la contraseña a editar: " num
     pass=$(awk -F"|" -v n="$num" 'NR==n {print $1}' "$DB_FILE")
@@ -231,7 +247,7 @@ remover_servicio() {
     echo 3 > /proc/sys/vm/drop_caches
     sysctl -w vm.drop_caches=3 >/dev/null 2>&1
     swapoff -a && swapon -a
-	systemctl restart udp-custom
+	systemctl restart udp-custom.service 2>/dev/null
     echo -e "${GREEN}✔ Limpieza completada.${NC}"
 }
 estado_servicio() {
