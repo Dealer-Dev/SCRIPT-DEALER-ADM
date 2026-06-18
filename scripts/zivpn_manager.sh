@@ -229,7 +229,15 @@ remover_servicio() {
 	systemctl restart udp-custom
     echo -e "${GREEN}✔ Limpieza completada.${NC}"
 }
-
+estado_servicio() {
+    if systemctl is-active --quiet zivpn.service; then
+        echo -e " ${GREEN}Estado: Activo${NC}"
+    elif systemctl is-failed --quiet zivpn.service; then
+        echo -e " ${RED}Estado: Fallido${NC}"
+    else
+        echo -e " ${YELLOW}Estado: Inactivo/Detenido${NC}"
+    fi
+}
 reiniciar_servicio() {
     echo -e "${YELLOW}Reiniciando ZiVPN...${NC}"
     systemctl restart zivpn.service 2>/dev/null
@@ -376,12 +384,4 @@ echo -e "${YELLOW}Puertos habilitados: ${GREEN}UDP 6000-19999 y 5667${NC}"
 echo -e "${YELLOW}Arquitectura detectada: ${GREEN}$ARCH_NAME${NC}"
 echo -e "\e[32m✔ Los usuarios expirados se eliminan en cada hora. \e[0m"
 }
-estado_servicio() {
-    if systemctl is-active --quiet zivpn.service; then
-        echo -e " ${GREEN}Estado: Activo${NC}"
-    elif systemctl is-failed --quiet zivpn.service; then
-        echo -e " ${RED}Estado: Fallido${NC}"
-    else
-        echo -e " ${YELLOW}Estado: Inactivo/Detenido${NC}"
-    fi
-}
+
