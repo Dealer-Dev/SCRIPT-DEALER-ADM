@@ -5,7 +5,7 @@
 #   Ubuntu 22/24/25
 # ═══════════════════════════════════════════════════════
 
-SCRIPT_VERSION="2.8"
+SCRIPT_VERSION="2.9"
 R='\033[0;31m'
 G='\033[0;32m'
 Y='\033[1;33m'
@@ -4283,7 +4283,7 @@ menu_principal() {
         sep
         printf " \033[1;97m❬1❭ Usuarios SSH            ❬5❭ Usuarios SSH Online \033[0m\n"
         printf " \033[1;97m❬2❭ Usuarios VMess          ❬6❭ V2Ray Online\033[0m\n"
-        printf " \033[1;97m❬3❭ Usuarios ZIVPN          ❬7❭ ZIV Online\033[0m\n"
+        printf " \033[1;97m❬3❭ Usuarios ZIVPN          ❬7❭ ZIVPN Online\033[0m\n"
         printf " \033[1;97m❬4❭ Instalar Protocolos     ❬8❭ Telegram Bot Admin\033[0m\n"
         sep
         printf " ${Y}❬9❭ %-18s${NC} ${R}❬10❭ %s${NC}\n" "Configurar MOTD" "Desinstalar Script"
