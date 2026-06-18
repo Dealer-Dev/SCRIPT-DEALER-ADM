@@ -5,7 +5,7 @@
 #   Ubuntu 22/24/25
 # ═══════════════════════════════════════════════════════
 
-SCRIPT_VERSION="2.5"
+SCRIPT_VERSION="2.6"
 R='\033[0;31m'
 G='\033[0;32m'
 Y='\033[1;33m'
@@ -223,9 +223,7 @@ banner() {
     figlet -f small "$SRV_NAME" 2>/dev/null || echo "  $SRV_NAME"
     echo -e "${NC}"
     echo -e "${NEON}◆━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━◆${NC}"
-    echo -e "  ${W}Script de Gestión VPN${NC} ${DIM}by${NC} ${NEON}@DealerServices235${NC}  ${Y}v${SCRIPT_VERSION}${NC}"
-    echo -e "${NEON}◆━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━◆${NC}"
-    echo -e "${Y}Versión ${SCRIPT_VERSION}${NC}"
+    echo -e "  ${W}Script de Gestión VPN${NC} ${DIM}by${NC} ${NEON}@DealerServices235${NC}"
     echo -e "${NEON}◆━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━◆${NC}"
     echo ""
 }
@@ -4239,7 +4237,7 @@ menu_principal() {
         printf " \033[1;97m❬4❭ Instalar Protocolos     ❬8❭ Telegram Bot Admin\033[0m\n"
         sep
         printf " ${Y}❬9❭  %-18s${NC} ${R}❬10❭  %s${NC}\n" "Configurar MOTD" "Desinstalar Script"
-        printf " ${Y}❬11❭ Actualizar Script${NC}\n ${NEON}Version: ${Y}v%s ${NEON}${NC}\n" "$SCRIPT_VERSION"
+        printf " ${Y}❬11❭ Actualizar Script${NC} ${NEON}Version: ${Y}%s ${NEON}${NC}$SCRIPT_VERSION"
         sep
         printf " ${R}❬0❭ ✖  Salir${NC}\n"
         sep
