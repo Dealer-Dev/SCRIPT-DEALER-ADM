@@ -272,6 +272,7 @@ fi
 
 chmod +x /usr/local/bin/zivpn
 mkdir -p /etc/zivpn 1> /dev/null 2> /dev/null
+touch /etc/zivpn/passwords.db
 wget https://raw.githubusercontent.com/zahidbd2/udp-zivpn/main/config.json -O /etc/zivpn/config.json 1> /dev/null 2> /dev/null
 
 echo -e "${YELLOW}Generando certificados SSL...${NC}"
@@ -317,7 +318,8 @@ sed -i -E "s/\"config\": ?\[[[:space:]]*\"zi\"[[:space:]]*\]/${new_config_str}/g
 systemctl daemon-reload
 systemctl enable zivpn.service
 systemctl start zivpn.service
-systemctl restart udp-custom zivpn
+systemctl restart udp-custom.service 2>/dev/null
+systemctl restart zivpn.service 2>/dev/null
 
 # Configuración de iptables
 DEFAULT_IFACE=$(ip -4 route ls | grep default | grep -Po '(?<=dev )(\S+)' | head -1)
