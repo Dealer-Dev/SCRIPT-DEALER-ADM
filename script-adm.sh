@@ -4167,13 +4167,13 @@ estado_bot() {
     echo ""
 
     if systemctl is-active --quiet dealer-bot; then
-
+    sep
         echo -e "  ${G}BOT ACTIVO${NC}"
-
+    sep
     else
-
+    sep
         echo -e "  ${R}BOT INACTIVO${NC}"
-
+    sep
     fi
 
     echo ""
