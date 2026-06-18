@@ -1675,17 +1675,44 @@ usuarios_ssh_online_count() {
     sep
     echo ""
 
-    SALIDA=$(usuarios_online_api)
+    CONTADOR=0
 
-    if [ -z "$SALIDA" ]; then
+    while IFS= read -r LINEA; do
 
-        echo -e "  ${R}No hay usuarios conectados${NC}"
+        [ -z "$LINEA" ] && continue
 
-    else
+        CONTADOR=$((CONTADOR + 1))
 
-        echo "$SALIDA"
+        NOMBRE=$(echo "$LINEA" | cut -d'|' -f1 | xargs)
+        TIPO=$(echo "$LINEA" | cut -d'|' -f2 | xargs)
+        INFO=$(echo "$LINEA" | cut -d'|' -f3 | xargs)
 
-    fi
+        case "$TIPO" in
+
+            ssh)
+                TIPO_COLOR="${G}SSH${NC}"
+            ;;
+
+            token)
+                TIPO_COLOR="\e[38;5;214mTOKEN${NC}"
+            ;;
+
+            hwid)
+                TIPO_COLOR="\e[35mHWID${NC}"
+            ;;
+
+            *)
+                TIPO_COLOR="$TIPO"
+            ;;
+
+        esac
+
+        echo -e "  [${CONTADOR}].- ${NOMBRE} | ${TIPO_COLOR} | ${INFO}"
+
+    done <<< "$(usuarios_online_api)"
+
+    [ "$CONTADOR" -eq 0 ] && \
+    echo -e "  ${R}No hay usuarios conectados${NC}"
 
     echo ""
     read -p "  ENTER..."
