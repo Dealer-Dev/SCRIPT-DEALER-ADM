@@ -5,7 +5,7 @@
 #   Ubuntu 22/24/25
 # ═══════════════════════════════════════════════════════
 
-SCRIPT_VERSION="2.9"
+SCRIPT_VERSION="1.5"
 R='\033[0;31m'
 G='\033[0;32m'
 Y='\033[1;33m'
@@ -1711,10 +1711,18 @@ usuarios_ssh_online_count() {
 
     done <<< "$(usuarios_online_api)"
 
-    [ "$CONTADOR" -eq 0 ] && \
-    echo -e "  ${R}No hay usuarios conectados${NC}"
+    if [ "$CONTADOR" -eq 0 ]; then
+
+        echo -e "  ${R}No hay usuarios conectados${NC}"
+
+    fi
 
     echo ""
+    sep
+    echo -e "  ${G}TIENES${NC}  ${W}[ ${CONTADOR} ]${NC}  ${G}USUARIOS CONECTADOS${NC}"
+    sep
+    echo ""
+
     read -p "  ENTER..."
 
 }
