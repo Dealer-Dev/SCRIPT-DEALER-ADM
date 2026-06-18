@@ -4166,7 +4166,15 @@ estado_bot() {
     sep
     echo ""
 
-    systemctl --no-pager status dealer-bot
+    if systemctl is-active --quiet dealer-bot; then
+
+        echo -e "  ${G}BOT ACTIVO${NC}"
+
+    else
+
+        echo -e "  ${R}BOT INACTIVO${NC}"
+
+    fi
 
     echo ""
     read -p "  ENTER..."
