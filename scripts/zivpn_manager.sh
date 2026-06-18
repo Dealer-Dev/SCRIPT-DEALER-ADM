@@ -84,7 +84,8 @@ agregar_password() {
     jq --arg pass "$pass" '.auth.config += [$pass]' "$CONFIG_FILE" > tmp.$$.json && mv tmp.$$.json "$CONFIG_FILE"
 
     echo -e "${GREEN}✔ Contraseña añadida:${NC} $pass (expira el $exp)"
-	systemctl restart udp-custom zivpn
+	systemctl restart udp-custom.service 2>/dev/null
+	systemctl restart zivpn.service 2>/dev/null
 }
 
 # Desactivar contraseña
@@ -105,7 +106,8 @@ desactivar_password() {
     jq --arg pass "$pass" '.auth.config -= [$pass]' "$CONFIG_FILE" > tmp.$$.json && mv tmp.$$.json "$CONFIG_FILE"
 
     echo -e "${GREEN}✔ Contraseña desactivada:${NC} $pass"
-	systemctl restart udp-custom zivpn
+	systemctl restart udp-custom.service 2>/dev/null
+	systemctl restart zivpn.service 2>/dev/null
 }
 
 # Activar contraseña
@@ -133,7 +135,8 @@ activar_password() {
     jq --arg pass "$pass" '.auth.config += [$pass]' "$CONFIG_FILE" > tmp.$$.json && mv tmp.$$.json "$CONFIG_FILE"
 
     echo -e "${GREEN}✔ Contraseña activada:${NC} $pass"
-	systemctl restart udp-custom zivpn
+	systemctl restart udp-custom.service 2>/dev/null
+	systemctl restart zivpn.service 2>/dev/null
 }
 # Eliminar completamente una contraseña
 eliminar_password() {
@@ -153,7 +156,8 @@ read -p "Ingrese el número de la contraseña a eliminar: " num
     jq --arg pass "$pass" '.auth.config -= [$pass]' "$CONFIG_FILE" > tmp.$$.json && mv tmp.$$.json "$CONFIG_FILE"
 
     echo -e "${GREEN}✔ Contraseña eliminada completamente:${NC} $pass"
-systemctl restart udp-custom zivpn
+	systemctl restart udp-custom.service 2>/dev/null
+	systemctl restart zivpn.service 2>/dev/null
 }
 
 # Editar duración (fecha de expiración) de una contraseña
@@ -183,7 +187,8 @@ editar_duracion() {
     awk -F"|" -v n="$num" -v new_exp="$new_exp" 'BEGIN{OFS="|"} NR==n {$2=new_exp} {print}' "$DB_FILE" > tmp.$$.db && mv tmp.$$.db "$DB_FILE"
 
     echo -e "${GREEN}✔ Duración actualizada:${NC} $pass ahora expira el $new_exp"
-	systemctl restart udp-custom zivpn
+	systemctl restart udp-custom.service 2>/dev/null
+	systemctl restart zivpn.service 2>/dev/null
 }
 
 remover_servicio() {
