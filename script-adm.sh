@@ -22,8 +22,19 @@ LINE2='◇───────────────────────�
 DIR_SCRIPTS="/etc/dealer-adm"
 DIR_SERVICES="/etc/systemd/system"
 
+DIR_SCRIPTS="/etc/dealer-adm"
+DIR_SERVICES="/etc/systemd/system"
+
 mkdir -p $DIR_SCRIPTS
 mkdir -p $DIR_SCRIPTS/userDIR
+
+mkdir -p /etc/dealer-adm/scripts
+
+wget -qO /etc/dealer-adm/scripts/zivpn_manager.sh \
+"https://raw.githubusercontent.com/Dealer-Dev/SCRIPT-DEALER-ADM/main/scripts/zivpn_manager.sh"
+
+chmod +x /etc/dealer-adm/scripts/zivpn_manager.sh
+
 source /etc/dealer-adm/scripts/zivpn_manager.sh
 
 cat > $DIR_SCRIPTS/checkuser.sh << 'EOF'
