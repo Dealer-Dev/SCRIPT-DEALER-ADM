@@ -24,6 +24,7 @@ DIR_SERVICES="/etc/systemd/system"
 
 mkdir -p $DIR_SCRIPTS
 mkdir -p $DIR_SCRIPTS/userDIR
+source /etc/dealer-adm/scripts/zivpn_manager.sh
 
 cat > $DIR_SCRIPTS/checkuser.sh << 'EOF'
 #!/bin/bash
