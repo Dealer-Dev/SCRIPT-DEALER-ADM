@@ -5,7 +5,7 @@
 #   Ubuntu 22/24/25
 # ═══════════════════════════════════════════════════════
 
-SCRIPT_VERSION="2.7"
+SCRIPT_VERSION="2.8"
 R='\033[0;31m'
 G='\033[0;32m'
 Y='\033[1;33m'
@@ -1667,7 +1667,30 @@ usuarios_online_api() {
     done
 
 }
+usuarios_ssh_online_count() {
 
+    banner
+    sep
+    echo -e "  ${Y}  USUARIOS ONLINE${NC}"
+    sep
+    echo ""
+
+    SALIDA=$(usuarios_online_api)
+
+    if [ -z "$SALIDA" ]; then
+
+        echo -e "  ${R}No hay usuarios conectados${NC}"
+
+    else
+
+        echo "$SALIDA"
+
+    fi
+
+    echo ""
+    read -p "  ENTER..."
+
+}
 
 obtener_usuario_api() {
 
