@@ -156,13 +156,13 @@ if [ ! -f /etc/dealer-adm/.licensed ]; then
     else
 
         if echo "$RESPONSE" | grep -q '"expired"'; then
-            MSG="⏰ Key expirada"
+            MSG="⏰ Key expirada ⏰"
         elif echo "$RESPONSE" | grep -q '"used"'; then
-            MSG="⚠️ Key ya usada"
+            MSG="⚠️ Key ya usada ⚠️"
         elif echo "$RESPONSE" | grep -q '"not_found"'; then
-            MSG="❌ Key no existe"
+            MSG="❌ La key no existe ❌"
         else
-            MSG="❌ Error de validación"
+            MSG="❌ Error de validación ❌"
         fi
 
         echo ""
