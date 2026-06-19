@@ -10,7 +10,6 @@ ORANGE='\033[1;96m'
 WHITE='\033[1;37m'
 RESET='\033[0m'
 BRED='\033[1;31m'
-NEON='\033[38;5;208m'
 
 generar_password() {
     head /dev/urandom | tr -dc A-Za-z0-9 | head -c 8
