@@ -5,7 +5,7 @@
 #   Ubuntu 22/24/25
 # ═══════════════════════════════════════════════════════
 
-SCRIPT_VERSION="1.5"
+SCRIPT_VERSION="1.2"
 R='\033[0;31m'
 G='\033[0;32m'
 Y='\033[1;33m'
@@ -141,19 +141,22 @@ if [ ! -f /etc/dealer-adm/.licensed ]; then
     API_URL="https://dealerbotgenkeys.mcmilton235.workers.dev/validate"
 
     RESPONSE=$(curl -s --max-time 15 "$API_URL?key=$INPUT_KEY")
-    OWNER=$(echo "$RESPONSE" | grep -oP '"owner":"\K[^"]+')
 
-    VALID=$(echo "$RESPONSE" | grep -o '"valid":true')
+OWNER=$(echo "$RESPONSE" | grep -oP '"owner":"\K[^"]+')
 
-    if [[ "$VALID" == '"valid":true' ]]; then
+[ -z "$OWNER" ] && OWNER="Desconocido"
 
-        echo "$INPUT_KEY" > /etc/dealer-adm/.licensed
-        echo "$OWNER" > /etc/dealer-adm/reseller
+VALID=$(echo "$RESPONSE" | grep -o '"valid":true')
 
-        echo ""
-        echo -e "  \033[0;32m Key válida ✅\033[0m"
+if [[ "$VALID" == '"valid":true' ]]; then
 
-        sleep 2
+    echo "$INPUT_KEY" > /etc/dealer-adm/.licensed
+    echo "$OWNER" > /etc/dealer-adm/reseller
+
+    echo ""
+    echo -e "  \033[0;32m Key válida ✅\033[0m"
+
+    sleep 2
 
     else
 
@@ -231,11 +234,13 @@ chmod +x /etc/profile.d/sshfree-motd.sh
 banner() {
     clear
     SRV_NAME=$(cat /etc/dealer-adm/server_name 2>/dev/null || echo "Dealer")
+    RESELLER=$(cat /etc/dealer-adm/reseller 2>/dev/null)
+    [ -z "$RESELLER" ] && RESELLER="Desconocido"
     echo -e "${NEON}"
     figlet -f small "$SRV_NAME" 2>/dev/null || echo "  $SRV_NAME"
     echo -e "${NC}"
     echo -e "${NEON}◆━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━◆${NC}"
-    echo -e "               ${NEON}SCRIPT DEALER ADM${NC}" 𓃹
+    echo -e "               ${NEON}SCRIPT DEALER ADM 𓃹${NC}"
     echo -e "${NEON}◆━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━◆${NC}"
     echo -e "Key: ${W}$RESELLER${NC}"
     echo ""
@@ -265,7 +270,7 @@ instalar_ws() {
     echo -e "  ${W}RESPONSE (101 para WebSocket, 200 default):${NC}"
     read -p "  RESPONSE: " STATUS_RESP; STATUS_RESP=${STATUS_RESP:-200}
     echo ""; read -p "  Mini-Banner: " BANNER_MSG
-    BANNER_MSG=${BANNER_MSG:-"<font color="#00ff00">SCRIPT DEALER ADM"}
+    BANNER_MSG=${BANNER_MSG:-"<font color="#00ff00">DEALER"}
     echo ""; sep
     echo -e "  ${W}Encabezado personalizado (ENTER para default):${NC}"
     read -p "  Cabecera: " CUSTOM_HEADER
@@ -2325,7 +2330,7 @@ instalar_motd() {
     banner; sep
     echo -e "  ${Y}  CONFIGURAR MOTD DEL SERVIDOR${NC}"; sep; echo ""
     read -p "  Nombre del servidor: " SRV_NAME
-    [ -z "$SRV_NAME" ] && SRV_NAME="SCRIPT DEALER ADM"
+    [ -z "$SRV_NAME" ] && SRV_NAME="Dealer"
 
     # Instalar figlet para ASCII art
     apt install -y figlet > /dev/null 2>&1
@@ -2351,7 +2356,7 @@ WHITE='[1;37m'
 NC='[0m'
 
 INSTALL_DATE=\$(cat /etc/dealer-adm/install_date 2>/dev/null || echo "N/A")
-SRV_NAME=\$(cat /etc/dealer-adm/server_name 2>/dev/null || echo "SCRIPT DEALER ADM")
+SRV_NAME=\$(cat /etc/dealer-adm/server_name 2>/dev/null || echo "Script Dealer")
 CURRENT_DATE=\$(date +%d-%m-%Y)
 CURRENT_TIME=\$(date +%H:%M:%S)
 UPTIME=\$(uptime -p | sed 's/up //')
