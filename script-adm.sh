@@ -5,7 +5,7 @@
 #   Ubuntu 22/24/25
 # ═══════════════════════════════════════════════════════
 
-SCRIPT_VERSION="1.3"
+SCRIPT_VERSION="1.1"
 R='\033[0;31m'
 G='\033[0;32m'
 Y='\033[1;33m'
@@ -4447,7 +4447,6 @@ menu_principal() {
         sep
         printf " ${R}❬0❭ ✖  Salir${NC}\n"
         sep
-        echo ""
         read -p " Opcion: " OPT
         case $OPT in
             1) menu_usuarios ;;
