@@ -5,7 +5,7 @@
 #   Ubuntu 22/24/25
 # ═══════════════════════════════════════════════════════
 
-SCRIPT_VERSION="1.4"
+SCRIPT_VERSION="1.5"
 R='\033[0;31m'
 G='\033[0;32m'
 Y='\033[1;33m'
@@ -195,7 +195,7 @@ if [ ! -f /etc/dealer-adm/server_name ]; then
     mkdir -p /etc/dealer-adm
     apt install -y figlet > /dev/null 2>&1
     echo ""
-    echo -e "\033[1;33mEscribe el nombre que aparecera en el menu:\033[0m"
+    echo -e "\033[1;33mEscribe el nombre para el servidor\033[0m"
     read -p "Nombre: " INSTALL_NAME
     INSTALL_NAME=${INSTALL_NAME:-"Dealer"}
     echo "$INSTALL_NAME" > /etc/dealer-adm/server_name
@@ -213,7 +213,7 @@ CURRENT_DATE=$(date +%d-%m-%Y)
 CURRENT_TIME=$(date +%H:%M:%S)
 UPTIME=$(uptime -p | sed 's/up //')
 RAM_FREE=$(free -h | awk '/^Mem:/{print $4}')
-echo -e "${PURPLE}"
+echo -e "${GREEN}"
 figlet -f small "$SRV_NAME" 2>/dev/null || echo "  $SRV_NAME"
 echo -e "${NC}"
 echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
