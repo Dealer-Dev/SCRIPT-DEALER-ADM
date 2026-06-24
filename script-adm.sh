@@ -5,7 +5,7 @@
 #   Ubuntu 22/24/25
 # ═══════════════════════════════════════════════════════
 
-SCRIPT_VERSION="1.5"
+SCRIPT_VERSION="1.2"
 R='\033[0;31m'
 G='\033[0;32m'
 Y='\033[1;33m'
@@ -153,7 +153,6 @@ if [[ "$VALID" == '"valid":true' ]]; then
     echo "$INPUT_KEY" > /etc/dealer-adm/.licensed
     echo "$OWNER" > /etc/dealer-adm/reseller
 
-    echo ""
     echo -e "  \033[0;32m Key válida ✅\033[0m"
     echo -e "\033[1;92m◆━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━◆\033[0m"
     sleep 2
@@ -169,8 +168,6 @@ if [[ "$VALID" == '"valid":true' ]]; then
         else
             MSG="❌ Error de validación ❌"
         fi
-        echo -e "\033[1;92m◆━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━◆\033[0m"
-        echo ""
         echo -e "  \033[0;31m$MSG\033[0m"
 
         sleep 3
@@ -194,7 +191,6 @@ fi
 if [ ! -f /etc/dealer-adm/server_name ]; then
     mkdir -p /etc/dealer-adm
     apt install -y figlet > /dev/null 2>&1
-    echo ""
     echo -e "\033[1;33mEscribe el nombre para el servidor\033[0m"
     read -p "Nombre: " INSTALL_NAME
     INSTALL_NAME=${INSTALL_NAME:-"Dealer"}
