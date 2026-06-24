@@ -5,7 +5,7 @@
 #   Ubuntu 22/24/25
 # ═══════════════════════════════════════════════════════
 
-SCRIPT_VERSION="1.9"
+SCRIPT_VERSION="1.4"
 R='\033[0;31m'
 G='\033[0;32m'
 Y='\033[1;33m'
@@ -226,10 +226,9 @@ echo ""
 MOTDSCRIPT
 chmod +x /etc/profile.d/sshfree-motd.sh
 [ -f /etc/motd ] && > /etc/motd
-
 banner() {
     clear
-    SRV_NAME=$(cat /etc/dealer-adm/server_name 2>/dev/null || echo "SCRIPT DEALER ADM")
+    SRV_NAME=$(cat /etc/dealer-adm/server_name 2>/dev/null || echo "Dealer")
     echo -e "${NEON}"
     figlet -f small "$SRV_NAME" 2>/dev/null || echo "  $SRV_NAME"
     echo -e "${NC}"
