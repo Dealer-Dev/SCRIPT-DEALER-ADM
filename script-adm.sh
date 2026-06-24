@@ -5,7 +5,7 @@
 #   Ubuntu 22/24/25
 # ═══════════════════════════════════════════════════════
 
-SCRIPT_VERSION="1.1"
+SCRIPT_VERSION="1.2"
 R='\033[0;31m'
 G='\033[0;32m'
 Y='\033[1;33m'
@@ -243,7 +243,7 @@ banner() {
     echo -e "${NEON}◆━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━◆${NC}"
     echo -e "               ${NEON}SCRIPT DEALER ADM${NC} 𓃹"
     echo -e "${NEON}◆━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━◆${NC}"
-    echo -e "  Key por: ${Y}$RESELLER${NC}"
+    echo -e "  Key por: ${Y}$RESELLER   ${NC}"
 }
 sep() { echo -e "${NEON}${LINE}${NC}"; }
 sep2() { echo -e "${DIM}${LINE2}${NC}"; }
