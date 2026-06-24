@@ -234,7 +234,7 @@ banner() {
     figlet -f small "$SRV_NAME" 2>/dev/null || echo "  $SRV_NAME"
     echo -e "${NC}"
     echo -e "${NEON}◆━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━◆${NC}"
-    echo -e "                 ${NEON}SCRIPT DEALER ADM${NC}" 𓃹
+    echo -e "               ${NEON}SCRIPT DEALER ADM${NC}" 𓃹
     echo -e "${NEON}◆━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━◆${NC}"
     echo ""
 }
