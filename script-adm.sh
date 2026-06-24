@@ -5,7 +5,7 @@
 #   Ubuntu 22/24/25
 # ═══════════════════════════════════════════════════════
 
-SCRIPT_VERSION="1.8"
+SCRIPT_VERSION="1.9"
 R='\033[0;31m'
 G='\033[0;32m'
 Y='\033[1;33m'
@@ -234,7 +234,7 @@ banner() {
     figlet -f small "$SRV_NAME" 2>/dev/null || echo "  $SRV_NAME"
     echo -e "${NC}"
     echo -e "${NEON}◆━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━◆${NC}"
-    echo -e "  ${NEON}Script Dealer Adm${NC}" 𓃹
+    echo -e "                 ${NEON}SCRIPT DEALER ADM${NC}" 𓃹
     echo -e "${NEON}◆━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━◆${NC}"
     echo ""
 }
@@ -4434,7 +4434,7 @@ menu_principal() {
         systemctl is-active --quiet dropbear 2>/dev/null && { [ -z "$C1" ] && C1="${NEON}◈${NC} ${W}Dropbear:${DB_PORT}${NC} ${NEON}◆ ON${NC}" || { [ -z "$C2" ] && C2="${NEON}◈${NC} ${W}Dropbear:${DB_PORT}${NC} ${NEON}◆ ON${NC}" || { echo -e " $C1    $C2"; C1="${NEON}◈${NC} ${W}Dropbear:${DB_PORT}${NC} ${NEON}◆ ON${NC}"; C2=""; }; }; }
         systemctl is-active --quiet hysteria-server 2>/dev/null && { [ -z "$C1" ] && C1="${NEON}◈${NC} ${W}HYSTERIA:36712${NC} ${NEON}◆ ON${NC}" || { [ -z "$C2" ] && C2="${NEON}◈${NC} ${W}HYSTERIA:36712${NC} ${NEON}◆ ON${NC}" || { echo -e " $C1    $C2"; C1="${NEON}◈${NC} ${W}HYSTERIA:36712${NC} ${NEON}◆ ON${NC}"; C2=""; }; }; }
         [ -n "$C1" ] && [ -n "$C2" ] && echo -e " $C1    $C2" || { [ -n "$C1" ] && echo -e " $C1"; }
-        [ -z "$C1" ] && echo -e " ${DIM}  Sin servicios activos${NC}"
+        [ -z "$C1" ] && echo -e " ${R}          Sin protocolos activos${NC}"
         sep
         printf " \033[1;97m❬1❭ Usuarios SSH            ❬5❭ Usuarios SSH Online \033[0m\n"
         printf " \033[1;97m❬2❭ Usuarios VMess          ❬6❭ V2Ray Online\033[0m\n"
