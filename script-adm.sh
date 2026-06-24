@@ -5,7 +5,7 @@
 #   Ubuntu 22/24/25
 # ═══════════════════════════════════════════════════════
 
-SCRIPT_VERSION="1.4"
+SCRIPT_VERSION="1.5"
 R='\033[0;31m'
 G='\033[0;32m'
 Y='\033[1;33m'
@@ -141,12 +141,14 @@ if [ ! -f /etc/dealer-adm/.licensed ]; then
     API_URL="https://dealerbotgenkeys.mcmilton235.workers.dev/validate"
 
     RESPONSE=$(curl -s --max-time 15 "$API_URL?key=$INPUT_KEY")
+    OWNER=$(echo "$RESPONSE" | grep -oP '"owner":"\K[^"]+')
 
     VALID=$(echo "$RESPONSE" | grep -o '"valid":true')
 
     if [[ "$VALID" == '"valid":true' ]]; then
 
         echo "$INPUT_KEY" > /etc/dealer-adm/.licensed
+        echo "$OWNER" > /etc/dealer-adm/reseller
 
         echo ""
         echo -e "  \033[0;32m Key válida ✅\033[0m"
@@ -235,6 +237,7 @@ banner() {
     echo -e "${NEON}◆━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━◆${NC}"
     echo -e "               ${NEON}SCRIPT DEALER ADM${NC}" 𓃹
     echo -e "${NEON}◆━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━◆${NC}"
+    echo -e "Key: ${W}$RESELLER${NC}"
     echo ""
 }
 
