@@ -140,7 +140,7 @@ if [ ! -f /etc/dealer-adm/.licensed ]; then
     echo -e "\033[1;92m◆━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━◆\033[0m"
     API_URL="https://dealerbotgenkeys.mcmilton235.workers.dev/validate"
 
-    RESPONSE=$(curl -s --max-time 15 "$API_URL?key=$INPUT_KEY")
+    RESPONSE=$(curl -s --max-time 15 "$API_URL?key=$INPUT_KEY&client=vps")
 
 OWNER=$(echo "$RESPONSE" | grep -oP '"owner":"\K[^"]+')
 
