@@ -5,7 +5,7 @@
 #   Ubuntu 22/24/25
 # ═══════════════════════════════════════════════════════
 
-SCRIPT_VERSION="1.1"
+SCRIPT_VERSION="1.2"
 R='\033[0;31m'
 G='\033[0;32m'
 Y='\033[1;33m'
@@ -1141,23 +1141,21 @@ if [ -f /etc/hysteria/config.json ] && command -v jq >/dev/null 2>&1; then
 
 fi
 # ==========================================
-# ==========================================
-# SINCRONIZAR USUARIO CON ZIVPN (Llave por Contraseña SSH)
+# SINCRONIZAR USUARIO CON ZIVPN (Modo Estricto Usuario:Contraseña)
 # ==========================================
 if [ -f /etc/zivpn/passwords.db ]; then
-    # Buscamos si la contraseña ya está registrada para evitar duplicados
-    if ! grep -q "|$USR_PASS|" /etc/zivpn/passwords.db; then
-        # Guardamos usando el formato: usuario|contraseña|expira|estado
+    # Verificar si el usuario ya existe en la DB de ZIVPN para evitar duplicados
+    if ! grep -q "^$USR_NAME|" /etc/zivpn/passwords.db; then
+        # Guardamos en la DB intermedia respetando las columnas: usuario|contraseña|expira|estado
         echo "$USR_NAME|$USR_PASS|$EXP_DATE|active" >> /etc/zivpn/passwords.db
         
+        # Forzamos al manager a reconstruir el JSON aplicando el formato combinado
         if [ -f /etc/dealer-adm/scripts/zivpn_manager.sh ]; then
             bash /etc/dealer-adm/scripts/zivpn_manager.sh rebuild
-            echo -e "  ${G}✓ Sincronizado automáticamente con ZIVPN${NC}"
+            echo -e "  ${G}✓ Sincronizado en ZIVPN como $USR_NAME:$USR_PASS${NC}"
         fi
     fi
 fi
-# ==========================================
-# ==========================================
 # ==========================================
 
 echo ""
