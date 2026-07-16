@@ -5,7 +5,7 @@
 #   Ubuntu 22/24/25
 # ═══════════════════════════════════════════════════════
 
-SCRIPT_VERSION="1.5"
+SCRIPT_VERSION="1.1"
 R='\033[0;31m'
 G='\033[0;32m'
 Y='\033[1;33m'
@@ -1625,16 +1625,14 @@ fi
 
 sed -i "s/^fecha:.*/fecha: $EXP_DATE/" "$USER_FILE"
 # ==========================================
-    # RENOVAR TAMBIÉN EN ZIVPN
+    # ==========================================
+    # RENOVAR TAMBIÉN EN ZIVPN (API)
     # ==========================================
     if [ -f /etc/zivpn/passwords.db ]; then
-        if grep -q "^$REN_USR|" /etc/zivpn/passwords.db; then
-            # Modificar la tercera columna (fecha) de la línea del usuario en ZIVPN
-            awk -F"|" -v user="$REN_USR" -v new_exp="$EXP_DATE" 'BEGIN{OFS="|"} $1==user {$3=new_exp} {print}' /etc/zivpn/passwords.db > tmp_zi.db && mv tmp_zi.db /etc/zivpn/passwords.db
-            # Reconstruir el JSON para asegurar consistencia
+        if grep -q "^$USER|" /etc/zivpn/passwords.db; then
+            awk -F"|" -v user="$USER" -v new_exp="$EXP_DATE" 'BEGIN{OFS="|"} $1==user {$3=new_exp} {print}' /etc/zivpn/passwords.db > tmp_zi.db && mv tmp_zi.db /etc/zivpn/passwords.db
             if [ -f /etc/dealer-adm/scripts/zivpn_manager.sh ]; then
                 bash /etc/dealer-adm/scripts/zivpn_manager.sh rebuild
-                echo -e "  ${G}✓ Expiración de ZIVPN actualizada${NC}"
             fi
         fi
     fi
@@ -1975,141 +1973,52 @@ admin_activo_api() {
     echo "0"
 }
 menu_zivpn() {
-
-    if ! type estado_servicio >/dev/null 2>&1; then
-
-        echo ""
-        echo -e "${R}Módulo ZIVPN no cargado.${NC}"
-        echo -e "${Y}Verifique:${NC}"
-        echo ""
-        echo "source /etc/dealer-adm/scripts/zivpn_manager.sh"
-        echo ""
-
-        read -p "ENTER..."
-        return
-
+    if [ ! -f /etc/dealer-adm/scripts/zivpn_manager.sh ]; then
+        echo -e "\n${R}Módulo ZIVPN no instalado o dañado.${NC}"
+        read -p "ENTER..." && return
     fi
 
     while true; do
-
         clear
-
-        echo -e "${ORANGE}  ╭──────────────────────────────────────────────────╮${NC}"
-        echo -e "${ORANGE}  │                    MENU ZIVPN                    │${NC}"
-        echo -e "${ORANGE}  ╰──────────────────────────────────────────────────╯${NC}"
-
+        echo -e "${NEON}╭──────────────────────────────────────────────────╮${NC}"
+        echo -e "${NEON}│                    MENU ZIVPN                    │${NC}"
+        echo -e "${NEON}╰──────────────────────────────────────────────────╯${NC}"
         echo ""
-
-        estado_servicio
-
-        echo ""
-
-        printf "   ${ORANGE}[1]${WHITE} Listar contraseñas        ${ORANGE}[6]${WHITE} Eliminar PASSWD\n"
-        printf "   ${ORANGE}[2]${WHITE} Agregar PASSWD (manual)   ${ORANGE}[7]${WHITE} Editar duración\n"
-        printf "   ${ORANGE}[3]${WHITE} Agregar PASSWD (random)   ${ORANGE}[8]${WHITE} Reiniciar servicio\n"
-        printf "   ${ORANGE}[4]${WHITE} Activar PASSWD            ${BRED}[9]${BRED} 🚨Desinstalar servicio\n"
-        printf "   ${ORANGE}[5]${WHITE} Desactivar PASSWD         ${ORANGE}[10]${WHITE} Instalar servicio\n"
-
-        echo ""
-
-        echo -e "${ORANGE}  ╭──────────────────────────────────────────────────╮${NC}"
-        echo -e "${ORANGE}  │       ENTER) Volver al menú principal            │${NC}"
-        echo -e "${ORANGE}  │       x) Salir del panel                         │${NC}"
-        echo -e "${ORANGE}  ╰──────────────────────────────────────────────────╯${NC}"
-
-        echo ""
-
-        read -p "      Seleccione una opción: " opcion
-
-        if [[ -z "$opcion" ]]; then
-            return
+        # Llama a la función del manager para ver si está ON u OFF
+        if systemctl is-active --quiet zivpn.service; then
+            echo -e " Estado: ${G}◆ ON ${NC}"
+        else
+            echo -e " Estado: ${R}◇ OFF${NC}"
         fi
+        echo ""
+        printf "   ${NEON}[1]${W} Listar cuentas            ${NEON}[6]${W} Eliminar cuenta\n"
+        printf "   ${NEON}[2]${W} Agregar cuenta (Manual)   ${NEON}[7]${W} Editar duración\n"
+        printf "   ${NEON}[3]${W} Agregar cuenta (Aleatoria) ${NEON}[8]${W} Reiniciar servicio\n"
+        printf "   ${NEON}[4]${W} Activar cuenta            ${R}[9]🚨 Desinstalar servicio\n"
+        printf "   ${NEON}[5]${W} Desactivar cuenta         ${NEON}[10]${W} Instalar servicio\n"
+        echo ""
+        echo -e "${NEON}╭──────────────────────────────────────────────────╮${NC}"
+        echo -e "${NEON}│         ENTER) Volver al menú principal          │${NC}"
+        echo -e "${NEON}╰──────────────────────────────────────────────────╯${NC}"
+        echo ""
+        read -p "       Seleccione una opción: " opcion
+
+        [[ -z "$opcion" ]] && return
 
         case "$opcion" in
-
-            1)
-                clear
-                listar_passwords
-                echo ""
-                read -p "Presione ENTER para continuar..."
-            ;;
-
-            2)
-                clear
-                agregar_password
-                echo ""
-                read -p "Presione ENTER para continuar..."
-            ;;
-
-            3)
-                clear
-                agregar_password random
-                echo ""
-                read -p "Presione ENTER para continuar..."
-            ;;
-
-            4)
-                clear
-                activar_password
-                echo ""
-                read -p "Presione ENTER para continuar..."
-            ;;
-
-            5)
-                clear
-                desactivar_password
-                echo ""
-                read -p "Presione ENTER para continuar..."
-            ;;
-
-            6)
-                clear
-                eliminar_password
-                echo ""
-                read -p "Presione ENTER para continuar..."
-            ;;
-
-            7)
-                clear
-                editar_duracion
-                echo ""
-                read -p "Presione ENTER para continuar..."
-            ;;
-
-            8)
-                clear
-                reiniciar_servicio
-                echo ""
-                read -p "Presione ENTER para continuar..."
-            ;;
-
-            9)
-                clear
-                remover_servicio
-                echo ""
-                read -p "Presione ENTER para continuar..."
-            ;;
-
-            10)
-                clear
-                instalar_servicio
-                echo ""
-                read -p "Presione ENTER para continuar..."
-            ;;
-
-            x|X)
-                exit
-            ;;
-
-            *)
-                echo -e "${R}Opción inválida.${NC}"
-                sleep 1
-            ;;
-
+            1) clear; bash /etc/dealer-adm/scripts/zivpn_manager.sh; echo ""; read -p "Presione ENTER..." ;;
+            2) clear; bash /etc/dealer-adm/scripts/zivpn_manager.sh; echo ""; read -p "Presione ENTER..." ;;
+            3) clear; bash /etc/dealer-adm/scripts/zivpn_manager.sh random; echo ""; read -p "Presione ENTER..." ;;
+            4) clear; bash /etc/dealer-adm/scripts/zivpn_manager.sh; echo ""; read -p "Presione ENTER..." ;;
+            5) clear; bash /etc/dealer-adm/scripts/zivpn_manager.sh; echo ""; read -p "Presione ENTER..." ;;
+            6) clear; bash /etc/dealer-adm/scripts/zivpn_manager.sh; echo ""; read -p "Presione ENTER..." ;;
+            7) clear; bash /etc/dealer-adm/scripts/zivpn_manager.sh; echo ""; read -p "Presione ENTER..." ;;
+            8) clear; systemctl restart zivpn.service 2>/dev/null; echo -e "${G}Servicio Reiniciado${NC}"; sleep 1 ;;
+            9) clear; bash /etc/dealer-adm/scripts/zivpn_manager.sh; echo ""; read -p "Presione ENTER..." ;;
+            10) clear; bash /etc/dealer-adm/scripts/zivpn_manager.sh; echo ""; read -p "Presione ENTER..." ;;
+            *) echo -e "${R}Opción inválida.${NC}"; sleep 1 ;;
         esac
-
     done
-
 }
 
 eliminar_usuario() {
@@ -2193,18 +2102,15 @@ eliminar_usuario() {
             echo -e "  ${G}✓ Usuario eliminado de Hysteria${NC}"
         fi
         # ==========================================
-        # ELIMINAR TAMBIÉN DE ZIVPN
-        # ==========================================
-        if [ -f /etc/zivpn/passwords.db ]; then
-            # Borrar la línea que coincida con el usuario
-            sed -i "/^$DEL_USR|/d" /etc/zivpn/passwords.db
-            # Reconstruir el JSON de ZIVPN
-            if [ -f /etc/dealer-adm/scripts/zivpn_manager.sh ]; then
-                bash /etc/dealer-adm/scripts/zivpn_manager.sh rebuild
-                echo -e "  ${G}✓ Usuario eliminado de ZIVPN${NC}"
-            fi
+    # ELIMINAR TAMBIÉN DE ZIVPN (API)
+    # ==========================================
+    if [ -f /etc/zivpn/passwords.db ]; then
+        sed -i "/^$USER|/d" /etc/zivpn/passwords.db
+        if [ -f /etc/dealer-adm/scripts/zivpn_manager.sh ]; then
+            bash /etc/dealer-adm/scripts/zivpn_manager.sh rebuild
         fi
-        # ==========================================
+    fi
+    # ==========================================
 
         echo -e "  ${G}✓ Usuario eliminado correctamente${NC}"
 
