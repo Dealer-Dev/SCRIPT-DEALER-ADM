@@ -5,7 +5,7 @@
 #   Ubuntu 22/24/25
 # ═══════════════════════════════════════════════════════
 
-SCRIPT_VERSION="1.1"
+SCRIPT_VERSION="1.2"
 R='\033[0;31m'
 G='\033[0;32m'
 Y='\033[1;33m'
@@ -582,8 +582,23 @@ menu_ssl() {
             1)
                 apt install -y stunnel4 > /dev/null 2>&1
                 read -p "  Puerto SSL (ej: 443): " SSL_PORT; SSL_PORT=${SSL_PORT:-443}
-                read -p "  Puerto local SSH (ej: 22): " LOCAL_PORT; LOCAL_PORT=${LOCAL_PORT:-22}
+                
+                echo -e ""
+                echo -e "  ${Y}¿Hacia dónde redirigir el tráfico SSL descifrado?${NC}"
+                echo -e "  ${W}[1]${NC} Directo a SSH (Puerto 22) - Solo SSL sin payload"
+                echo -e "  ${W}[2]${NC} A WebSocket Python (Puerto 80) - Soporta SSL + Payload"
+                read -p "  Selecciona una opción [1-2]: " SSL_REDIR_OPT
+                
+                if [ "$SSL_REDIR_OPT" = "2" ]; then
+                    read -p "  Puerto de tu WebSocket Python (ej: 80): " LOCAL_PORT
+                    LOCAL_PORT=${LOCAL_PORT:-80}
+                else
+                    read -p "  Puerto local SSH (ej: 22): " LOCAL_PORT
+                    LOCAL_PORT=${LOCAL_PORT:-22}
+                fi
+
                 openssl req -new -x509 -days 3650 -nodes -out /etc/stunnel/stunnel.pem -keyout /etc/stunnel/stunnel.pem -subj "/C=US/ST=Miami/L=Miami/O=SSHFREE/CN=sshfree" 2>/dev/null
+                
                 cat > /etc/stunnel/stunnel.conf << EOF
 pid = /var/run/stunnel4/stunnel.pid
 cert = /etc/stunnel/stunnel.pem
@@ -594,7 +609,7 @@ connect = 127.0.0.1:${LOCAL_PORT}
 EOF
                 sed -i 's/ENABLED=0/ENABLED=1/' /etc/default/stunnel4 2>/dev/null
                 systemctl enable stunnel4; systemctl start stunnel4
-                echo -e "  ${G}OK SSL/TLS en puerto ${SSL_PORT}${NC}"; sleep 2 ;;
+                echo -e "  ${G}OK SSL/TLS en puerto ${SSL_PORT} apuntando a ${LOCAL_PORT}${NC}"; sleep 2 ;;
             2) systemctl start stunnel4 && echo -e "  ${G}Iniciado${NC}"; sleep 1 ;;
             3) systemctl stop stunnel4 && echo -e "  ${Y}Detenido${NC}"; sleep 1 ;;
             4) systemctl restart stunnel4 && echo -e "  ${G}Reiniciado${NC}"; sleep 1 ;;
