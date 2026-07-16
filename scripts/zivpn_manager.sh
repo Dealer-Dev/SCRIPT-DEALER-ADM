@@ -25,13 +25,13 @@ generar_password() {
 rebuild_zivpn_json() {
     [[ ! -f "$DB_FILE" ]] && return
     
-    # Crear un array limpio en el JSON vacío provisionalmente
+    # Vaciar el array del config.json de forma segura
     jq '.auth.config = []' "$CONFIG_FILE" > tmp.$$.json && mv tmp.$$.json "$CONFIG_FILE"
     
-    # Leer la DB e insertar solo los que estén "active" en el formato usuario:contraseña
+    # Inyectar solo la contraseña de los usuarios que estén activos
     while IFS="|" read -r user pass exp status; do
         if [[ "$status" == "active" ]]; then
-            jq --arg account "$user:$pass" '.auth.config += [$account]' "$CONFIG_FILE" > tmp.$$.json && mv tmp.$$.json "$CONFIG_FILE"
+            jq --arg token "$pass" '.auth.config += [$token]' "$CONFIG_FILE" > tmp.$$.json && mv tmp.$$.json "$CONFIG_FILE"
         fi
     done < "$DB_FILE"
     
