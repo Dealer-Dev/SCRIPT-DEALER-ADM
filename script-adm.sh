@@ -1142,15 +1142,14 @@ if [ -f /etc/hysteria/config.json ] && command -v jq >/dev/null 2>&1; then
 fi
 # ==========================================
 # ==========================================
-# SINCRONIZAR USUARIO CON ZIVPN (usuario:contraseña)
+# SINCRONIZAR USUARIO CON ZIVPN (Llave por Contraseña SSH)
 # ==========================================
 if [ -f /etc/zivpn/passwords.db ]; then
-    # Verificar si el usuario ya existe en la DB de ZIVPN para evitar duplicados
-    if ! grep -q "^$USR_NAME|" /etc/zivpn/passwords.db; then
-        # Insertar en la base de datos de ZIVPN (usuario|pass|expira|estado)
+    # Buscamos si la contraseña ya está registrada para evitar duplicados
+    if ! grep -q "|$USR_PASS|" /etc/zivpn/passwords.db; then
+        # Guardamos usando el formato: usuario|contraseña|expira|estado
         echo "$USR_NAME|$USR_PASS|$EXP_DATE|active" >> /etc/zivpn/passwords.db
         
-        # Llamar al manager de ZIVPN para reconstruir el JSON y aplicar los cambios
         if [ -f /etc/dealer-adm/scripts/zivpn_manager.sh ]; then
             bash /etc/dealer-adm/scripts/zivpn_manager.sh rebuild
             echo -e "  ${G}✓ Sincronizado automáticamente con ZIVPN${NC}"
