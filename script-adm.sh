@@ -264,7 +264,7 @@ instalar_ws() {
     echo -e "  ${W}RESPONSE (101 para WebSocket, 200 default):${NC}"
     read -p "  RESPONSE: " STATUS_RESP; STATUS_RESP=${STATUS_RESP:-200}
     echo ""; read -p "  Mini-Banner: " BANNER_MSG
-    BANNER_MSG=${BANNER_MSG:-"<font color="#00ff00">DEALER"}
+    BANNER_MSG=${BANNER_MSG:-"<font color="#00ff00">Script Dealer Adm"}
     echo ""; sep
     echo -e "  ${W}Encabezado personalizado (ENTER para default):${NC}"
     read -p "  Cabecera: " CUSTOM_HEADER
@@ -3041,16 +3041,14 @@ menu_banner_ssh() {
                 echo -e "  ${Y}Escribe el banner SSH${NC}"
                 echo -e "  ${C}(Texto que aparece al conectar por SSH)${NC}"; sep; echo ""
                 echo -e "  Ejemplo:"
-                echo -e "  ╔══════════════════════════════════╗"
-                echo -e "  ║        SCRIPT DEALER ADM         ║"
-                echo -e "  ╚══════════════════════════════════╝"
+                echo -e "  ║ SCRIPT DEALER ADM ║"
                 echo ""; sep
                 read -p "  Texto del banner: " BANNER_TXT
                 echo "$BANNER_TXT" > /etc/ssh/banner
                 # Configurar sshd para mostrar banner
                 grep -q "^Banner" /etc/ssh/sshd_config && sed -i "s|^Banner.*|Banner /etc/ssh/banner|" /etc/ssh/sshd_config || echo "Banner /etc/ssh/banner" >> /etc/ssh/sshd_config
                 systemctl reload sshd 2>/dev/null || systemctl reload ssh 2>/dev/null
-                echo -e "  ${G}OK Banner SSH configurado${NC}"; sleep 2 ;;
+                echo -e "  ${G}Banner SSH configurado${NC}"; sleep 2 ;;
             2)
                 sed -i '/^Banner/d' /etc/ssh/sshd_config
                 rm -f /etc/ssh/banner
