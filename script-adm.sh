@@ -5,7 +5,7 @@
 #   Ubuntu 22/24/25
 # ═══════════════════════════════════════════════════════
 
-SCRIPT_VERSION="1.2"
+SCRIPT_VERSION="1.3"
 R='\033[0;31m'
 G='\033[0;32m'
 Y='\033[1;33m'
@@ -1141,6 +1141,23 @@ if [ -f /etc/hysteria/config.json ] && command -v jq >/dev/null 2>&1; then
 
 fi
 # ==========================================
+# SINCRONIZAR USUARIO CON ZIVPN (usuario:contraseña)
+# ==========================================
+if [ -f /etc/zivpn/passwords.db ]; then
+    # Verificar si el usuario ya existe en la DB de ZIVPN para evitar duplicarlo
+    if ! grep -q "^$USR_NAME|" /etc/zivpn/passwords.db; then
+        # Insertar en la base de datos de ZIVPN (usuario|pass|expira|estado)
+        echo "$USR_NAME|$USR_PASS|$EXP_DATE|active" >> /etc/zivpn/passwords.db
+        
+        # Llamar a la función interna del administrador de ZIVPN para reconstruir el JSON seguro
+        if [ -f /etc/dealer-adm/scripts/zivpn_manager.sh ]; then
+            bash /etc/dealer-adm/scripts/zivpn_manager.sh rebuild
+            echo -e "  ${G}✓ Sincronizado automáticamente con ZIVPN${NC}"
+        fi
+    fi
+fi
+# ==========================================
+# ==========================================
 
 echo ""
 sep
@@ -1606,6 +1623,21 @@ if id "$USER" &>/dev/null; then
 fi
 
 sed -i "s/^fecha:.*/fecha: $EXP_DATE/" "$USER_FILE"
+# ==========================================
+    # RENOVAR TAMBIÉN EN ZIVPN
+    # ==========================================
+    if [ -f /etc/zivpn/passwords.db ]; then
+        if grep -q "^$REN_USR|" /etc/zivpn/passwords.db; then
+            # Modificar la tercera columna (fecha) de la línea del usuario en ZIVPN
+            awk -F"|" -v user="$REN_USR" -v new_exp="$EXP_DATE" 'BEGIN{OFS="|"} $1==user {$3=new_exp} {print}' /etc/zivpn/passwords.db > tmp_zi.db && mv tmp_zi.db /etc/zivpn/passwords.db
+            # Reconstruir el JSON para asegurar consistencia
+            if [ -f /etc/dealer-adm/scripts/zivpn_manager.sh ]; then
+                bash /etc/dealer-adm/scripts/zivpn_manager.sh rebuild
+                echo -e "  ${G}✓ Expiración de ZIVPN actualizada${NC}"
+            fi
+        fi
+    fi
+    # ==========================================
 }
 eliminar_usuario_api() {
 
@@ -2158,6 +2190,18 @@ eliminar_usuario() {
             systemctl restart hysteria-server >/dev/null 2>&1
 
             echo -e "  ${G}✓ Usuario eliminado de Hysteria${NC}"
+        fi
+        # ==========================================
+        # ELIMINAR TAMBIÉN DE ZIVPN
+        # ==========================================
+        if [ -f /etc/zivpn/passwords.db ]; then
+            # Borrar la línea que coincida con el usuario
+            sed -i "/^$DEL_USR|/d" /etc/zivpn/passwords.db
+            # Reconstruir el JSON de ZIVPN
+            if [ -f /etc/dealer-adm/scripts/zivpn_manager.sh ]; then
+                bash /etc/dealer-adm/scripts/zivpn_manager.sh rebuild
+                echo -e "  ${G}✓ Usuario eliminado de ZIVPN${NC}"
+            fi
         fi
         # ==========================================
 
