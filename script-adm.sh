@@ -5,7 +5,7 @@
 #   Ubuntu 22/24/25
 # ═══════════════════════════════════════════════════════
 
-SCRIPT_VERSION="1.2"
+SCRIPT_VERSION="1.3"
 R='\033[0;31m'
 G='\033[0;32m'
 Y='\033[1;33m'
@@ -1151,7 +1151,7 @@ if [ -f /etc/zivpn/passwords.db ]; then
         
         # Forzar al manager a reconstruir el config.json
         if [ -f /etc/dealer-adm/scripts/zivpn_manager.sh ]; then
-            bash /etc/dealer-adm/scripts/zivpn_manager.sh rebuild
+            bash /etc/dealer-adm/scripts/zivpn_manager.sh rebuild_zivpn_json
             echo -e "  ${G}✓ Sincronizado automáticamente con ZIVPN${NC}"
         fi
     fi
