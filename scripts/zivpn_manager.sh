@@ -335,7 +335,17 @@ EOF
     echo -e "${YELLOW}Primer cuenta por defecto: ${GREEN}$init_user:$init_pass${NC}"
 }
 
-# Permitir la ejecución de funciones internas desde scripts externos
-if [[ "$1" == "verificar_expiraciones" || "$1" == "rebuild" ]]; then
-    $1
+# =======================================================
+# CONTROLADOR DE EJECUCIÓN (INTERNO / EXTERNO)
+# =======================================================
+if [[ -n "$1" ]]; then
+    # Si le pasamos un parámetro válido desde el menú principal, lo ejecuta directo
+    if type "$1" &>/dev/null; then
+        "$1"
+    else
+        echo -e "${RED}✘ Función no reconocida: $1${NC}"
+    fi
+else
+    # Si lo ejecutamos sin parámetros, abrimos su sub-menú correspondiente
+    listar_passwords
 fi
