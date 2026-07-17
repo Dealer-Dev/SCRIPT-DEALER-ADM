@@ -5,7 +5,7 @@
 #   Ubuntu 22/24/25
 # ═══════════════════════════════════════════════════════
 
-SCRIPT_VERSION="1.2"
+SCRIPT_VERSION="1.3"
 R='\033[0;31m'
 G='\033[0;32m'
 Y='\033[1;33m'
@@ -1972,7 +1972,7 @@ admin_activo_api() {
 }
 menu_zivpn() {
     if [ ! -f /etc/dealer-adm/scripts/zivpn_manager.sh ]; then
-        echo -e "\n${R}Módulo ZIVPN no instalado o dañado.${NC}"
+        echo -e "\n${R}Módulo ZIVPN no encontrado en el sistema.${NC}"
         read -p "ENTER..." && return
     fi
 
@@ -1982,8 +1982,7 @@ menu_zivpn() {
         echo -e "${NEON}│                    MENU ZIVPN                    │${NC}"
         echo -e "${NEON}╰──────────────────────────────────────────────────╯${NC}"
         echo ""
-        # Llama a la función del manager para ver si está ON u OFF
-        if systemctl is-active --quiet zivpn.service; then
+        if systemctl is-active --quiet zivpn.service 2>/dev/null; then
             echo -e " Estado: ${G}◆ ON ${NC}"
         else
             echo -e " Estado: ${R}◇ OFF${NC}"
@@ -2012,8 +2011,8 @@ menu_zivpn() {
             6) clear; bash /etc/dealer-adm/scripts/zivpn_manager.sh; echo ""; read -p "Presione ENTER..." ;;
             7) clear; bash /etc/dealer-adm/scripts/zivpn_manager.sh; echo ""; read -p "Presione ENTER..." ;;
             8) clear; systemctl restart zivpn.service 2>/dev/null; echo -e "${G}Servicio Reiniciado${NC}"; sleep 1 ;;
-            9) clear; bash /etc/dealer-adm/scripts/zivpn_manager.sh; echo ""; read -p "Presione ENTER..." ;;
-            10) clear; bash /etc/dealer-adm/scripts/zivpn_manager.sh; echo ""; read -p "Presione ENTER..." ;;
+            9) clear; bash /etc/dealer-adm/scripts/zivpn_manager.sh remover_servicio; echo ""; read -p "Presione ENTER..." ;;
+            10) clear; bash /etc/dealer-adm/scripts/zivpn_manager.sh instalar_servicio; echo ""; read -p "Presione ENTER..." ;;
             *) echo -e "${R}Opción inválida.${NC}"; sleep 1 ;;
         esac
     done
