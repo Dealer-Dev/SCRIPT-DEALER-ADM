@@ -5,7 +5,7 @@
 #   Ubuntu 22/24/25
 # ═══════════════════════════════════════════════════════
 
-SCRIPT_VERSION="1.1"
+SCRIPT_VERSION="1.2"
 R='\033[0;31m'
 G='\033[0;32m'
 Y='\033[1;33m'
@@ -1144,20 +1144,19 @@ fi
 # SINCRONIZAR USUARIO CON ZIVPN (Modo Estricto Usuario:Contraseña)
 # ==========================================
 if [ -f /etc/zivpn/passwords.db ]; then
-    # Verificar si el usuario ya existe en la DB de ZIVPN para evitar duplicados
+    # CORRECCIÓN: Verificar de forma estricta por el NOMBRE de usuario al inicio de la línea
     if ! grep -q "^$USR_NAME|" /etc/zivpn/passwords.db; then
-        # Guardamos en la DB intermedia respetando las columnas: usuario|contraseña|expira|estado
+        # Insertar en la base de datos de ZIVPN
         echo "$USR_NAME|$USR_PASS|$EXP_DATE|active" >> /etc/zivpn/passwords.db
         
-        # Forzamos al manager a reconstruir el JSON aplicando el formato combinado
+        # Forzar al manager a reconstruir el config.json
         if [ -f /etc/dealer-adm/scripts/zivpn_manager.sh ]; then
             bash /etc/dealer-adm/scripts/zivpn_manager.sh rebuild
-            echo -e "  ${G}✓ Sincronizado en ZIVPN como $USR_NAME:$USR_PASS${NC}"
+            echo -e "  ${G}✓ Sincronizado automáticamente con ZIVPN${NC}"
         fi
     fi
 fi
 # ==========================================
-
 echo ""
 sep
 echo -e "  ${Y}  CREDENCIALES${NC}"
