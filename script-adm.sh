@@ -5,7 +5,7 @@
 #   Ubuntu 22/24/25
 # ═══════════════════════════════════════════════════════
 
-SCRIPT_VERSION="1.3"
+SCRIPT_VERSION="1.4"
 R='\033[0;31m'
 G='\033[0;32m'
 Y='\033[1;33m'
@@ -2003,13 +2003,13 @@ menu_zivpn() {
         [[ -z "$opcion" ]] && return
 
         case "$opcion" in
-            1) clear; bash /etc/dealer-adm/scripts/zivpn_manager.sh; echo ""; read -p "Presione ENTER..." ;;
-            2) clear; bash /etc/dealer-adm/scripts/zivpn_manager.sh; echo ""; read -p "Presione ENTER..." ;;
-            3) clear; bash /etc/dealer-adm/scripts/zivpn_manager.sh random; echo ""; read -p "Presione ENTER..." ;;
-            4) clear; bash /etc/dealer-adm/scripts/zivpn_manager.sh; echo ""; read -p "Presione ENTER..." ;;
-            5) clear; bash /etc/dealer-adm/scripts/zivpn_manager.sh; echo ""; read -p "Presione ENTER..." ;;
-            6) clear; bash /etc/dealer-adm/scripts/zivpn_manager.sh; echo ""; read -p "Presione ENTER..." ;;
-            7) clear; bash /etc/dealer-adm/scripts/zivpn_manager.sh; echo ""; read -p "Presione ENTER..." ;;
+            1) clear; bash /etc/dealer-adm/scripts/zivpn_manager.sh listar_passwords; echo ""; read -p "Presione ENTER..." ;;
+            2) clear; bash /etc/dealer-adm/scripts/zivpn_manager.sh agregar_password; echo ""; read -p "Presione ENTER..." ;;
+            3) clear; bash /etc/dealer-adm/scripts/zivpn_manager.sh agregar_password random; echo ""; read -p "Presione ENTER..." ;;
+            4) clear; bash /etc/dealer-adm/scripts/zivpn_manager.sh activar_password; echo ""; read -p "Presione ENTER..." ;;
+            5) clear; bash /etc/dealer-adm/scripts/zivpn_manager.sh desactivar_password; echo ""; read -p "Presione ENTER..." ;;
+            6) clear; bash /etc/dealer-adm/scripts/zivpn_manager.sh eliminar_password; echo ""; read -p "Presione ENTER..." ;;
+            7) clear; bash /etc/dealer-adm/scripts/zivpn_manager.sh editar_duracion; echo ""; read -p "Presione ENTER..." ;;
             8) clear; systemctl restart zivpn.service 2>/dev/null; echo -e "${G}Servicio Reiniciado${NC}"; sleep 1 ;;
             9) clear; bash /etc/dealer-adm/scripts/zivpn_manager.sh remover_servicio; echo ""; read -p "Presione ENTER..." ;;
             10) clear; bash /etc/dealer-adm/scripts/zivpn_manager.sh instalar_servicio; echo ""; read -p "Presione ENTER..." ;;
