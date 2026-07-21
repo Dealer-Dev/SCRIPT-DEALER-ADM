@@ -5,7 +5,7 @@
 #   Ubuntu 22/24/25
 # ═══════════════════════════════════════════════════════
 
-SCRIPT_VERSION="1.4"
+SCRIPT_VERSION="1.5"
 R='\033[0;31m'
 G='\033[0;32m'
 Y='\033[1;33m'
@@ -3507,7 +3507,72 @@ EOF
         esac
     done
 }
+# ══════════════════════════════════════════
+#   SINCRONIZAR USUARIOS EXISTENTES A HYSTERIA
+# ══════════════════════════════════════════
+sincronizar_usuarios_hysteria() {
+    [ ! -f /etc/hysteria/config.json ] && return
 
+    echo -e "  ${C}Sincronizando usuarios existentes con Hysteria...${NC}"
+
+    python3 - << 'PYEOF'
+import json, os
+
+config_path = '/etc/hysteria/config.json'
+user_dir = '/etc/dealer-adm/userDIR'
+
+if not os.path.exists(config_path) or not os.path.exists(user_dir):
+    exit(0)
+
+try:
+    with open(config_path, 'r') as f:
+        config = json.load(f)
+
+    # Asegurar la estructura auth.config
+    if 'auth' not in config:
+        config['auth'] = {"mode": "password", "config": []}
+    
+    # Si config dentro de auth es un dict antiguo, convertir a lista
+    if isinstance(config['auth'].get('config'), dict):
+        config['auth']['config'] = []
+    elif 'config' not in config['auth']:
+        config['auth']['config'] = []
+
+    existing_users = set(config['auth']['config'])
+    count = 0
+
+    # Recorrer todos los archivos de usuarios
+    for filename in os.listdir(user_dir):
+        filepath = os.path.join(user_dir, filename)
+        if os.path.isfile(filepath):
+            user, password = None, None
+            with open(filepath, 'r') as uf:
+                for line in uf:
+                    line = line.strip()
+                    if line.startswith('usuario:'):
+                        user = line.split(':', 1)[1].strip()
+                    elif line.startswith('password:'):
+                        password = line.split(':', 1)[1].strip()
+            
+            if user and password:
+                entry = f"{user}:{password}"
+                if entry not in existing_users:
+                    existing_users.add(entry)
+                    count += 1
+
+    config['auth']['config'] = list(existing_users)
+
+    with open(config_path, 'w') as f:
+        json.dump(config, f, indent=2)
+
+    print(f"  \033[0;32m✓ {count} usuario(s) sincronizado(s) con Hysteria\033[0m")
+
+except Exception as e:
+    print(f"  \033[0;31mError al sincronizar usuarios: {e}\033[0m")
+PYEOF
+
+    systemctl restart hysteria-server >/dev/null 2>&1
+}
 menu_herramientas() {
     while true; do
         banner; sep
@@ -4159,9 +4224,6 @@ menu_banner_ssh() {
         esac
     done
 }
-
-
-
 menu_hysteria() {
     while true; do
         banner; sep
@@ -4174,7 +4236,7 @@ menu_hysteria() {
         printf " ${Y}❬1❭ Instalar Hysteria V1    ❬2❭ Instalar Hysteria V2${NC}\n"
         printf " ${Y}❬3❭ Iniciar V1              ❬4❭ Iniciar V2${NC}\n"
         printf " ${Y}❬5❭ Detener V1              ❬6❭ Detener V2${NC}\n"
-        printf " ${Y}❬7❭ Ver config V1           ❬8❭ Ver config V2${NC}\n"
+        printf " ${Y}❬7❭ Ver config V1            ❬8❭ Ver config V2${NC}\n"
         printf " ${R}❬9❭ Desinstalar V1          ❬10❭ Desinstalar V2${NC}\n"
         sep
         printf " ${R}❬0❭ Volver${NC}\n"; sep; echo ""
@@ -4208,7 +4270,7 @@ menu_hysteria() {
   "key": "$KEY_FILE",
   "auth": {
     "mode": "password",
-    "config": {"password": "$H1_PASS"}
+    "config": ["admin:$H1_PASS"]
   },
   "obfs": "ltmssh",
   "up_mbps": 100,
@@ -4231,16 +4293,19 @@ EOF
                 systemctl enable hysteria-server
                 systemctl start hysteria-server
                 iptables -I INPUT -p udp --dport $H1_PORT -j ACCEPT 2>/dev/null
+                
+                # Sincronización automática de usuarios existentes
+                sincronizar_usuarios_hysteria
+
                 echo -e "  ${G}OK Hysteria V1 instalado${NC}"
                 echo -e "  ${NEON}◈${NC} Puerto: ${Y}$H1_PORT${NC}"
-                echo -e "  ${NEON}◈${NC} Password: ${Y}$H1_PASS${NC}"
+                echo -e "  ${NEON}◈${NC} Password Admin: ${Y}$H1_PASS${NC}"
                 echo -e "  ${NEON}◈${NC} Obfs: ${Y}ltmssh${NC}"
                 read -p "  ENTER..." ;;
             2)
                 echo -e "\n  ${C}Instalando Hysteria V2...${NC}"
                 apt install -y wget > /dev/null 2>&1
                 wget -q -O /usr/local/bin/hysteria2 https://github.com/apernet/hysteria/releases/latest/download/hysteria-linux-amd64
-                # hysteria2 es el mismo binario de apernet pero con nombre diferente
                 chmod +x /usr/local/bin/hysteria2
                 read -p "  Puerto UDP (default 8443): " H2_PORT; H2_PORT=${H2_PORT:-8443}
                 read -p "  Password: " H2_PASS; H2_PASS=${H2_PASS:-"ltmssh2026"}
@@ -4288,6 +4353,7 @@ EOF
                 systemctl enable hysteria2-server
                 systemctl start hysteria2-server
                 iptables -I INPUT -p udp --dport $H2_PORT -j ACCEPT 2>/dev/null
+
                 echo -e "  ${G}OK Hysteria V2 instalado${NC}"
                 echo -e "  ${NEON}◈${NC} Puerto: ${Y}$H2_PORT${NC}"
                 echo -e "  ${NEON}◈${NC} Password: ${Y}$H2_PASS${NC}"
@@ -4300,7 +4366,7 @@ EOF
             8) cat /etc/hysteria2/config.yaml 2>/dev/null || echo "No instalado"; echo ""; read -p "  ENTER..." ;;
             9)
                 systemctl stop hysteria-server; systemctl disable hysteria-server
-                rm -f /usr/local/bin/hysteria /etc/systemd/system/hysteria-server.service
+                rm -f /usr/local/bin/hysteria-v1 /etc/systemd/system/hysteria-server.service
                 rm -rf /etc/hysteria; systemctl daemon-reload
                 echo -e "  ${G}Hysteria V1 desinstalado${NC}"; sleep 2 ;;
             10)
