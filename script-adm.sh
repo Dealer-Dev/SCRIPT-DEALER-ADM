@@ -5,7 +5,7 @@
 #   Ubuntu 22/24/25
 # ═══════════════════════════════════════════════════════
 
-SCRIPT_VERSION="1.3"
+SCRIPT_VERSION="1.4"
 R='\033[0;31m'
 G='\033[0;32m'
 Y='\033[1;33m'
@@ -106,10 +106,14 @@ if command -v ufw > /dev/null 2>&1 && ufw status | grep -q "Status: active"; the
     ufw allow 90/tcp > /dev/null 2>&1
     ufw reload > /dev/null 2>&1
 fi
-
+# ==========================================
+# APLICAR MAPA DE RED UDP AUTOMÁTICO
+# ==========================================
+configurar_red_udp_global
 # ══════════════════════════════════════════
 # VERIFICACION DE LICENCIA
 # ══════════════════════════════════════════
+
 # ══════════════════════════════════════════
 # VERIFICACION DE LICENCIA DEALER
 # ══════════════════════════════════════════
@@ -411,7 +415,41 @@ EOF
     systemctl is-active --quiet ws-proxy-${WS_PORT} && echo -e "\n  ${G}OK WebSocket activo en puerto ${WS_PORT}${NC}" || echo -e "\n  ${R}Error${NC}"
     read -p "  ENTER..."
 }
+# ══════════════════════════════════════════
+#   CONFIGURACIÓN GLOBAL DE RED UDP
+# ══════════════════════════════════════════
+configurar_red_udp_global() {
+    # 1. Instalar iptables-persistent silenciosamente si no existe
+    if ! command -v netfilter-persistent &>/dev/null; then
+        echo -e "  ${C}Garantizando persistencia de iptables...${NC}"
+        echo "iptables-persistent iptables-persistent/autosave_v4 boolean true" | debconf-set-selections 2>/dev/null
+        echo "iptables-persistent iptables-persistent/autosave_v6 boolean true" | debconf-set-selections 2>/dev/null
+        DEBIAN_FRONTEND=noninteractive apt install -y -qq iptables-persistent netfilter-persistent >/dev/null 2>&1
+    fi
 
+    # 2. Limpiar redirecciones NAT previas para evitar bloqueos cruzados
+    iptables -t nat -F PREROUTING 2>/dev/null
+
+    # 3. Mapear rango UDP exclusivo de ZIVPN (6000:19999) al puerto base 5667
+    iptables -t nat -A PREROUTING -p udp --dport 6000:19999 -j REDIRECT --to-port 5667 2>/dev/null
+
+    # 4. Guardar reglas para sobrevivir a reinicios de la VPS
+    if command -v netfilter-persistent &>/dev/null; then
+        netfilter-persistent save >/dev/null 2>&1
+    elif [ -d /etc/iptables ]; then
+        iptables-save > /etc/iptables/rules.v4 2>/dev/null
+    fi
+
+    # 5. Abrir el mapa de puertos en UFW si está activo
+    if command -v ufw &>/dev/null && ufw status | grep -q "Status: active"; then
+        ufw allow 5667/udp >/dev/null 2>&1
+        ufw allow 6000:19999/udp >/dev/null 2>&1
+        ufw allow 36712/udp >/dev/null 2>&1
+        ufw allow 8443/udp >/dev/null 2>&1
+        ufw allow 5300/udp >/dev/null 2>&1
+        ufw reload >/dev/null 2>&1
+    fi
+}
 menu_ws() {
     while true; do
         banner; sep; echo -e "  ${Y}  WEBSOCKET PYTHON${NC}"; sep; echo ""
@@ -535,8 +573,11 @@ EOF
 # ══════════════════════════════════════════
 
 menu_udp() {
+    # Puertos reservados para no generar conflictos con ZIVPN, Hysteria ni SlowDNS
+    EXCLUDE_PORTS="5300,5667,8443,36712,6000:19999"
+
     while true; do
-        banner; sep; echo -e "  ${Y}  UDP CUSTOM${NC}"; sep; echo ""
+        banner; sep; echo -e "  ${Y}   UDP CUSTOM${NC}"; sep; echo ""
         ps aux | grep -i "udp-custom\|UDP-Custom" | grep -v grep | grep -q . && echo -e "  UDP Custom ${G}[ON]${NC}" || echo -e "  UDP Custom ${R}[OFF]${NC}"
         echo ""; sep
         echo -e "  ${W}[1]${NC} Instalar UDP Custom"
@@ -549,13 +590,12 @@ menu_udp() {
         case $OPT in
             1)
                 echo -e "\n  ${C}Instalando UDP Custom (Epro Dev Team)...${NC}"
-                read -p "  Puerto a excluir (default 5300): " UDP_EXCL; UDP_EXCL=${UDP_EXCL:-5300}
                 wget -O /tmp/install-udp "https://drive.usercontent.google.com/download?id=1S3IE25v_fyUfCLslnujFBSBMNunDHDk2&export=download&confirm=t"
-                chmod +x /tmp/install-udp; bash /tmp/install-udp $UDP_EXCL
+                chmod +x /tmp/install-udp; bash /tmp/install-udp $EXCLUDE_PORTS
                 echo -e "  ${G}OK UDP Custom instalado${NC}"; sleep 2 ;;
-            2) systemctl start udp-custom 2>/dev/null || (/root/udp/udp-custom server -exclude 5300 &); echo -e "  ${G}Iniciado${NC}"; sleep 1 ;;
+            2) systemctl start udp-custom 2>/dev/null || (/root/udp/udp-custom server -exclude $EXCLUDE_PORTS &); echo -e "  ${G}Iniciado${NC}"; sleep 1 ;;
             3) systemctl stop udp-custom 2>/dev/null; pkill -f udp-custom 2>/dev/null; echo -e "  ${Y}Detenido${NC}"; sleep 1 ;;
-            4) pkill -f udp-custom 2>/dev/null; sleep 1; systemctl start udp-custom 2>/dev/null || (/root/udp/udp-custom server -exclude 5300 &); echo -e "  ${G}Reiniciado${NC}"; sleep 1 ;;
+            4) pkill -f udp-custom 2>/dev/null; sleep 1; systemctl start udp-custom 2>/dev/null || (/root/udp/udp-custom server -exclude $EXCLUDE_PORTS &); echo -e "  ${G}Reiniciado${NC}"; sleep 1 ;;
             5) ss -ulnp | grep udp; echo ""; read -p "  ENTER..." ;;
             0) break ;;
         esac
@@ -1069,8 +1109,7 @@ crear_usuario() {
 
 }
 crear_usuario_ssh() {
-banner; sep; echo -e "  ${Y}  CREAR USUARIO SSH${NC}"; sep; echo ""
-
+banner; sep; echo -e "  ${Y}   CREAR USUARIO SSH${NC}"; sep; echo ""
 
 read -p "  Nombre de usuario: " USR_NAME
 [ -z "$USR_NAME" ] && echo -e "  ${R}Nombre requerido${NC}" && sleep 1 && return
@@ -1103,7 +1142,7 @@ else
 fi
 
 # ==========================================
-# REGISTRAR USUARIO PARA CHECKUSER
+# REGISTRAR USUARIO PARA CHECKUSER DEALER
 # ==========================================
 mkdir -p /etc/dealer-adm/userDIR
 
@@ -1115,41 +1154,26 @@ password: $USR_PASS
 fecha: $EXP_DATE
 limite: $USR_LIMIT
 EOF
+
 # ==========================================
 # SINCRONIZAR USUARIO CON HYSTERIA
 # ==========================================
 if [ -f /etc/hysteria/config.json ] && command -v jq >/dev/null 2>&1; then
-
-    if ! jq -e --arg user "$USR_NAME" '
-        .auth.config[] | startswith($user + ":")
-    ' /etc/hysteria/config.json >/dev/null 2>&1; then
-
+    if ! jq -e --arg user "$USR_NAME" '.auth.config[] | startswith($user + ":")' /etc/hysteria/config.json >/dev/null 2>&1; then
         TMPFILE=$(mktemp)
-
-        jq --arg user "$USR_NAME" --arg pass "$USR_PASS" '
-            .auth.config += [($user + ":" + $pass)]
-        ' /etc/hysteria/config.json > "$TMPFILE"
-
+        jq --arg user "$USR_NAME" --arg pass "$USR_PASS" '.auth.config += [($user + ":" + $pass)]' /etc/hysteria/config.json > "$TMPFILE"
         mv "$TMPFILE" /etc/hysteria/config.json
-
         systemctl restart hysteria-server >/dev/null 2>&1
-
-        echo -e "  ${G}Usuario agregado con éxito${NC}"
-    else
-        echo -e "  ${Y}El usuario ya existe${NC}"
+        echo -e "  ${G}✓ Sincronizado con Hysteria UDP${NC}"
     fi
-
 fi
+
 # ==========================================
-# SINCRONIZAR USUARIO CON ZIVPN (Modo Estricto Usuario:Contraseña)
+# SINCRONIZAR USUARIO CON ZIVPN (Modo Estricto)
 # ==========================================
 if [ -f /etc/zivpn/passwords.db ]; then
-    # CORRECCIÓN: Verificar de forma estricta por el NOMBRE de usuario al inicio de la línea
     if ! grep -q "^$USR_NAME|" /etc/zivpn/passwords.db; then
-        # Insertar en la base de datos de ZIVPN
         echo "$USR_NAME|$USR_PASS|$EXP_DATE|active" >> /etc/zivpn/passwords.db
-        
-        # Forzar al manager a reconstruir el config.json
         if [ -f /etc/dealer-adm/scripts/zivpn_manager.sh ]; then
             bash /etc/dealer-adm/scripts/zivpn_manager.sh rebuild_zivpn_json
             echo -e "  ${G}✓ Sincronizado automáticamente con ZIVPN${NC}"
@@ -1157,9 +1181,10 @@ if [ -f /etc/zivpn/passwords.db ]; then
     fi
 fi
 # ==========================================
+
 echo ""
 sep
-echo -e "  ${Y}  CREDENCIALES${NC}"
+echo -e "  ${Y}   CREDENCIALES${NC}"
 sep
 
 echo -e "  ${W}Usuario:${NC}  $USR_NAME"
@@ -1168,7 +1193,7 @@ echo -e "  ${W}IP:${NC}       $SERVER_IP"
 echo -e "  ${W}Expira:${NC}   $EXP_SHOW ($USR_DAYS dias)"
 echo ""
 sep
-echo -e "  ${Y}  CONEXIONES DISPONIBLES${NC}"
+echo -e "  ${Y}   CONEXIONES DISPONIBLES${NC}"
 sep
 echo ""
 echo -e "  ${C}SSH Directo:${NC}"
@@ -1180,6 +1205,8 @@ ss -tlnp | grep -q ":80 " && echo -e "  ${C}WS Puerto 80:${NC}" && echo -e "  ${
 systemctl is-active --quiet stunnel4 2>/dev/null && echo -e "  ${C}SSL/TLS 443:${NC}" && echo -e "  ${W}$SERVER_IP:443@$USR_NAME:$USR_PASS${NC}" && echo ""
 
 ps aux | grep -i "udp-custom\|UDP-Custom" | grep -v grep | grep -q . && echo -e "  ${C}UDP Custom:${NC}" && echo -e "  ${W}$SERVER_IP:1-65535@$USR_NAME:$USR_PASS${NC}" && echo ""
+
+systemctl is-active --quiet zivpn 2>/dev/null && echo -e "  ${C}ZIVPN UDP:${NC}" && echo -e "  ${W}$SERVER_IP:5667@$USR_NAME:$USR_PASS${NC}" && echo ""
 
 (systemctl is-active --quiet badvpn-7200 2>/dev/null || systemctl is-active --quiet badvpn-7300 2>/dev/null) && \
 echo -e "  ${C}BadVPN:${NC}" && \
@@ -1194,7 +1221,6 @@ fi
 
 sep
 read -p "  ENTER..."
-
 }
 crear_usuario_hwid() {
 
@@ -1781,7 +1807,34 @@ usuarios_ssh_online_count() {
     read -p "  ENTER..."
 
 }
+usuarios_ziv_online_cou() {
+    banner; sep; echo -e "  ${Y}   USUARIOS ONLINE ZIVPN UDP${NC}"; sep; echo ""
 
+    ZIV_PORT=$(cat /etc/zivpn/config.json 2>/dev/null | python3 -c "import json,sys; print(json.load(sys.stdin).get('listen',':5667').replace(':',''))" 2>/dev/null)
+    ZIV_PORT=${ZIV_PORT:-5667}
+
+    CONTADOR=0
+    echo -e "  ${C}Buscando conexiones activas en el puerto ${ZIV_PORT}...${NC}"
+    echo " ──────────────────────────────────────────────────"
+
+    IPS_CONECTADAS=$(ss -ulnp 2>/dev/null | grep ":$ZIV_PORT " | awk '{print $5}' | cut -d: -f1 | grep -vE '127.0.0.1|^$' | sort -u)
+
+    if [ -n "$IPS_CONECTADAS" ]; then
+        while read -r IP; do
+            [ -z "$IP" ] && continue
+            ((CONTADOR++))
+            echo -e "  [${CONTADOR}] ◈ Cliente IP: ${G}${IP}${NC} conectado"
+        done <<< "$IPS_CONECTADAS"
+    fi
+
+    echo ""; sep
+    if [ "$CONTADOR" -eq 0 ]; then
+        echo -e "  ${R}No hay clientes UDP conectados a ZIVPN en este momento.${NC}"
+    else
+        echo -e "  ${G}TIENES${NC}  ${W}[ ${CONTADOR} ]${NC}  ${G}CONEXIONES UDP ACTIVAS EN ZIVPN${NC}"
+    fi
+    sep; echo ""; read -p "  ENTER..."
+}
 obtener_usuario_api() {
 
     USER="$1"
