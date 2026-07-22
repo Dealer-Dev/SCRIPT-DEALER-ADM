@@ -5,7 +5,7 @@
 #   Ubuntu 22/24/25
 # ═══════════════════════════════════════════════════════
 
-SCRIPT_VERSION="1.3"
+SCRIPT_VERSION="1.4"
 R='\033[0;31m'
 G='\033[0;32m'
 Y='\033[1;33m'
@@ -945,7 +945,7 @@ PYEOF
 }
 
 eliminar_user_ziv() {
-    banner; sep; echo -e "  ${R}  ELIMINAR USUARIO ZIV VPN${NC}"; sep; echo ""
+    banner; sep; echo -e "  ${R}  ELIMINAR USUARIO ZIVPN${NC}"; sep; echo ""
     [ ! -f /etc/zivpn/users.json ] && echo "[]" > /etc/zivpn/users.json
     python3 -c "
 import json
@@ -977,7 +977,7 @@ PYEOF
 
 menu_users_ziv() {
     while true; do
-        banner; sep; echo -e "  ${Y}   USUARIOS ZIVVPN${NC}"; sep; echo ""
+        banner; sep; echo -e "  ${Y}   USUARIOS ZIVPN${NC}"; sep; echo ""
         [ ! -f /etc/zivpn/users.json ] && echo "[]" > /etc/zivpn/users.json
         TOTAL=$(python3 -c "import json; print(len(json.load(open('/etc/zivpn/users.json'))))" 2>/dev/null || echo 0)
         echo -e "  Total usuarios: ${G}${TOTAL}${NC}"
