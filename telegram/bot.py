@@ -29,7 +29,6 @@ def es_admin(user_id: int) -> bool:
         salida = subprocess.check_output(
             [API, "esadmin", str(user_id)]
         ).decode().strip()
-        # Verifica si el caracter '1' está presente en la salida de la API
         return "1" in salida
     except Exception:
         return False
@@ -39,7 +38,6 @@ def admin_activo(user_id: int) -> bool:
         salida = subprocess.check_output(
             [API, "activo", str(user_id)]
         ).decode().strip()
-        # Verifica si el caracter '1' está presente en la salida de la API
         return "1" in salida
     except Exception:
         return False
@@ -49,7 +47,6 @@ def obtener_creditos(user_id: int) -> int:
         salida = subprocess.check_output(
             [API, "creditosdisponibles", str(user_id)]
         ).decode().strip()
-        # Busca sólo los dígitos numéricos por si la API devuelve texto adicional
         numeros = "".join(c for c in salida if c.isdigit())
         return int(numeros) if numeros else 0
     except Exception:
@@ -75,20 +72,15 @@ def nombre_admin(user_id: int) -> str:
 
 def autorizado(update: Update) -> bool:
     user_id = update.effective_user.id
-    
-    # 1. El dueño siempre está autorizado
     if es_owner(user_id):
         return True
-    
-    # 2. Si es revendedor/admin registrado
     if es_admin(user_id):
-        # Permite el acceso si la API indica que está activo O si posee créditos cargados (> 0)
         if admin_activo(user_id) or obtener_creditos(user_id) > 0:
             return True
-            
     return False
+
 # ==========================================
-# START
+# COMMAND HANDLERS
 # ==========================================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -115,9 +107,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "▫️ `/eliminaradmin` id"
         )
     else:
-        # Obtener los créditos actuales del revendedor
         creditos_actuales = obtener_creditos(user_id)
-        
         mensaje = (
             "🤖 *Panel de Revendedor*\n\n"
             f"💳 *Créditos disponibles:* `{creditos_actuales}`\n\n"
@@ -132,9 +122,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
     await update.message.reply_text(mensaje, parse_mode="Markdown")
-# ==========================================
-# AGREGAR SSH
-# ==========================================
 
 async def agregar(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not autorizado(update):
@@ -179,7 +166,7 @@ async def agregar(update: Update, context: ContextTypes.DEFAULT_TYPE):
         mensaje = (
             f"✅ *Usuario SSH creado*\n\n"
             f"👤 *Usuario:* `{user}`\n"
-            f"🔑 *Contraseña:* `{passwd}`\n"
+            f"🔑 *Password:* `{passwd}`\n"
             f"📅 *Días:* {dias}\n"
             f"📱 *Límite:* {limite}"
         )
@@ -193,10 +180,6 @@ async def agregar(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     except Exception as e:
         await update.message.reply_text(f"❌ Error al crear usuario: {e}")
-
-# ==========================================
-# TOKEN
-# ==========================================
 
 async def token(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not autorizado(update):
@@ -254,10 +237,6 @@ async def token(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"❌ Error al crear TOKEN: {e}")
 
-# ==========================================
-# HWID
-# ==========================================
-
 async def hwid(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not autorizado(update):
         await update.message.reply_text("❌ No tienes permisos.")
@@ -314,10 +293,6 @@ async def hwid(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"❌ Error al crear HWID: {e}")
 
-# ==========================================
-# RENOVAR
-# ==========================================
-
 async def renovar(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not autorizado(update):
         await update.message.reply_text("❌ No tienes permisos.")
@@ -371,10 +346,6 @@ async def renovar(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"❌ Error al renovar usuario: {e}")
 
-# ==========================================
-# ELIMINAR
-# ==========================================
-
 async def eliminar(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not autorizado(update):
         await update.message.reply_text("❌ No tienes permisos.")
@@ -402,10 +373,6 @@ async def eliminar(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     except Exception as e:
         await update.message.reply_text(f"❌ Error al eliminar usuario: {e}")
-
-# ==========================================
-# LISTAR USUARIOS & ONLINE
-# ==========================================
 
 async def usuarios(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not autorizado(update):
@@ -441,10 +408,6 @@ async def online(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"❌ Error al consultar online: {e}")
 
-# ==========================================
-# CREDITOS
-# ==========================================
-
 async def creditos(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not es_owner(update.effective_user.id):
         await update.message.reply_text("❌ Solo el dueño del bot puede usar este comando.")
@@ -463,13 +426,11 @@ async def creditos(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cantidad = context.args[2]
 
     try:
-        # 1. Registrar los créditos en el sistema
         subprocess.run(
             [API, "creditos", nombre, admin_id, cantidad],
             check=True
         )
-        
-        # 2. Responder al Owner confirmando la operación
+
         await update.message.reply_text(
             f"✅ *Créditos agregados*\n\n"
             f"👤 *Nombre:* {nombre}\n"
@@ -478,7 +439,6 @@ async def creditos(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="Markdown"
         )
 
-        # 3. Notificar automáticamente al revendedor por privado
         try:
             msg_notificacion = (
                 f"🎉 *¡Felicidades {nombre}!*\n\n"
@@ -492,20 +452,60 @@ async def creditos(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 parse_mode="Markdown"
             )
         except Exception:
-            # Si el revendedor no ha iniciado conversación con el bot previamente,
-            # Telegram bloquea el envío del mensaje y se captura la excepción silenciosamente.
             await update.message.reply_text(
-                "⚠️ *Nota:* Los créditos se asignaron correctamente, pero no se pudo enviar el mensaje privado al usuario. "
-                "Pídele que envíe `/start` al bot primero."
+                "⚠️ *Nota:* Los créditos se asignaron correctamente, pero no se pudo enviar la notificación por privado. "
+                "Asegúrate de que el revendedor le haya dado `/start` al bot primero."
             )
 
     except Exception as e:
         await update.message.reply_text(f"❌ Error al agregar créditos: {e}")
+
+async def admins(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not es_owner(update.effective_user.id):
+        await update.message.reply_text("❌ Solo el dueño del bot puede usar este comando.")
+        return
+
+    try:
+        salida = subprocess.check_output([API, "admins"]).decode().strip()
+        await update.message.reply_text(
+            salida if salida else "📋 No existen revendedores registrados."
+        )
+    except Exception as e:
+        await update.message.reply_text(f"❌ Error al listar administradores: {e}")
+
+async def eliminaradmin(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not es_owner(update.effective_user.id):
+        await update.message.reply_text("❌ Solo el dueño del bot puede usar este comando.")
+        return
+
+    if len(context.args) < 1:
+        await update.message.reply_text(
+            "⚠️ *Uso correcto:*\n"
+            "`/eliminaradmin id`",
+            parse_mode="Markdown"
+        )
+        return
+
+    admin_id = context.args[0]
+
+    try:
+        subprocess.run([API, "eliminaradmin", admin_id], check=True)
+        await update.message.reply_text(
+            f"🗑 *Revendedor eliminado:* `{admin_id}`",
+            parse_mode="Markdown"
+        )
+    except Exception as e:
+        await update.message.reply_text(f"❌ Error al eliminar revendedor: {e}")
+
 # ==========================================
 # INICIO
 # ==========================================
 
 def main():
+    if not BOT_TOKEN:
+        print("ERROR: BOT_TOKEN no definido en variables de entorno.")
+        return
+
     app = Application.builder().token(BOT_TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
