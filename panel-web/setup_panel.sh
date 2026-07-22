@@ -1,6 +1,6 @@
 #!/bin/bash
 # =======================================================
-# INSTALADOR AUTOMÁTICO DEL PANEL WEB DEALER
+# INSTALADOR AUTOMÁTICO COMPLETO PANEL WEB DEALER (PUERTO 81)
 # =======================================================
 
 if [ "$EUID" -ne 0 ]; then
@@ -8,44 +8,42 @@ if [ "$EUID" -ne 0 ]; then
     exit 1
 fi
 
-echo -e "\n===  CONFIGURANDO PANEL WEB AUTOMÁTICAMENTE ===\n"
+echo -e "\n=== 🚀 CONFIGURANDO SERVIDOR WEB (PUERTO 81) Y PANEL ===\n"
 
-# 1. Asegurar instalación de MariaDB/MySQL
-if ! command -v mysql &> /dev/null; then
-    echo "⏳ Instalando servidor de Base de Datos (DealerDB)..."
-    apt update -y > /dev/null 2>&1
-    DEBIAN_FRONTEND=noninteractive apt install -y mariadb-server mariadb-client php-mysqli > /dev/null 2>&1
-    systemctl start mariadb
-    systemctl enable mariadb
-fi
+# 1. Instalar Servidor Web (Apache + PHP) y MariaDB
+echo "⏳ Instalando Apache, PHP y MariaDB..."
+apt update -y > /dev/null 2>&1
+DEBIAN_FRONTEND=noninteractive apt install -y apache2 mariadb-server mariadb-client php libapache2-mod-php php-mysqli php-curl curl wget > /dev/null 2>&1
 
-# 2. Configuración Interna Automática
+# 2. Configurar Apache para escuchar en el puerto 81
+echo "⏳ Configurando Apache en el puerto 81..."
+sed -i 's/Listen 80/Listen 81/' /etc/apache2/ports.conf
+sed -i 's/<VirtualHost \*:80>/<VirtualHost *:81>/' /etc/apache2/sites-available/000-default.conf
+
+# Iniciar y habilitar servicios
+systemctl restart apache2 mariadb
+systemctl enable apache2 mariadb
+
+# 3. Configuración de Base de Datos
 DB_HOST="localhost"
 DB_NAME="dealer_panel"
 DB_USER="dealer_db_user"
 
-# Generar contraseña segura y aleatoria para la base de datos
+# Credenciales aleatorias
 DB_PASS=$(openssl rand -hex 12)
-
-# Generar credenciales aleatorias para el Login del Admin
 ADMIN_USER="admin_$(openssl rand -hex 3)"
 ADMIN_PASS=$(openssl rand -base64 9 | tr -d '=+/' | cut -c1-12)
 
-echo "⏳ Creando base de datos y tablas..."
+echo "⏳ Configurando Base de Datos..."
 
-# 3. Ejecución directa en MySQL usando el socket local de root
 mysql <<EOF
--- Crear Base de Datos
 CREATE DATABASE IF NOT EXISTS \`$DB_NAME\` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-
--- Crear Usuario de BD interno y asignarle permisos
 CREATE USER IF NOT EXISTS '$DB_USER'@'$DB_HOST' IDENTIFIED BY '$DB_PASS';
 GRANT ALL PRIVILEGES ON \`$DB_NAME\`.* TO '$DB_USER'@'$DB_HOST';
 FLUSH PRIVILEGES;
 
 USE \`$DB_NAME\`;
 
--- Tabla de Usuarios
 CREATE TABLE IF NOT EXISTS \`users\` (
   \`id\` INT AUTO_INCREMENT PRIMARY KEY,
   \`username\` VARCHAR(50) NOT NULL UNIQUE,
@@ -53,7 +51,6 @@ CREATE TABLE IF NOT EXISTS \`users\` (
   \`role\` ENUM('admin', 'reseller') NOT NULL DEFAULT 'reseller'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- Tabla de Servidores VPS
 CREATE TABLE IF NOT EXISTS \`vps\` (
   \`id\` INT AUTO_INCREMENT PRIMARY KEY,
   \`name\` VARCHAR(100) NOT NULL,
@@ -61,7 +58,6 @@ CREATE TABLE IF NOT EXISTS \`vps\` (
   \`token\` VARCHAR(255) NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- Tabla de Créditos por VPS
 CREATE TABLE IF NOT EXISTS \`reseller_vps\` (
   \`id\` INT AUTO_INCREMENT PRIMARY KEY,
   \`reseller_id\` INT NOT NULL,
@@ -71,7 +67,6 @@ CREATE TABLE IF NOT EXISTS \`reseller_vps\` (
   FOREIGN KEY (\`vps_id\`) REFERENCES \`vps\`(\`id\`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- Tabla de Cuentas (SSH, Token, HWID)
 CREATE TABLE IF NOT EXISTS \`ssh_accounts\` (
   \`id\` INT AUTO_INCREMENT PRIMARY KEY,
   \`reseller\` VARCHAR(50) NOT NULL,
@@ -83,14 +78,30 @@ CREATE TABLE IF NOT EXISTS \`ssh_accounts\` (
   \`vps_id\` INT NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- Registrar el Administrador
 INSERT INTO \`users\` (\`username\`, \`password\`, \`role\`) 
 VALUES ('$ADMIN_USER', '$ADMIN_PASS', 'admin');
 EOF
 
-if [ $? -eq 0 ]; then
-    # 4. Generar db.php automático
-    cat > db.php << EOF
+# 4. Descargar Archivos del Frontend
+WEB_DIR="/var/www/html"
+echo "⏳ Descargando interfaz del Panel Web..."
+
+rm -f $WEB_DIR/index.html
+
+REPO_URL="https://raw.githubusercontent.com/Dealer-Dev/SCRIPT-DEALER-ADM/main/panel-web"
+
+FILES=("admin.php" "login.php" "reseller.php" "mis_usuarios.php" "load_vps.php" "online.php" "logout.php" "index.php" "logo.png" "lluvia.png")
+
+for file in "${FILES[@]}"; do
+    wget -q -O "$WEB_DIR/$file" "$REPO_URL/$file"
+done
+
+if [ ! -f "$WEB_DIR/index.php" ]; then
+    echo "<?php header('Location: login.php'); exit(); ?>" > "$WEB_DIR/index.php"
+fi
+
+# 5. Crear el archivo db.php
+cat > $WEB_DIR/db.php << EOF
 <?php
 \$host = "$DB_HOST";
 \$user = "$DB_USER";
@@ -105,16 +116,19 @@ if (\$conn->connect_error) {
 ?>
 EOF
 
-    SERVER_IP=$(curl -s -4 ifconfig.me 2>/dev/null || hostname -I | awk '{print $1}')
+chown -R www-data:www-data $WEB_DIR
+chmod -R 755 $WEB_DIR
 
-    echo -e "\n============================================="
-    echo -e " ¡PANEL WEB CONFIGURADO CORRECTAMENTE!"
-    echo -e "============================================="
-    echo -e " 🌐 URL Panel:  http://$SERVER_IP/login.php"
-    echo -e " 👤 Usuario:    \033[1;33m$ADMIN_USER\033[0m"
-    echo -e " 🔑 Contraseña: \033[1;32m$ADMIN_PASS\033[0m"
-    echo -e "=============================================\n"
-    echo "⚠️  Guarda estas credenciales para acceder al panel."
-else
-    echo -e "\n❌ Ocurrió un error al configurar la base de datos."
-fi
+# Reglas de Firewall para el puerto 81
+ufw allow 81/tcp > /dev/null 2>&1
+iptables -I INPUT -p tcp --dport 81 -j ACCEPT 2>/dev/null
+
+SERVER_IP=$(curl -s -4 ifconfig.me 2>/dev/null || hostname -I | awk '{print $1}')
+
+echo -e "\n============================================="
+echo -e "  ¡PANEL WEB INSTALADO CORRECTAMENTE!"
+echo -e "============================================="
+echo -e " 🌐 URL Panel:  http://$SERVER_IP:81/login.php"
+echo -e " 👤 Usuario:    \033[1;33m$ADMIN_USER\033[0m"
+echo -e " 🔑 Contraseña: \033[1;32m$ADMIN_PASS\033[0m"
+echo -e "=============================================\n"
