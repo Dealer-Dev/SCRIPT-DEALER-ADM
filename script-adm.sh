@@ -5,7 +5,7 @@
 #   Ubuntu 22/24/25
 # ═══════════════════════════════════════════════════════
 
-SCRIPT_VERSION="1.5"
+SCRIPT_VERSION="1.6"
 R='\033[0;31m'
 G='\033[0;32m'
 Y='\033[1;33m'
@@ -3513,63 +3513,60 @@ EOF
 sincronizar_usuarios_hysteria() {
     [ ! -f /etc/hysteria/config.json ] && return
 
-    echo -e "  ${C}Sincronizando usuarios existentes con Hysteria...${NC}"
+    echo -e "  ${C}Sincronizando usuarios de userDIR con Hysteria...${NC}"
 
-    python3 - << 'PYEOF'
+    python3 -c "
 import json, os
 
 config_path = '/etc/hysteria/config.json'
 user_dir = '/etc/dealer-adm/userDIR'
 
-if not os.path.exists(config_path) or not os.path.exists(user_dir):
-    exit(0)
+if os.path.exists(config_path) and os.path.exists(user_dir):
+    try:
+        with open(config_path, 'r') as f:
+            config = json.load(f)
 
-try:
-    with open(config_path, 'r') as f:
-        config = json.load(f)
+        # Obtener lista actual de contraseñas/usuarios
+        auth_config = config.get('auth', {}).get('config', [])
+        if isinstance(auth_config, dict):
+            auth_config = [auth_config.get('password')] if 'password' in auth_config else []
+        elif not isinstance(auth_config, list):
+            auth_config = []
 
-    # Asegurar la estructura auth.config
-    if 'auth' not in config:
-        config['auth'] = {"mode": "password", "config": []}
-    
-    # Si config dentro de auth es un dict antiguo, convertir a lista
-    if isinstance(config['auth'].get('config'), dict):
-        config['auth']['config'] = []
-    elif 'config' not in config['auth']:
-        config['auth']['config'] = []
+        existing = set(str(x) for x in auth_config if x)
+        count = 0
 
-    existing_users = set(config['auth']['config'])
-    count = 0
+        for filename in os.listdir(user_dir):
+            filepath = os.path.join(user_dir, filename)
+            if os.path.isfile(filepath):
+                user, password = None, None
+                with open(filepath, 'r') as uf:
+                    for line in uf:
+                        line = line.strip()
+                        if line.startswith('usuario:'):
+                            user = line.split(':', 1)[1].strip()
+                        elif line.startswith('password:'):
+                            password = line.split(':', 1)[1].strip()
 
-    # Recorrer todos los archivos de usuarios
-    for filename in os.listdir(user_dir):
-        filepath = os.path.join(user_dir, filename)
-        if os.path.isfile(filepath):
-            user, password = None, None
-            with open(filepath, 'r') as uf:
-                for line in uf:
-                    line = line.strip()
-                    if line.startswith('usuario:'):
-                        user = line.split(':', 1)[1].strip()
-                    elif line.startswith('password:'):
-                        password = line.split(':', 1)[1].strip()
-            
-            if user and password:
-                entry = f"{user}:{password}"
-                if entry not in existing_users:
-                    existing_users.add(entry)
-                    count += 1
+                if user and password:
+                    entry = f'{user}:{password}'
+                    if entry not in existing:
+                        existing.add(entry)
+                        count += 1
 
-    config['auth']['config'] = list(existing_users)
+        config['auth'] = {
+            'mode': 'passwords',
+            'config': list(existing)
+        }
 
-    with open(config_path, 'w') as f:
-        json.dump(config, f, indent=2)
+        with open(config_path, 'w') as f:
+            json.dump(config, f, indent=2)
 
-    print(f"  \033[0;32m✓ {count} usuario(s) sincronizado(s) con Hysteria\033[0m")
+        print(f'  \033[0;32m✓ {count} usuario(s) migrado(s) a Hysteria\033[0m')
 
-except Exception as e:
-    print(f"  \033[0;31mError al sincronizar usuarios: {e}\033[0m")
-PYEOF
+    except Exception as e:
+        print(f'  \033[0;31mError durante sincronización: {e}\033[0m')
+"
 
     systemctl restart hysteria-server >/dev/null 2>&1
 }
@@ -4248,8 +4245,8 @@ menu_hysteria() {
                 wget -q -O /usr/local/bin/hysteria-v1 https://github.com/HyNetwork/hysteria/releases/download/v1.3.5/hysteria-linux-amd64
                 chmod +x /usr/local/bin/hysteria-v1
                 read -p "  Puerto UDP (default 36712): " H1_PORT; H1_PORT=${H1_PORT:-36712}
-                read -p "  Password: " H1_PASS; H1_PASS=${H1_PASS:-"ltmssh2026"}
-                read -p "  Dominio (para TLS, deja vacio para self-signed): " H1_DOMAIN
+                read -p "  Password Admin: " H1_PASS; H1_PASS=${H1_PASS:-"ltmssh2026"}
+                read -p "  Dominio (deja vacio para self-signed): " H1_DOMAIN
                 mkdir -p /etc/hysteria
                 if [ -n "$H1_DOMAIN" ]; then
                     apt install -y certbot > /dev/null 2>&1
@@ -4263,14 +4260,18 @@ menu_hysteria() {
                     CERT_FILE="/etc/hysteria/server.crt"
                     KEY_FILE="/etc/hysteria/server.key"
                 fi
+                
+                # Escribir configuración compatible con modo multi-usuario passwords
                 cat > /etc/hysteria/config.json << EOF
 {
   "listen": ":$H1_PORT",
   "cert": "$CERT_FILE",
   "key": "$KEY_FILE",
   "auth": {
-    "mode": "password",
-    "config": ["admin:$H1_PASS"]
+    "mode": "passwords",
+    "config": [
+      "admin:$H1_PASS"
+    ]
   },
   "obfs": "ltmssh",
   "up_mbps": 100,
@@ -4294,13 +4295,12 @@ EOF
                 systemctl start hysteria-server
                 iptables -I INPUT -p udp --dport $H1_PORT -j ACCEPT 2>/dev/null
                 
-                # Sincronización automática de usuarios existentes
+                # Invocación de la función de copia automática de usuarios
                 sincronizar_usuarios_hysteria
 
-                echo -e "  ${G}OK Hysteria V1 instalado${NC}"
+                echo -e "  ${G}OK Hysteria V1 instalado correctamente${NC}"
                 echo -e "  ${NEON}◈${NC} Puerto: ${Y}$H1_PORT${NC}"
                 echo -e "  ${NEON}◈${NC} Password Admin: ${Y}$H1_PASS${NC}"
-                echo -e "  ${NEON}◈${NC} Obfs: ${Y}ltmssh${NC}"
                 read -p "  ENTER..." ;;
             2)
                 echo -e "\n  ${C}Instalando Hysteria V2...${NC}"
