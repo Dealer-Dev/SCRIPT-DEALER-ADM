@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
+import os
 import subprocess
-
 from telegram import Update
 from telegram.ext import (
     Application,
@@ -10,741 +10,510 @@ from telegram.ext import (
 )
 
 # ==========================================
-# CONFIG
+# CONFIGURACIÓN
 # ==========================================
 
-import os
-
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-
 ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
-
 API = "/etc/dealer-adm/bot/dealer_api.sh"
 
 # ==========================================
-# SEGURIDAD
+# FUNCIONES DE SEGURIDAD Y PERMISOS
 # ==========================================
 
-# ==========================================
-# PERMISOS
-# ==========================================
-
-def es_owner(user_id):
-
+def es_owner(user_id: int) -> bool:
     return user_id == ADMIN_ID
 
-
-def es_admin(user_id):
-
+def es_admin(user_id: int) -> bool:
     try:
-
         salida = subprocess.check_output(
-            [
-                API,
-                "esadmin",
-                str(user_id)
-            ]
+            [API, "esadmin", str(user_id)]
         ).decode().strip()
-
         return salida == "1"
-
-    except:
-
+    except Exception:
         return False
 
-
-def admin_activo(user_id):
-
+def admin_activo(user_id: int) -> bool:
     try:
-
         salida = subprocess.check_output(
-            [
-                API,
-                "activo",
-                str(user_id)
-            ]
+            [API, "activo", str(user_id)]
         ).decode().strip()
-
         return salida == "1"
-
-    except:
-
+    except Exception:
         return False
 
-
-def obtener_creditos(user_id):
-
+def obtener_creditos(user_id: int) -> int:
     try:
-
         salida = subprocess.check_output(
-            [
-                API,
-                "creditosdisponibles",
-                str(user_id)
-            ]
+            [API, "creditosdisponibles", str(user_id)]
         ).decode().strip()
-
         return int(salida)
-
-    except:
-
+    except Exception:
         return 0
 
-
-def descontar_credito(user_id):
-
-    subprocess.run(
-        [
-            API,
-            "descontarcredito",
-            str(user_id)
-        ]
-    )
-
-
-def nombre_admin(user_id):
-
+def descontar_credito(user_id: int):
     try:
+        subprocess.run(
+            [API, "descontarcredito", str(user_id)],
+            check=True
+        )
+    except Exception:
+        pass
 
+def nombre_admin(user_id: int) -> str:
+    try:
         salida = subprocess.check_output(
-            [
-                API,
-                "nombreadmin",
-                str(user_id)
-            ]
+            [API, "nombreadmin", str(user_id)]
         ).decode().strip()
-
         return salida
-
-    except:
-
+    except Exception:
         return ""
 
-def autorizado(update: Update):
-
+def autorizado(update: Update) -> bool:
     user_id = update.effective_user.id
-
     if es_owner(user_id):
         return True
-
     if es_admin(user_id) and admin_activo(user_id):
         return True
-
     return False
-
-def es_owner_update(update: Update):
-
-    return update.effective_user.id == ADMIN_ID
 
 # ==========================================
 # START
 # ==========================================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
     if not autorizado(update):
-
-        await update.message.reply_text(
-            "No tienes permisos en el bot."
-        )
-
+        await update.message.reply_text("❌ No tienes permisos para usar este bot.")
         return
 
-    if es_owner_update(update):
+    user_id = update.effective_user.id
 
+    if es_owner(user_id):
         mensaje = (
-            "🤖 Dealer Adm Bot Online\n\n"
-            "/agregar usuario password dias limite\n"
-            "/token nombre token dias\n"
-            "/hwid nombre hwid dias\n"
-            "/renovar usuario dias\n"
-            "/eliminar usuario\n"
-            "/usuarios\n"
-            "/online\n\n"
-            "/creditos nombre id cantidad\n"
-            "/admins\n"
-            "/eliminaradmin id"
+            "🤖 *Dealer Adm Bot Online*\n\n"
+            "📋 *Comandos de Gestión:*\n"
+            "▫️ `/agregar` usuario password dias limite\n"
+            "▫️ `/token` nombre token dias\n"
+            "▫️ `/hwid` nombre hwid dias\n"
+            "▫️ `/renovar` usuario dias\n"
+            "▫️ `/eliminar` usuario\n"
+            "▫️ `/usuarios` - Listar mis usuarios\n"
+            "▫️ `/online` - Usuarios conectados\n\n"
+            "👑 *Comandos de Administración:*\n"
+            "▫️ `/creditos` nombre id cantidad\n"
+            "▫️ `/admins` - Listar revendedores\n"
+            "▫️ `/eliminaradmin` id"
         )
-
     else:
-
         mensaje = (
-            "🤖 Dealer Revendedor\n\n"
-            "/agregar usuario password dias limite\n"
-            "/token nombre token dias\n"
-            "/hwid nombre hwid dias\n"
-            "/renovar usuario dias\n"
-            "/eliminar usuario\n"
-            "/usuarios\n"
-            "/online"
+            "🤖 *Panel de Revendedor*\n\n"
+            "📋 *Comandos Disponibles:*\n"
+            "▫️ `/agregar` usuario password dias limite\n"
+            "▫️ `/token` nombre token dias\n"
+            "▫️ `/hwid` nombre hwid dias\n"
+            "▫️ `/renovar` usuario dias\n"
+            "▫️ `/eliminar` usuario\n"
+            "▫️ `/usuarios` - Listar mis usuarios\n"
+            "▫️ `/online` - Usuarios conectados"
         )
 
-    await update.message.reply_text(mensaje)
+    await update.message.reply_text(mensaje, parse_mode="Markdown")
+
 # ==========================================
 # AGREGAR SSH
 # ==========================================
 
 async def agregar(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
     if not autorizado(update):
-
-        await update.message.reply_text(
-            "No tienes permisos en el bot."
-        )
-
+        await update.message.reply_text("❌ No tienes permisos.")
         return
 
+    if len(context.args) < 4:
+        await update.message.reply_text(
+            "⚠️ *Uso correcto:*\n"
+            "`/agregar usuario password dias limite`",
+            parse_mode="Markdown"
+        )
+        return
+
+    user = context.args[0]
+    passwd = context.args[1]
+    dias_raw = context.args[2]
+    limite = context.args[3]
+
+    if not dias_raw.isdigit() or not limite.isdigit():
+        await update.message.reply_text("❌ Los días y el límite deben ser números enteros.")
+        return
+
+    user_id = update.effective_user.id
+    admin_nombre = update.effective_user.first_name or "Admin"
+    dias = dias_raw
+
     try:
-
-        user = context.args[0]
-        passwd = context.args[1]
-        dias = context.args[2]
-        limite = context.args[3]
-
-        user_id = update.effective_user.id
-        admin_nombre = update.effective_user.first_name
-
         if not es_owner(user_id):
-
-            dias = str(min(int(dias), 30))
-
+            dias = str(min(int(dias_raw), 30))
             creditos = obtener_creditos(user_id)
 
             if creditos <= 0:
-
-                await update.message.reply_text(
-                    "❌ No tienes créditos disponibles."
-                )
-
+                await update.message.reply_text("❌ No tienes créditos suficientes.")
                 return
 
         subprocess.run(
-            [
-                API,
-                "agregar",
-                user,
-                passwd,
-                dias,
-                limite,
-                str(user_id),
-                admin_nombre
-            ],
+            [API, "agregar", user, passwd, dias, limite, str(user_id), admin_nombre],
             check=True
         )
 
-        if not es_owner(user_id):
-
-            descontar_credito(user_id)
-
-            creditos_restantes = obtener_creditos(user_id)
-
         mensaje = (
-            f"✅ Usuario SSH creado\n\n"
-            f"Usuario: {user}\n"
-            f"Password: {passwd}\n"
-            f"Días: {dias}\n"
-            f"Límite: {limite}"
+            f"✅ *Usuario SSH creado*\n\n"
+            f"👤 *Usuario:* `{user}`\n"
+            f"🔑 *Password:* `{passwd}`\n"
+            f"📅 *Días:* {dias}\n"
+            f"📱 *Límite:* {limite}"
         )
 
         if not es_owner(user_id):
+            descontar_credito(user_id)
+            restantes = obtener_creditos(user_id)
+            mensaje += f"\n\n💳 *Créditos restantes:* {restantes}"
 
-            mensaje += (
-                f"\n\n💳 Créditos restantes: "
-                f"{creditos_restantes}"
-            )
-
-        await update.message.reply_text(mensaje)
+        await update.message.reply_text(mensaje, parse_mode="Markdown")
 
     except Exception as e:
-
-        await update.message.reply_text(
-            f"Uso:\n"
-            f"/agregar usuario password dias limite\n\n"
-            f"Error: {e}"
-        )
+        await update.message.reply_text(f"❌ Error al crear usuario: {e}")
 
 # ==========================================
 # TOKEN
 # ==========================================
 
 async def token(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
     if not autorizado(update):
-
-        await update.message.reply_text(
-            "No tienes permisos en el bot."
-        )
-
+        await update.message.reply_text("❌ No tienes permisos.")
         return
 
+    if len(context.args) < 3:
+        await update.message.reply_text(
+            "⚠️ *Uso correcto:*\n"
+            "`/token nombre token dias`",
+            parse_mode="Markdown"
+        )
+        return
+
+    nombre = context.args[0]
+    tokenv = context.args[1]
+    dias_raw = context.args[2]
+
+    if not dias_raw.isdigit():
+        await update.message.reply_text("❌ Los días deben ser un número entero.")
+        return
+
+    user_id = update.effective_user.id
+    admin_nombre = update.effective_user.first_name or "Admin"
+    dias = dias_raw
+
     try:
-
-        nombre = context.args[0]
-        tokenv = context.args[1]
-        dias = context.args[2]
-
-        user_id = update.effective_user.id
-        admin_nombre = update.effective_user.first_name
-
         if not es_owner(user_id):
-
-            dias = str(min(int(dias), 30))
-
+            dias = str(min(int(dias_raw), 30))
             creditos = obtener_creditos(user_id)
 
             if creditos <= 0:
-
-                await update.message.reply_text(
-                    "❌ No tienes créditos disponibles."
-                )
-
+                await update.message.reply_text("❌ No tienes créditos suficientes.")
                 return
 
         subprocess.run(
-            [
-                API,
-                "token",
-                nombre,
-                tokenv,
-                dias,
-                str(user_id),
-                admin_nombre
-            ],
+            [API, "token", nombre, tokenv, dias, str(user_id), admin_nombre],
             check=True
         )
 
-        if not es_owner(user_id):
-
-            descontar_credito(user_id)
-
-            creditos_restantes = obtener_creditos(user_id)
-
         mensaje = (
-            f"✅ Usuario TOKEN creado\n\n"
-            f"Nombre: {nombre}\n"
-            f"Token: {tokenv}\n"
-            f"Días: {dias}"
+            f"✅ *Usuario TOKEN creado*\n\n"
+            f"👤 *Nombre:* `{nombre}`\n"
+            f"🎟 *Token:* `{tokenv}`\n"
+            f"📅 *Días:* {dias}"
         )
 
         if not es_owner(user_id):
+            descontar_credito(user_id)
+            restantes = obtener_creditos(user_id)
+            mensaje += f"\n\n💳 *Créditos restantes:* {restantes}"
 
-            mensaje += (
-                f"\n\n💳 Créditos restantes: "
-                f"{creditos_restantes}"
-            )
-
-        await update.message.reply_text(mensaje)
+        await update.message.reply_text(mensaje, parse_mode="Markdown")
 
     except Exception as e:
+        await update.message.reply_text(f"❌ Error al crear TOKEN: {e}")
 
-        await update.message.reply_text(
-            f"Uso:\n"
-            f"/token nombre token dias\n\n"
-            f"Error: {e}"
-        )
 # ==========================================
 # HWID
 # ==========================================
+
 async def hwid(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
     if not autorizado(update):
-
-        await update.message.reply_text(
-            "No tienes permisos en el bot."
-        )
-
+        await update.message.reply_text("❌ No tienes permisos.")
         return
 
+    if len(context.args) < 3:
+        await update.message.reply_text(
+            "⚠️ *Uso correcto:*\n"
+            "`/hwid nombre hwid dias`",
+            parse_mode="Markdown"
+        )
+        return
+
+    nombre = context.args[0]
+    hwidv = context.args[1]
+    dias_raw = context.args[2]
+
+    if not dias_raw.isdigit():
+        await update.message.reply_text("❌ Los días deben ser un número entero.")
+        return
+
+    user_id = update.effective_user.id
+    admin_nombre = update.effective_user.first_name or "Admin"
+    dias = dias_raw
+
     try:
-
-        nombre = context.args[0]
-        hwidv = context.args[1]
-        dias = context.args[2]
-
-        user_id = update.effective_user.id
-        admin_nombre = update.effective_user.first_name
-
         if not es_owner(user_id):
-
-            dias = str(min(int(dias), 30))
-
+            dias = str(min(int(dias_raw), 30))
             creditos = obtener_creditos(user_id)
 
             if creditos <= 0:
-
-                await update.message.reply_text(
-                    "❌ No tienes créditos disponibles."
-                )
-
+                await update.message.reply_text("❌ No tienes créditos suficientes.")
                 return
 
         subprocess.run(
-            [
-                API,
-                "hwid",
-                nombre,
-                hwidv,
-                dias,
-                str(user_id),
-                admin_nombre
-            ],
+            [API, "hwid", nombre, hwidv, dias, str(user_id), admin_nombre],
             check=True
         )
 
-        if not es_owner(user_id):
-
-            descontar_credito(user_id)
-
-            creditos_restantes = obtener_creditos(user_id)
-
         mensaje = (
-            f"✅ Usuario HWID creado\n\n"
-            f"Nombre: {nombre}\n"
-            f"HWID: {hwidv}\n"
-            f"Días: {dias}"
+            f"✅ *Usuario HWID creado*\n\n"
+            f"👤 *Nombre:* `{nombre}`\n"
+            f"🔒 *HWID:* `{hwidv}`\n"
+            f"📅 *Días:* {dias}"
         )
 
         if not es_owner(user_id):
+            descontar_credito(user_id)
+            restantes = obtener_creditos(user_id)
+            mensaje += f"\n\n💳 *Créditos restantes:* {restantes}"
 
-            mensaje += (
-                f"\n\n💳 Créditos restantes: "
-                f"{creditos_restantes}"
-            )
-
-        await update.message.reply_text(mensaje)
+        await update.message.reply_text(mensaje, parse_mode="Markdown")
 
     except Exception as e:
+        await update.message.reply_text(f"❌ Error al crear HWID: {e}")
 
-        await update.message.reply_text(
-            f"Uso:\n"
-            f"/hwid nombre hwid dias\n\n"
-            f"Error: {e}"
-        )
 # ==========================================
 # RENOVAR
 # ==========================================
 
 async def renovar(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
     if not autorizado(update):
-
-        await update.message.reply_text(
-            "No tienes permisos en el bot."
-        )
-
+        await update.message.reply_text("❌ No tienes permisos.")
         return
 
+    if len(context.args) < 2:
+        await update.message.reply_text(
+            "⚠️ *Uso correcto:*\n"
+            "`/renovar usuario dias`",
+            parse_mode="Markdown"
+        )
+        return
+
+    usuario = context.args[0]
+    dias_raw = context.args[1]
+
+    if not dias_raw.isdigit():
+        await update.message.reply_text("❌ Los días deben ser un número entero.")
+        return
+
+    user_id = update.effective_user.id
+    dias = dias_raw
+
     try:
-
-        usuario = context.args[0]
-        dias = context.args[1]
-
-        user_id = update.effective_user.id
-
         if not es_owner(user_id):
-
-            dias = str(min(int(dias), 30))
-
+            dias = str(min(int(dias_raw), 30))
             creditos = obtener_creditos(user_id)
 
             if creditos <= 0:
-
-                await update.message.reply_text(
-                    "❌ No tienes créditos disponibles."
-                )
-
+                await update.message.reply_text("❌ No tienes créditos suficientes.")
                 return
 
         subprocess.run(
-            [
-                API,
-                "renovar",
-                usuario,
-                dias,
-                str(user_id),
-                str(ADMIN_ID)
-            ],
+            [API, "renovar", usuario, dias, str(user_id), str(ADMIN_ID)],
             check=True
         )
 
-        if not es_owner(user_id):
-
-            descontar_credito(user_id)
-
-            creditos_restantes = obtener_creditos(user_id)
-
         mensaje = (
-            f"✅ Usuario renovado\n\n"
-            f"Usuario: {usuario}\n"
-            f"Días: {dias}"
+            f"🔄 *Usuario renovado*\n\n"
+            f"👤 *Usuario:* `{usuario}`\n"
+            f"📅 *Días sumados:* {dias}"
         )
 
         if not es_owner(user_id):
+            descontar_credito(user_id)
+            restantes = obtener_creditos(user_id)
+            mensaje += f"\n\n💳 *Créditos restantes:* {restantes}"
 
-            mensaje += (
-                f"\n\n💳 Créditos restantes: "
-                f"{creditos_restantes}"
-            )
-
-        await update.message.reply_text(mensaje)
+        await update.message.reply_text(mensaje, parse_mode="Markdown")
 
     except Exception as e:
-
-        await update.message.reply_text(
-            f"Uso:\n"
-            f"/renovar usuario dias\n\n"
-            f"Error: {e}"
-        )
+        await update.message.reply_text(f"❌ Error al renovar usuario: {e}")
 
 # ==========================================
 # ELIMINAR
 # ==========================================
 
 async def eliminar(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
     if not autorizado(update):
-
-        await update.message.reply_text(
-            "No tienes permisos en el bot."
-        )
-
+        await update.message.reply_text("❌ No tienes permisos.")
         return
 
+    if len(context.args) < 1:
+        await update.message.reply_text(
+            "⚠️ *Uso correcto:*\n"
+            "`/eliminar usuario`",
+            parse_mode="Markdown"
+        )
+        return
+
+    usuario = context.args[0]
+    user_id = update.effective_user.id
+
     try:
-
-        usuario = context.args[0]
-
-        user_id = update.effective_user.id
-
         subprocess.run(
-            [
-                API,
-                "eliminar",
-                usuario,
-                str(user_id),
-                str(ADMIN_ID)
-            ],
+            [API, "eliminar", usuario, str(user_id), str(ADMIN_ID)],
             check=True
         )
-
         await update.message.reply_text(
-            f"❌ Usuario eliminado:\n{usuario}"
+            f"🗑 *Usuario eliminado:* `{usuario}`",
+            parse_mode="Markdown"
         )
-
     except Exception as e:
-
-        await update.message.reply_text(
-            f"Uso:\n"
-            f"/eliminar usuario\n\n"
-            f"Error: {e}"
-        )
+        await update.message.reply_text(f"❌ Error al eliminar usuario: {e}")
 
 # ==========================================
-# USUARIOS
+# LISTAR USUARIOS & ONLINE
 # ==========================================
 
 async def usuarios(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
     if not autorizado(update):
-
-        await update.message.reply_text(
-            "No tienes permisos en el bot."
-        )
-
+        await update.message.reply_text("❌ No tienes permisos.")
         return
 
     try:
-
         user_id = update.effective_user.id
-
         salida = subprocess.check_output(
-            [
-                API,
-                "usuarios",
-                str(user_id),
-                str(ADMIN_ID)
-            ]
-        ).decode()
+            [API, "usuarios", str(user_id), str(ADMIN_ID)]
+        ).decode().strip()
 
         await update.message.reply_text(
-            salida if salida else "Sin usuarios"
+            salida if salida else "📋 No tienes usuarios registrados."
         )
-
     except Exception as e:
-
-        await update.message.reply_text(
-            f"Error:\n{e}"
-        )
-# ==========================================
-# ONLINE
-# ==========================================
+        await update.message.reply_text(f"❌ Error al consultar usuarios: {e}")
 
 async def online(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
     if not autorizado(update):
-
-        await update.message.reply_text(
-            "No tienes permisos en el bot."
-        )
-
+        await update.message.reply_text("❌ No tienes permisos.")
         return
 
     try:
-
         user_id = update.effective_user.id
-
         salida = subprocess.check_output(
-            [
-                API,
-                "online",
-                str(user_id),
-                str(ADMIN_ID)
-            ]
-        ).decode()
+            [API, "online", str(user_id), str(ADMIN_ID)]
+        ).decode().strip()
 
         await update.message.reply_text(
-            salida if salida else "Sin usuarios online"
+            salida if salida else "📡 No hay usuarios conectados en este momento."
         )
-
     except Exception as e:
+        await update.message.reply_text(f"❌ Error al consultar online: {e}")
 
-        await update.message.reply_text(
-            f"Error:\n{e}"
-        )
 # ==========================================
-# CREDITOS
+# CRÉDITOS Y ADMINS (SOLO OWNER)
 # ==========================================
 
 async def creditos(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    if not es_owner_update(update):
-
-        await update.message.reply_text(
-            "Solo el administrador principal puede usar este comando."
-        )
-
+    if not es_owner(update.effective_user.id):
+        await update.message.reply_text("❌ Solo el dueño del bot puede usar este comando.")
         return
 
+    if len(context.args) < 3:
+        await update.message.reply_text(
+            "⚠️ *Uso correcto:*\n"
+            "`/creditos nombre id cantidad`",
+            parse_mode="Markdown"
+        )
+        return
+
+    nombre = context.args[0]
+    admin_id = context.args[1]
+    cantidad = context.args[2]
+
     try:
-
-        nombre = context.args[0]
-        admin_id = context.args[1]
-        cantidad = context.args[2]
-
         subprocess.run(
-            [
-                API,
-                "creditos",
-                nombre,
-                admin_id,
-                cantidad
-            ],
+            [API, "creditos", nombre, admin_id, cantidad],
             check=True
         )
-
         await update.message.reply_text(
-            f"✅ Créditos agregados\n\n"
-            f"Nombre: {nombre}\n"
-            f"ID: {admin_id}\n"
-            f"Créditos: {cantidad}"
+            f"✅ *Créditos agregados*\n\n"
+            f"👤 *Nombre:* {nombre}\n"
+            f"🆔 *ID:* `{admin_id}`\n"
+            f"💳 *Créditos:* {cantidad}",
+            parse_mode="Markdown"
         )
-
     except Exception as e:
-
-        await update.message.reply_text(
-            f"Uso:\n"
-            f"/creditos nombre id cantidad\n\n"
-            f"Error: {e}"
-        )
-
-# ==========================================
-# ADMINS
-# ==========================================
+        await update.message.reply_text(f"❌ Error al agregar créditos: {e}")
 
 async def admins(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    if not es_owner_update(update):
-
-        await update.message.reply_text(
-            "Solo el administrador principal puede usar este comando."
-        )
-
+    if not es_owner(update.effective_user.id):
+        await update.message.reply_text("❌ Solo el dueño del bot puede usar este comando.")
         return
 
     try:
-
-        salida = subprocess.check_output(
-            [
-                API,
-                "admins"
-            ]
-        ).decode()
-
+        salida = subprocess.check_output([API, "admins"]).decode().strip()
         await update.message.reply_text(
-            salida if salida else "No existen administradores."
+            salida if salida else "📋 No existen revendedores registrados."
         )
-
     except Exception as e:
-
-        await update.message.reply_text(
-            f"Error:\n{e}"
-        )
-
-# ==========================================
-# ELIMINAR ADMIN
-# ==========================================
+        await update.message.reply_text(f"❌ Error al listar administradores: {e}")
 
 async def eliminaradmin(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    if not es_owner_update(update):
-
-        await update.message.reply_text(
-            "Solo el administrador principal puede usar este comando."
-        )
-
+    if not es_owner(update.effective_user.id):
+        await update.message.reply_text("❌ Solo el dueño del bot puede usar este comando.")
         return
 
+    if len(context.args) < 1:
+        await update.message.reply_text(
+            "⚠️ *Uso correcto:*\n"
+            "`/eliminaradmin id`",
+            parse_mode="Markdown"
+        )
+        return
+
+    admin_id = context.args[0]
+
     try:
-
-        admin_id = context.args[0]
-
-        subprocess.run(
-            [
-                API,
-                "eliminaradmin",
-                admin_id
-            ],
-            check=True
-        )
-
+        subprocess.run([API, "eliminaradmin", admin_id], check=True)
         await update.message.reply_text(
-            f"❌ Administrador eliminado:\n{admin_id}"
+            f"🗑 *Revendedor eliminado:* `{admin_id}`",
+            parse_mode="Markdown"
         )
-
     except Exception as e:
+        await update.message.reply_text(f"❌ Error al eliminar revendedor: {e}")
 
-        await update.message.reply_text(
-            f"Uso:\n"
-            f"/eliminaradmin id\n\n"
-            f"Error: {e}"
-        )
 # ==========================================
-# MAIN
+# INICIO
 # ==========================================
 
 def main():
-
     app = Application.builder().token(BOT_TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
-
     app.add_handler(CommandHandler("agregar", agregar))
     app.add_handler(CommandHandler("token", token))
     app.add_handler(CommandHandler("hwid", hwid))
-
     app.add_handler(CommandHandler("renovar", renovar))
     app.add_handler(CommandHandler("eliminar", eliminar))
-
     app.add_handler(CommandHandler("usuarios", usuarios))
     app.add_handler(CommandHandler("online", online))
     app.add_handler(CommandHandler("creditos", creditos))
@@ -755,6 +524,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-
