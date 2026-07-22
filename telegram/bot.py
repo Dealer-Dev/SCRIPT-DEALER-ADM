@@ -176,7 +176,7 @@ async def agregar(update: Update, context: ContextTypes.DEFAULT_TYPE):
         mensaje = (
             f"✅ *Usuario SSH creado*\n\n"
             f"👤 *Usuario:* `{user}`\n"
-            f"🔑 *Password:* `{passwd}`\n"
+            f"🔑 *Contraseña:* `{passwd}`\n"
             f"📅 *Días:* {dias}\n"
             f"📱 *Límite:* {limite}"
         )
