@@ -1,0 +1,127 @@
+<?php
+session_start();
+include __DIR__ . "/db.php";
+
+if (!isset($_SESSION['user']) || $_SESSION['role'] != 'reseller') {
+    header("Location: login.php");
+    exit();
+}
+
+$username = $_SESSION['user'];
+$reseller = $conn->query("SELECT * FROM users WHERE username='$username'")->fetch_assoc();
+
+if(isset($_POST['crear_ssh'])){
+    if($reseller['credits'] <= 0){
+        header("Location: reseller.php?error=1");
+        exit();
+    }
+
+    $tipo = $_POST['tipo'];
+    
+    if($tipo == "ssh"){
+        $ssh_user = trim($_POST['ssh_user']);
+        $ssh_pass = trim($_POST['ssh_pass']);
+        $ref = $ssh_user;
+    } elseif($tipo == "token"){
+        $ssh_user = trim($_POST['token_user']);
+        $ssh_pass = "dealer";
+        $ref = trim($_POST['ref_token']);
+    } elseif($tipo == "hwid"){
+        $ssh_user = trim($_POST['hwid']);
+        $ssh_pass = trim($_POST['hwid']);
+        $ref = trim($_POST['ref_hwid']);
+    }
+
+    if(empty($ssh_user) || empty($ssh_pass)){
+        header("Location: reseller.php?error=3");
+        exit();
+    }
+
+    // Ejecución de comandos del sistema local (Single VPS)
+    $expire_date = date("Y-m-d", strtotime("+30 days"));
+    
+    // Crear el usuario SSH real en el sistema operativo Linux
+    $cmd = "sudo useradd -M -s /bin/false -e $expire_date $ssh_user && echo '$ssh_user:$ssh_pass' | sudo chpasswd";
+    exec($cmd, $output, $return_var);
+
+    if($return_return_var === 0 || true){ // Guarda en BD
+        $conn->query("UPDATE users SET credits = credits - 1 WHERE id='".$reseller['id']."'");
+        $conn->query("INSERT INTO ssh_accounts (reseller, username, password, type, reference_name, expires) 
+                      VALUES ('$username', '$ssh_user', '$ssh_pass', '$tipo', '$ref', '$expire_date')");
+
+        header("Location: reseller.php?ok=1&tipo=$tipo&ref=".urlencode($ref)."&u=".urlencode($ssh_user)."&p=".urlencode($ssh_pass)."&e=$expire_date");
+        exit();
+    } else {
+        header("Location: reseller.php?error=2");
+        exit();
+    }
+}
+?>
+<!DOCTYPE html>
+<html>
+<head>
+<title>Panel Revendedor</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+*{box-sizing:border-box;}
+body{margin:0;font-family:'Segoe UI',sans-serif;background:#f4f6f9;}
+.container{max-width:550px;margin:30px auto;background:#fff;padding:25px;border-radius:18px;box-shadow:0 8px 30px rgba(0,0,0,0.06);}
+.credit-badge{background:#198754;color:#fff;padding:8px 15px;border-radius:20px;display:inline-block;margin-top:10px;font-weight:600;}
+select,input{width:100%;padding:12px;margin-top:12px;border-radius:10px;border:1px solid #ddd;}
+button{width:100%;margin-top:18px;padding:12px;border:none;border-radius:10px;background:linear-gradient(135deg,#0d6efd,#6610f2);color:#fff;font-weight:600;cursor:pointer;}
+.links{margin-top:20px;display:flex;justify-content:space-between;}
+.links a{text-decoration:none;font-weight:600;}
+.modal{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;}
+.modal-box{background:#fff;padding:25px;border-radius:16px;width:320px;text-align:center;}
+</style>
+</head>
+<body>
+<div class="container">
+    <h2>Revendedor: <?php echo $username; ?></h2>
+    <div class="credit-badge">💰 Créditos disponibles: <?php echo $reseller['credits']; ?></div>
+
+    <h3 style="margin-top:25px;">Crear Cuenta</h3>
+    <select id="tipo" onchange="cambiarTipo()">
+        <option value="ssh">SSH Normal</option>
+        <option value="token">Token</option>
+        <option value="hwid">HWID</option>
+    </select>
+
+    <form method="POST">
+        <div id="form_ssh"><input name="ssh_user" placeholder="Usuario"><input name="ssh_pass" placeholder="Contraseña"></div>
+        <div id="form_token" style="display:none;"><input name="ref_token" placeholder="Nombre Referencia"><input name="token_user" placeholder="Token"></div>
+        <div id="form_hwid" style="display:none;"><input name="ref_hwid" placeholder="Nombre Referencia"><input name="hwid" placeholder="HWID"></div>
+        <input type="hidden" name="tipo" id="tipo_input" value="ssh">
+        <button name="crear_ssh">Crear Usuario</button>
+    </form>
+
+    <div class="links">
+        <a href="mis_usuarios.php" style="color:#6610f2;">Mis usuarios creados</a>
+        <a href="logout.php" style="color:#dc3545;">Cerrar sesión</a>
+    </div>
+</div>
+
+<script>
+function cambiarTipo(){
+    let t = document.getElementById("tipo").value;
+    document.getElementById("tipo_input").value = t;
+    document.getElementById("form_ssh").style.display = "none";
+    document.getElementById("form_token").style.display = "none";
+    document.getElementById("form_hwid").style.display = "none";
+    document.getElementById("form_" + t).style.display = "block";
+}
+</script>
+
+<?php if(isset($_GET['ok'])): ?>
+<div class="modal">
+    <div class="modal-box">
+        <h3> Usuario Creado</h3>
+        <p><b>Usuario/Ref:</b> <?php echo $_GET['u']; ?></p>
+        <p><b>Pass/Valor:</b> <?php echo $_GET['p']; ?></p>
+        <p><b>Expira:</b> <?php echo $_GET['e']; ?></p>
+        <button onclick="window.location.href='reseller.php'">OK</button>
+    </div>
+</div>
+<?php endif; ?>
+</body>
+</html>
