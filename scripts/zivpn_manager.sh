@@ -24,19 +24,24 @@ generar_password() {
 # Regenerar el JSON basado únicamente en usuarios activos en la DB
 rebuild_zivpn_json() {
     [[ ! -f "$DB_FILE" ]] && return
-    
+    [[ ! -f "$CONFIG_FILE" ]] && return
+
     # Vaciar el array del config.json de forma segura antes de reconstruir
-    jq '.auth.config = []' "$CONFIG_FILE" > tmp.$$.json && mv tmp.$$.json "$CONFIG_FILE"
-    
+    jq '.auth.config = []' "$CONFIG_FILE" > /tmp/tmp_ziv.json && mv /tmp/tmp_ziv.json "$CONFIG_FILE"
+
     # Leer la DB e inyectar en formato estricto 'usuario:contraseña'
     while IFS="|" read -r user pass exp status; do
-        if [[ "$status" == "active" ]]; then
-            # Empaquetamos la credencial combinada como un único token para el binario
-            jq --arg account "$user:$pass" '.auth.config += [$account]' "$CONFIG_FILE" > tmp.$$.json && mv tmp.$$.json "$CONFIG_FILE"
+        if [[ "$status" == "active" && -n "$user" && -n "$pass" ]]; then
+            jq --arg account "$user:$pass" '.auth.config += [$account]' "$CONFIG_FILE" > /tmp/tmp_ziv.json && mv /tmp/tmp_ziv.json "$CONFIG_FILE"
         fi
     done < "$DB_FILE"
-    
+
     systemctl restart zivpn.service 2>/dev/null
+}
+
+# Alias para compatibilidad con llamadas de rebuild
+rebuild() {
+    rebuild_zivpn_json
 }
 
 # Verificar expiraciones mediante Cron o ejecución manual
@@ -45,8 +50,7 @@ verificar_expiraciones() {
     today=$(date +%Y-%m-%d)
     changed=0
 
-    # Crear una copia temporal para reconstruir la DB con estados cambiados
-    tmp_db="tmp_db.$$.db"
+    tmp_db="/tmp/tmp_db.$$.db"
     touch "$tmp_db"
 
     while IFS="|" read -r user pass exp status; do
@@ -81,8 +85,9 @@ listar_passwords() {
     today_ts=$(date -d "$today" +%s 2>/dev/null || echo 0)
 
     while IFS="|" read -r user pass exp status; do
+        [[ -z "$user" ]] && continue
         exp_ts=$(date -d "$exp" +%s 2>/dev/null || echo 0)
-        
+
         if [[ "$exp_ts" -eq 0 || "$today_ts" -eq 0 ]]; then
             dleft="N/A"
         else
@@ -111,7 +116,6 @@ agregar_password() {
         echo -e "${YELLOW}Se generó cuenta aleatoria:${NC} User: $user | Pass: $pass"
     else
         read -p "Ingrese el nombre de usuario: " user
-        # Validar que el usuario no contenga caracteres raros o pipe
         if [[ "$user" =~ [\|:] || -z "$user" ]]; then
             echo -e "${RED}✘ Usuario inválido o vacío.${NC}" && return
         fi
@@ -120,7 +124,6 @@ agregar_password() {
 
     [[ -z "$pass" ]] && echo -e "${RED}✘ La contraseña no puede estar vacía.${NC}" && return
 
-    # Validar que el usuario no exista duplicado y activo
     if grep -q "^$user|" "$DB_FILE" 2>/dev/null; then
         echo -e "${RED}✘ El usuario '$user' ya existe en la base de datos.${NC}" && return
     fi
@@ -136,10 +139,8 @@ agregar_password() {
 
     exp=$(date -d "+$dias days" +%Y-%m-%d)
 
-    # Guardar en DB (Formato: usuario|pass|exp|estado)
     echo "$user|$pass|$exp|active" >> "$DB_FILE"
 
-    # Actualizar JSON y reiniciar servicio
     rebuild_zivpn_json
 
     echo -e "${GREEN}✔ Cuenta ZIVPN añadida con éxito:${NC} $user:$pass (Expira el $exp)"
@@ -150,16 +151,14 @@ desactivar_password() {
     [[ ! -f "$DB_FILE" ]] && { echo -e "${RED}Base de datos no encontrada.${NC}"; return; }
     listar_passwords
     read -p "Ingrese el número de la cuenta a desactivar: " num
-    
-    # Validar entrada
-    total_lines=$(wc -l < "$DB_FILE")
+
+    total_lines=$(grep -c '^' "$DB_FILE")
     if [[ ! "$num" =~ ^[0-9]+$ || "$num" -le 0 || "$num" -gt "$total_lines" ]]; then
         echo -e "${RED}✘ Número inválido.${NC}" && return
     fi
 
-    # Cambiar estado a inactive en la línea correspondiente
     sed -i "${num}s/active$/inactive/" "$DB_FILE"
-    
+
     rebuild_zivpn_json
     echo -e "${GREEN}✔ Cuenta desactivada correctamente.${NC}"
 }
@@ -169,8 +168,8 @@ activar_password() {
     [[ ! -f "$DB_FILE" ]] && { echo -e "${RED}Base de datos no encontrada.${NC}"; return; }
     listar_passwords
     read -p "Ingrese el número de la cuenta a activar: " num
-    
-    total_lines=$(wc -l < "$DB_FILE")
+
+    total_lines=$(grep -c '^' "$DB_FILE")
     if [[ ! "$num" =~ ^[0-9]+$ || "$num" -le 0 || "$num" -gt "$total_lines" ]]; then
         echo -e "${RED}✘ Número inválido.${NC}" && return
     fi
@@ -183,7 +182,7 @@ activar_password() {
     fi
 
     sed -i "${num}s/inactive$/active/" "$DB_FILE"
-    
+
     rebuild_zivpn_json
     echo -e "${GREEN}✔ Cuenta reactivada correctamente.${NC}"
 }
@@ -193,15 +192,14 @@ eliminar_password() {
     [[ ! -f "$DB_FILE" ]] && { echo -e "${RED}Base de datos no encontrada.${NC}"; return; }
     listar_passwords
     read -p "Ingrese el número de la cuenta a eliminar: " num
-    
-    total_lines=$(wc -l < "$DB_FILE")
+
+    total_lines=$(grep -c '^' "$DB_FILE")
     if [[ ! "$num" =~ ^[0-9]+$ || "$num" -le 0 || "$num" -gt "$total_lines" ]]; then
         echo -e "${RED}✘ Número inválido.${NC}" && return
     fi
 
-    # Eliminar la línea física de la DB
     sed -i "${num}d" "$DB_FILE"
-    
+
     rebuild_zivpn_json
     echo -e "${GREEN}✔ Cuenta eliminada por completo.${NC}"
 }
@@ -211,8 +209,8 @@ editar_duracion() {
     [[ ! -f "$DB_FILE" ]] && { echo -e "${RED}Base de datos no encontrada.${NC}"; return; }
     listar_passwords
     read -p "Ingrese el número de la cuenta a editar: " num
-    
-    total_lines=$(wc -l < "$DB_FILE")
+
+    total_lines=$(grep -c '^' "$DB_FILE")
     if [[ ! "$num" =~ ^[0-9]+$ || "$num" -le 0 || "$num" -gt "$total_lines" ]]; then
         echo -e "${RED}✘ Número inválido.${NC}" && return
     fi
@@ -228,8 +226,7 @@ editar_duracion() {
 
     new_exp=$(date -d "+$dias days" +%Y-%m-%d)
 
-    # Actualizar la columna 3 (fecha) usando awk de forma segura
-    awk -F"|" -v n="$num" -v new_exp="$new_exp" 'BEGIN{OFS="|"} NR==n {$3=new_exp} {print}' "$DB_FILE" > tmp.$$.db && mv tmp.$$.db "$DB_FILE"
+    awk -F"|" -v n="$num" -v new_exp="$new_exp" 'BEGIN{OFS="|"} NR==n {$3=new_exp} {print}' "$DB_FILE" > /tmp/tmp_db.$$.db && mv /tmp/tmp_db.$$.db "$DB_FILE"
 
     rebuild_zivpn_json
     echo -e "${GREEN}✔ Fecha de expiración actualizada correctamente.${NC}"
@@ -246,7 +243,7 @@ remover_servicio() {
     killall zivpn 2>/dev/null
     rm -rf /etc/zivpn
     rm -f /usr/local/bin/zivpn
-    
+
     crontab -l 2>/dev/null | grep -v "zivpn-expire.sh" | crontab -
     rm -f /usr/local/bin/zivpn-expire.sh
     echo -e "${GREEN}✔ ZiVPN desinstalado.${NC}"
@@ -277,7 +274,7 @@ instalar_servicio () {
     wget "$BINARY_URL" -O /usr/local/bin/zivpn >/dev/null 2>&1
     chmod +x /usr/local/bin/zivpn
     mkdir -p /etc/zivpn
-    
+
     apt-get install -y jq > /dev/null 2>&1
     touch /etc/zivpn/passwords.db
     wget https://raw.githubusercontent.com/zahidbd2/udp-zivpn/main/config.json -O /etc/zivpn/config.json >/dev/null 2>&1
@@ -319,9 +316,8 @@ EOF
     systemctl enable zivpn.service
     rebuild_zivpn_json
 
-    # Reglas IPTABLES de redirección de puertos dinámicos
-    DEFAULT_IFACE=$(ip -4 route ls | awk '/default/ {print $5; exit}')
-    iptables -t nat -I PREROUTING 2 -i "$DEFAULT_IFACE" -p udp --dport 6000:19999 -j DNAT --to-destination :5667
+    # Reglas IPTABLES de redirección de puertos dinámicos de forma segura
+    iptables -t nat -A PREROUTING -p udp --dport 6000:19999 -j REDIRECT --to-port 5667 2>/dev/null
 
     EXPIRE_SCRIPT="/usr/local/bin/zivpn-expire.sh"
     cat > "$EXPIRE_SCRIPT" <<'EOF'
@@ -339,13 +335,11 @@ EOF
 # CONTROLADOR DE EJECUCIÓN (INTERNO / EXTERNO)
 # =======================================================
 if [[ -n "$1" ]]; then
-    # Si le pasamos un parámetro válido desde el menú principal, lo ejecuta directo
     if type "$1" &>/dev/null; then
         "$1"
     else
         echo -e "${RED}✘ Función no reconocida: $1${NC}"
     fi
 else
-    # Si lo ejecutamos sin parámetros, abrimos su sub-menú correspondiente
     listar_passwords
 fi
