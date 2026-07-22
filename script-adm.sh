@@ -5,7 +5,7 @@
 #   Ubuntu 22/24/25
 # ═══════════════════════════════════════════════════════
 
-SCRIPT_VERSION="1.1"
+SCRIPT_VERSION="1.2"
 R='\033[0;31m'
 G='\033[0;32m'
 Y='\033[1;33m'
@@ -627,7 +627,7 @@ menu_ssl() {
                 echo -e "  ${Y}¿Hacia dónde redirigir el tráfico SSL descifrado?${NC}"
                 echo -e "  ${W}[1]${NC} Directo a SSH (Puerto 22) - Solo SSL sin payload"
                 echo -e "  ${W}[2]${NC} A WebSocket Python (Puerto 80) - Soporta SSL + Payload"
-                read -p "  Selecciona una opción [1-2]: " SSL_REDIR_OPT
+                read -p "  Elige una opción [1-2]: " SSL_REDIR_OPT
                 
                 if [ "$SSL_REDIR_OPT" = "2" ]; then
                     read -p "  Puerto de tu WebSocket Python (ej: 80): " LOCAL_PORT
