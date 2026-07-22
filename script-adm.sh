@@ -5,7 +5,7 @@
 #   Ubuntu 22/24/25
 # ═══════════════════════════════════════════════════════
 
-SCRIPT_VERSION="1.6"
+SCRIPT_VERSION="1.7"
 R='\033[0;31m'
 G='\033[0;32m'
 Y='\033[1;33m'
@@ -3357,152 +3357,148 @@ print('OK')
 
 
 
+# ══════════════════════════════════════════
+#   MÓDULO HYSTERIA UDP V1
+# ══════════════════════════════════════════
+
 menu_hysteria() {
     while true; do
         banner; sep
-        echo -e "  ${NEON}◆ HYSTERIA UDP${NC}"; sep; echo ""
+        echo -e "  ${NEON}◆ HYSTERIA V1 UDP${NC}"; sep; echo ""
         H1_ST=$(systemctl is-active hysteria-server 2>/dev/null)
-        H2_ST=$(systemctl is-active hysteria2-server 2>/dev/null)
         [ "$H1_ST" = "active" ] && echo -e "  ${NEON}◈${NC} ${W}Hysteria V1${NC} ${NEON}◆ ON${NC}" || echo -e "  ${NEON}◈${NC} ${W}Hysteria V1${NC} ${R}◇ OFF${NC}"
-        [ "$H2_ST" = "active" ] && echo -e "  ${NEON}◈${NC} ${W}Hysteria V2${NC} ${NEON}◆ ON${NC}" || echo -e "  ${NEON}◈${NC} ${W}Hysteria V2${NC} ${R}◇ OFF${NC}"
+        
+        if [ -f /etc/hysteria/config.json ]; then
+            H1_PORT_NOW=$(python3 -c "import json; c=json.load(open('/etc/hysteria/config.json')); print(c.get('listen','').replace(':',''))" 2>/dev/null || echo "36712")
+            H1_OBFS_NOW=$(python3 -c "import json; c=json.load(open('/etc/hysteria/config.json')); print(c.get('obfs','ltmssh'))" 2>/dev/null || echo "ltmssh")
+            echo -e "  ${NEON}◈${NC} ${W}Puerto:${NC} ${Y}${H1_PORT_NOW}${NC}"
+            echo -e "  ${NEON}◈${NC} ${W}Obfs:${NC}   ${Y}${H1_OBFS_NOW}${NC}"
+        fi
+        
         echo ""; sep
-        printf " ${Y}❬1❭ Instalar Hysteria V1    ❬2❭ Instalar Hysteria V2${NC}\n"
-        printf " ${Y}❬3❭ Iniciar V1              ❬4❭ Iniciar V2${NC}\n"
-        printf " ${Y}❬5❭ Detener V1              ❬6❭ Detener V2${NC}\n"
-        printf " ${Y}❬7❭ Ver config V1           ❬8❭ Ver config V2${NC}\n"
-        printf " ${R}❬9❭ Desinstalar V1          ❬10❭ Desinstalar V2${NC}\n"
+        printf " ${Y}❬1❭ Instalar Hysteria V1    ❬2❭ Iniciar V1${NC}\n"
+        printf " ${Y}❬3❭ Detener V1             ❬4❭ Reiniciar V1${NC}\n"
+        printf " ${Y}❬5❭ Agregar Usuario        ❬6❭ Listar Usuarios${NC}\n"
+        printf " ${Y}❬7❭ Ver Configuración      ❬8❭ Cambiar Obfs${NC}\n"
+        printf " ${R}❬9❭ Desinstalar Hysteria V1${NC}\n"
         sep
         printf " ${R}❬0❭ Volver${NC}\n"; sep; echo ""
-        read -p " Opcion: " OPT
+        read -p " Opción: " OPT
         case $OPT in
             1)
-                echo -e "\n  ${C}Instalando Hysteria V1...${NC}"
-                apt install -y wget > /dev/null 2>&1
+                echo -e "\n  ${C}Instalando Hysteria V1 (v1.3.5)...${NC}"
+                systemctl stop hysteria-server 2>/dev/null
+                apt install -y wget openssl python3 > /dev/null 2>&1
+
+                # 1. Descargar ejecutable oficial V1
                 wget -q -O /usr/local/bin/hysteria-v1 https://github.com/HyNetwork/hysteria/releases/download/v1.3.5/hysteria-linux-amd64
                 chmod +x /usr/local/bin/hysteria-v1
+
+                # 2. Prompts de configuración
                 read -p "  Puerto UDP (default 36712): " H1_PORT; H1_PORT=${H1_PORT:-36712}
-                read -p "  Password: " H1_PASS; H1_PASS=${H1_PASS:-"ltmssh2026"}
-                read -p "  Dominio (para TLS, deja vacio para self-signed): " H1_DOMAIN
+                read -p "  Usuario por defecto (default: admin): " H1_USER; H1_USER=${H1_USER:-"admin"}
+                read -p "  Password (default: ltmssh2026): " H1_PASS; H1_PASS=${H1_PASS:-"ltmssh2026"}
+                read -p "  Obfs Key (default: ltmssh): " H1_OBFS; H1_OBFS=${H1_OBFS:-"ltmssh"}
+
                 mkdir -p /etc/hysteria
-                if [ -n "$H1_DOMAIN" ]; then
-                    apt install -y certbot > /dev/null 2>&1
-                    certbot certonly --standalone -d $H1_DOMAIN --non-interactive --agree-tos -m admin@${H1_DOMAIN#*.} 2>/dev/null
-                    CERT_FILE="/etc/letsencrypt/live/$H1_DOMAIN/fullchain.pem"
-                    KEY_FILE="/etc/letsencrypt/live/$H1_DOMAIN/privkey.pem"
-                else
-                    openssl req -x509 -nodes -newkey ec:<(openssl ecparam -name prime256v1) \
-                        -keyout /etc/hysteria/server.key -out /etc/hysteria/server.crt \
-                        -subj "/CN=hysteria" -days 36500 2>/dev/null
-                    CERT_FILE="/etc/hysteria/server.crt"
-                    KEY_FILE="/etc/hysteria/server.key"
-                fi
-                cat > /etc/hysteria/config.json << EOF
-{
-  "listen": ":$H1_PORT",
-  "cert": "$CERT_FILE",
-  "key": "$KEY_FILE",
-  "auth": {
-    "mode": "password",
-    "config": {"password": "$H1_PASS"}
-  },
-  "obfs": "ltmssh",
-  "up_mbps": 100,
-  "down_mbps": 100
-}
-EOF
+
+                # 3. Certificados TLS autofirmados
+                openssl req -x509 -nodes -newkey ec:<(openssl ecparam -name prime256v1) \
+                    -keyout /etc/hysteria/server.key -out /etc/hysteria/server.crt \
+                    -subj "/CN=hysteria" -days 36500 2>/dev/null
+
+                # 4. Generar config.json plano
+                echo "{\"listen\":\":$H1_PORT\",\"cert\":\"/etc/hysteria/server.crt\",\"key\":\"/etc/hysteria/server.key\",\"obfs\":\"$H1_OBFS\",\"auth\":{\"mode\":\"passwords\",\"config\":[\"$H1_USER:$H1_PASS\"]},\"up_mbps\":100,\"down_mbps\":100}" > /etc/hysteria/config.json
+
+                # 5. Crear el servicio Systemd apuntando explícitamente a hysteria-v1
                 cat > /etc/systemd/system/hysteria-server.service << EOF
 [Unit]
-Description=Hysteria V1 Server
+Description=Servicio Hysteria V1 UDP
 After=network.target
+
 [Service]
 Type=simple
 ExecStart=/usr/local/bin/hysteria-v1 server --config /etc/hysteria/config.json
 Restart=always
 RestartSec=3
+
 [Install]
 WantedBy=multi-user.target
 EOF
+
+                # 6. Reglas de firewall e inicio
+                iptables -I INPUT -p udp --dport $H1_PORT -j ACCEPT 2>/dev/null
+                ufw allow $H1_PORT/udp >/dev/null 2>&1
+
                 systemctl daemon-reload
                 systemctl enable hysteria-server
-                systemctl start hysteria-server
-                iptables -I INPUT -p udp --dport $H1_PORT -j ACCEPT 2>/dev/null
-                echo -e "  ${G}OK Hysteria V1 instalado${NC}"
-                echo -e "  ${NEON}◈${NC} Puerto: ${Y}$H1_PORT${NC}"
+                systemctl restart hysteria-server
+
+                echo -e "\n  ${G}✅ Hysteria V1 instalado correctamente${NC}"
+                echo -e "  ${NEON}◈${NC} Puerto:   ${Y}$H1_PORT${NC}"
+                echo -e "  ${NEON}◈${NC} Usuario:  ${Y}$H1_USER${NC}"
                 echo -e "  ${NEON}◈${NC} Password: ${Y}$H1_PASS${NC}"
-                echo -e "  ${NEON}◈${NC} Obfs: ${Y}ltmssh${NC}"
-                read -p "  ENTER..." ;;
-            2)
-                echo -e "\n  ${C}Instalando Hysteria V2...${NC}"
-                apt install -y wget > /dev/null 2>&1
-                wget -q -O /usr/local/bin/hysteria2 https://github.com/apernet/hysteria/releases/latest/download/hysteria-linux-amd64
-                # hysteria2 es el mismo binario de apernet pero con nombre diferente
-                chmod +x /usr/local/bin/hysteria2
-                read -p "  Puerto UDP (default 8443): " H2_PORT; H2_PORT=${H2_PORT:-8443}
-                read -p "  Password: " H2_PASS; H2_PASS=${H2_PASS:-"ltmssh2026"}
-                read -p "  Dominio (deja vacio para self-signed): " H2_DOMAIN
-                mkdir -p /etc/hysteria2
-                if [ -n "$H2_DOMAIN" ]; then
-                    apt install -y certbot > /dev/null 2>&1
-                    certbot certonly --standalone -d $H2_DOMAIN --non-interactive --agree-tos -m admin@${H2_DOMAIN#*.} 2>/dev/null
-                    CERT2_FILE="/etc/letsencrypt/live/$H2_DOMAIN/fullchain.pem"
-                    KEY2_FILE="/etc/letsencrypt/live/$H2_DOMAIN/privkey.pem"
-                else
-                    openssl req -x509 -nodes -newkey ec:<(openssl ecparam -name prime256v1) \
-                        -keyout /etc/hysteria2/server.key -out /etc/hysteria2/server.crt \
-                        -subj "/CN=hysteria2" -days 36500 2>/dev/null
-                    CERT2_FILE="/etc/hysteria2/server.crt"
-                    KEY2_FILE="/etc/hysteria2/server.key"
-                fi
-                cat > /etc/hysteria2/config.yaml << EOF
-listen: :$H2_PORT
-tls:
-  cert: $CERT2_FILE
-  key: $KEY2_FILE
-auth:
-  type: password
-  password: $H2_PASS
-masquerade:
-  type: proxy
-  proxy:
-    url: https://news.ycombinator.com/
-    rewriteHost: true
-EOF
-                cat > /etc/systemd/system/hysteria2-server.service << EOF
-[Unit]
-Description=Hysteria V2 Server
-After=network.target
-[Service]
-Type=simple
-ExecStart=/usr/local/bin/hysteria2 server --config /etc/hysteria2/config.yaml
-Restart=always
-RestartSec=3
-[Install]
-WantedBy=multi-user.target
-EOF
-                systemctl daemon-reload
-                systemctl enable hysteria2-server
-                systemctl start hysteria2-server
-                iptables -I INPUT -p udp --dport $H2_PORT -j ACCEPT 2>/dev/null
-                echo -e "  ${G}OK Hysteria V2 instalado${NC}"
-                echo -e "  ${NEON}◈${NC} Puerto: ${Y}$H2_PORT${NC}"
-                echo -e "  ${NEON}◈${NC} Password: ${Y}$H2_PASS${NC}"
-                read -p "  ENTER..." ;;
-            3) systemctl start hysteria-server && echo -e "  ${G}Hysteria V1 iniciado${NC}"; sleep 1 ;;
-            4) systemctl start hysteria2-server && echo -e "  ${G}Hysteria V2 iniciado${NC}"; sleep 1 ;;
-            5) systemctl stop hysteria-server && echo -e "  ${Y}Hysteria V1 detenido${NC}"; sleep 1 ;;
-            6) systemctl stop hysteria2-server && echo -e "  ${Y}Hysteria V2 detenido${NC}"; sleep 1 ;;
-            7) cat /etc/hysteria/config.json 2>/dev/null || echo "No instalado"; echo ""; read -p "  ENTER..." ;;
-            8) cat /etc/hysteria2/config.yaml 2>/dev/null || echo "No instalado"; echo ""; read -p "  ENTER..." ;;
+                echo -e "  ${NEON}◈${NC} Obfs:     ${Y}$H1_OBFS${NC}"
+                read -p "  Presione ENTER para continuar..." ;;
+
+            2) systemctl start hysteria-server && echo -e "  ${G}Hysteria V1 iniciado${NC}"; sleep 1 ;;
+            3) systemctl stop hysteria-server && echo -e "  ${Y}Hysteria V1 detenido${NC}"; sleep 1 ;;
+            4) systemctl restart hysteria-server && echo -e "  ${G}Hysteria V1 reiniciado${NC}"; sleep 1 ;;
+            5)
+                banner; sep; echo -e "  ${Y}AGREGAR USUARIO HYSTERIA V1${NC}"; sep; echo ""
+                read -p "  Nuevo Usuario: " NEW_USER
+                read -p "  Nueva Password: " NEW_PASS
+                [ -z "$NEW_USER" ] || [ -z "$NEW_PASS" ] && echo -e "  ${R}Datos inválidos${NC}" && sleep 1 && continue
+
+                python3 -c "
+import json
+with open('/etc/hysteria/config.json') as f: c=json.load(f)
+users = c.get('auth',{}).get('config',[])
+entry = '$NEW_USER:$NEW_PASS'
+if entry not in users: users.append(entry)
+c['auth']['config'] = users
+with open('/etc/hysteria/config.json','w') as f: json.dump(c,f)
+"
+                systemctl restart hysteria-server
+                echo -e "\n  ${G}✅ Usuario $NEW_USER agregado correctamente${NC}"
+                read -p "  Presione ENTER para continuar..." ;;
+
+            6)
+                echo ""; echo -e "  ${W}Usuarios Hysteria V1 Registrados:${NC}"; echo ""
+                python3 -c "
+import json
+with open('/etc/hysteria/config.json') as f: c=json.load(f)
+users = c.get('auth',{}).get('config',[])
+for u in users: print('  ◈ ' + u)
+" 2>/dev/null || echo "  No hay usuarios o no está instalado."
+                echo ""; read -p "  Presione ENTER para continuar..." ;;
+
+            7)
+                cat /etc/hysteria/config.json 2>/dev/null || echo "No instalado."
+                echo ""; read -p "  Presione ENTER para continuar..." ;;
+
+            8)
+                banner; sep; echo -e "  ${Y}CAMBIAR OBFS HYSTERIA V1${NC}"; sep; echo ""
+                read -p "  Nuevo valor Obfs: " NEW_OBFS
+                [ -z "$NEW_OBFS" ] && echo -e "  ${R}Cancelado${NC}" && sleep 1 && continue
+
+                python3 -c "
+import json
+with open('/etc/hysteria/config.json') as f: c=json.load(f)
+c['obfs'] = '$NEW_OBFS'
+with open('/etc/hysteria/config.json','w') as f: json.dump(c,f)
+"
+                systemctl restart hysteria-server
+                echo -e "  ${G}Obfs cambiado a: $NEW_OBFS${NC}"; sleep 2 ;;
+
             9)
-                systemctl stop hysteria-server; systemctl disable hysteria-server
-                rm -f /usr/local/bin/hysteria /etc/systemd/system/hysteria-server.service
-                rm -rf /etc/hysteria; systemctl daemon-reload
-                echo -e "  ${G}Hysteria V1 desinstalado${NC}"; sleep 2 ;;
-            10)
-                systemctl stop hysteria2-server; systemctl disable hysteria2-server
-                rm -f /usr/local/bin/hysteria2 /etc/systemd/system/hysteria2-server.service
-                rm -rf /etc/hysteria2; systemctl daemon-reload
-                echo -e "  ${G}Hysteria V2 desinstalado${NC}"; sleep 2 ;;
+                systemctl stop hysteria-server 2>/dev/null
+                systemctl disable hysteria-server 2>/dev/null
+                rm -f /usr/local/bin/hysteria-v1 /etc/systemd/system/hysteria-server.service
+                rm -rf /etc/hysteria
+                systemctl daemon-reload
+                echo -e "  ${G}Hysteria V1 desinstalado correctamente${NC}"; sleep 2 ;;
+
             0) break ;;
         esac
     done
