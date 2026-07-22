@@ -5,7 +5,7 @@
 #   Ubuntu 22/24/25
 # ═══════════════════════════════════════════════════════
 
-SCRIPT_VERSION="1.2"
+SCRIPT_VERSION="1.3"
 R='\033[0;31m'
 G='\033[0;32m'
 Y='\033[1;33m'
@@ -977,7 +977,7 @@ PYEOF
 
 menu_users_ziv() {
     while true; do
-        banner; sep; echo -e "  ${Y}  USUARIOS ZIVPN${NC}"; sep; echo ""
+        banner; sep; echo -e "  ${Y}   USUARIOS ZIVVPN${NC}"; sep; echo ""
         [ ! -f /etc/zivpn/users.json ] && echo "[]" > /etc/zivpn/users.json
         TOTAL=$(python3 -c "import json; print(len(json.load(open('/etc/zivpn/users.json'))))" 2>/dev/null || echo 0)
         echo -e "  Total usuarios: ${G}${TOTAL}${NC}"
@@ -987,16 +987,20 @@ menu_users_ziv() {
         echo -e "  ${W}[2]${NC} Listar usuarios"
         echo -e "  ${W}[3]${NC} Eliminar usuario"
         echo -e "  ${W}[4]${NC} Limpiar expirados"
+        echo -e "  ${W}[5]${NC} ZIVPN Online"
         echo -e "  ${W}[0]${NC} Volver"; sep
-        read -p "  Opcion: " OPT
+        read -p "  Opción: " OPT
         case $OPT in
             1) crear_user_ziv ;;
             2) listar_users_ziv ;;
             3) eliminar_user_ziv ;;
             4) limpiar_expirados_ziv; aplicar_passwords_ziv; echo -e "  ${G}Limpiado${NC}"; sleep 1 ;;
+            5) usuarios_ziv_online_count ;;
             0) break ;;
         esac
     done
+# Dentro de la función menu_zivpn o menu_users_ziv:
+usuarios_ziv_online_cou
 }
 
 # ══════════════════════════════════════════
@@ -4478,7 +4482,28 @@ desinstalar_bot() {
     sleep 2
 
 }
+# ══════════════════════════════════════════
+#   INSTALADOR DE PANEL WEB
+# ══════════════════════════════════════════
 
+instalar_panel_web() {
+    banner; sep
+    echo -e "  ${Y}  INSTALACIÓN Y CONFIGURACIÓN DEL PANEL WEB${NC}"; sep; echo ""
+    echo -e "  ${C}Descargando instalador desde GitHub...${NC}"
+    
+    mkdir -p /tmp/panel_install
+    wget -q -O /tmp/panel_install/setup_panel.sh "https://raw.githubusercontent.com/Dealer-Dev/SCRIPT-DEALER-ADM/main/panel-web/setup_panel.sh"
+    
+    if [ -f /tmp/panel_install/setup_panel.sh ]; then
+        chmod +x /tmp/panel_install/setup_panel.sh
+        bash /tmp/panel_install/setup_panel.sh
+    else
+        echo -e "  ${R}❌ Error al descargar setup_panel.sh desde el repositorio.${NC}"
+    fi
+    
+    rm -rf /tmp/panel_install
+    echo ""; read -p "  Presiona ENTER para continuar..."
+}
 menu_principal() {
     while true; do
         banner
@@ -4514,11 +4539,11 @@ menu_principal() {
         sep
         printf " \033[1;97m❬1❭ Usuarios SSH            ❬5❭ Usuarios SSH Online \033[0m\n"
         printf " \033[1;97m❬2❭ Usuarios VMess          ❬6❭ V2Ray Online\033[0m\n"
-        printf " \033[1;97m❬3❭ Menú ZIVPN              ❬7❭ ZIVPN Online\033[0m\n"
+        printf " \033[1;97m❬3❭ Menú ZIVPN              ❬7❭ Panel Web\033[0m\n"
         printf " \033[1;97m❬4❭ Instalar Protocolos     ❬8❭ Telegram Bot Admin\033[0m\n"
         sep
         printf " ${Y}❬9❭ %-18s${NC} ${R}❬10❭ %s${NC}\n" "Configurar MOTD" "Desinstalar Script"
-        printf " ${Y}❬11❭ Actualizar Script${NC} ${NEON}   Version:${Y}%s ${NEON}${NC}$SCRIPT_VERSION\n"
+        printf " ${Y}❬11❭ Actualizar Script${NC} ${NEON}    Version:${Y}%s ${NEON}${NC}$SCRIPT_VERSION\n"
         sep
         printf " ${R}❬0❭ ✖  Salir${NC}\n"
         sep
@@ -4530,7 +4555,7 @@ menu_principal() {
             4) menu_herramientas ;;
             5) usuarios_ssh_online_count ;;
             6) usuarios_v2ray_online_count ;;
-            7) usuarios_ziv_online_cou ;;
+            7) instalar_panel_web ;;
             8) menu_telegram ;;
             9) instalar_motd ;;
             10) desinstalar_script ;;
@@ -4540,8 +4565,6 @@ menu_principal() {
         esac
     done
 }
-
-[ "$EUID" -ne 0 ] && echo -e "${R}Ejecuta como root${NC}" && exit 1
 # ==========================================
 # MODO API
 # ==========================================
