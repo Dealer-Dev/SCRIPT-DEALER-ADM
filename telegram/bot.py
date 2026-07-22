@@ -29,7 +29,8 @@ def es_admin(user_id: int) -> bool:
         salida = subprocess.check_output(
             [API, "esadmin", str(user_id)]
         ).decode().strip()
-        return salida == "1"
+        # Verifica si el caracter '1' está presente en la salida de la API
+        return "1" in salida
     except Exception:
         return False
 
@@ -38,7 +39,8 @@ def admin_activo(user_id: int) -> bool:
         salida = subprocess.check_output(
             [API, "activo", str(user_id)]
         ).decode().strip()
-        return salida == "1"
+        # Verifica si el caracter '1' está presente en la salida de la API
+        return "1" in salida
     except Exception:
         return False
 
@@ -47,7 +49,9 @@ def obtener_creditos(user_id: int) -> int:
         salida = subprocess.check_output(
             [API, "creditosdisponibles", str(user_id)]
         ).decode().strip()
-        return int(salida)
+        # Busca sólo los dígitos numéricos por si la API devuelve texto adicional
+        numeros = "".join(c for c in salida if c.isdigit())
+        return int(numeros) if numeros else 0
     except Exception:
         return 0
 
@@ -71,12 +75,18 @@ def nombre_admin(user_id: int) -> str:
 
 def autorizado(update: Update) -> bool:
     user_id = update.effective_user.id
+    
+    # 1. El dueño siempre está autorizado
     if es_owner(user_id):
         return True
-    if es_admin(user_id) and admin_activo(user_id):
-        return True
+    
+    # 2. Si es revendedor/admin registrado
+    if es_admin(user_id):
+        # Permite el acceso si la API indica que está activo O si posee créditos cargados (> 0)
+        if admin_activo(user_id) or obtener_creditos(user_id) > 0:
+            return True
+            
     return False
-
 # ==========================================
 # START
 # ==========================================
