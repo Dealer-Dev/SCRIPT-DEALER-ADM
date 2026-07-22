@@ -115,8 +115,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "▫️ `/eliminaradmin` id"
         )
     else:
+        # Obtener los créditos actuales del revendedor
+        creditos_actuales = obtener_creditos(user_id)
+        
         mensaje = (
             "🤖 *Panel de Revendedor*\n\n"
+            f"💳 *Créditos disponibles:* `{creditos_actuales}`\n\n"
             "📋 *Comandos Disponibles:*\n"
             "▫️ `/agregar` usuario password dias limite\n"
             "▫️ `/token` nombre token dias\n"
@@ -128,7 +132,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
     await update.message.reply_text(mensaje, parse_mode="Markdown")
-
 # ==========================================
 # AGREGAR SSH
 # ==========================================
@@ -439,7 +442,7 @@ async def online(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"❌ Error al consultar online: {e}")
 
 # ==========================================
-# CRÉDITOS Y ADMINS (SOLO OWNER)
+# CREDITOS
 # ==========================================
 
 async def creditos(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -460,10 +463,13 @@ async def creditos(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cantidad = context.args[2]
 
     try:
+        # 1. Registrar los créditos en el sistema
         subprocess.run(
             [API, "creditos", nombre, admin_id, cantidad],
             check=True
         )
+        
+        # 2. Responder al Owner confirmando la operación
         await update.message.reply_text(
             f"✅ *Créditos agregados*\n\n"
             f"👤 *Nombre:* {nombre}\n"
@@ -471,46 +477,30 @@ async def creditos(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"💳 *Créditos:* {cantidad}",
             parse_mode="Markdown"
         )
+
+        # 3. Notificar automáticamente al revendedor por privado
+        try:
+            msg_notificacion = (
+                f"🎉 *¡Felicidades {nombre}!*\n\n"
+                f"Has sido autorizado como revendedor en el bot.\n"
+                f"💳 *Créditos asignados:* `{cantidad}`\n\n"
+                f"Escribe `/start` para desplegar tu menú de opciones."
+            )
+            await context.bot.send_message(
+                chat_id=int(admin_id),
+                text=msg_notificacion,
+                parse_mode="Markdown"
+            )
+        except Exception:
+            # Si el revendedor no ha iniciado conversación con el bot previamente,
+            # Telegram bloquea el envío del mensaje y se captura la excepción silenciosamente.
+            await update.message.reply_text(
+                "⚠️ *Nota:* Los créditos se asignaron correctamente, pero no se pudo enviar el mensaje privado al usuario. "
+                "Pídele que envíe `/start` al bot primero."
+            )
+
     except Exception as e:
         await update.message.reply_text(f"❌ Error al agregar créditos: {e}")
-
-async def admins(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not es_owner(update.effective_user.id):
-        await update.message.reply_text("❌ Solo el dueño del bot puede usar este comando.")
-        return
-
-    try:
-        salida = subprocess.check_output([API, "admins"]).decode().strip()
-        await update.message.reply_text(
-            salida if salida else "📋 No existen revendedores registrados."
-        )
-    except Exception as e:
-        await update.message.reply_text(f"❌ Error al listar administradores: {e}")
-
-async def eliminaradmin(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not es_owner(update.effective_user.id):
-        await update.message.reply_text("❌ Solo el dueño del bot puede usar este comando.")
-        return
-
-    if len(context.args) < 1:
-        await update.message.reply_text(
-            "⚠️ *Uso correcto:*\n"
-            "`/eliminaradmin id`",
-            parse_mode="Markdown"
-        )
-        return
-
-    admin_id = context.args[0]
-
-    try:
-        subprocess.run([API, "eliminaradmin", admin_id], check=True)
-        await update.message.reply_text(
-            f"🗑 *Revendedor eliminado:* `{admin_id}`",
-            parse_mode="Markdown"
-        )
-    except Exception as e:
-        await update.message.reply_text(f"❌ Error al eliminar revendedor: {e}")
-
 # ==========================================
 # INICIO
 # ==========================================
