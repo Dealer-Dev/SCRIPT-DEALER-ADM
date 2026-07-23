@@ -11,7 +11,7 @@ $role = $_SESSION['role'];
 // Obtener todas las instancias de procesos sshd pertenecientes a usuarios no-root
 exec("ps -ef | grep sshd | grep -v root | grep -v grep | awk '{print $1}'", $output_raw);
 
-// Contar el número de conexiones por cada usuario
+// Contar las conexiones por usuario
 $counts_all = array_count_values(array_filter($output_raw));
 
 $usuarios_online = [];
@@ -20,7 +20,7 @@ foreach($counts_all as $u => $count){
     $u = trim($u);
     if(empty($u) || $u == "sshd") continue;
 
-    // Filtrar por revendedor si no es administrador
+    // Filtrar por revendedor si no es admin
     if($role == 'reseller'){
         $check = $conn->query("SELECT id FROM ssh_accounts WHERE username='$u' AND reseller='$current_user'");
         if($check && $check->num_rows > 0){
@@ -36,26 +36,24 @@ if(empty($usuarios_online)){
 } else {
     echo "<table style='width:100%;border-collapse:collapse;margin-top:10px;'>";
     echo "<tr style='background:#0f172a;color:#fff;'>
-            <th style='padding:10px;'>Usuario</th>
-            <th style='padding:10px;'>Conexiones</th>
-            <th style='padding:10px;'>Estado</th>
+            <th style='padding:12px;width:50%;text-align:center;'>Usuario</th>
+            <th style='padding:12px;width:50%;text-align:center;'>Estado</th>
           </tr>";
 
     foreach($usuarios_online as $usr => $count){
-        // Definir color del badge según la cantidad de conexiones
+        // Configurar color y texto del estado según la cantidad de conexiones
         if ($count == 1) {
-            $badge_style = "background:#198754;"; // Verde
+            $badge_color = "#198754"; // Verde
             $text_status = "🟢 1 Conectado";
         } else {
-            $badge_style = "background:#dc3545;"; // Rojo
+            $badge_color = "#dc3545"; // Rojo
             $text_status = "🔴 {$count} Conectados";
         }
 
         echo "<tr style='border-bottom:1px solid #eee;'>";
-        echo "<td style='padding:10px;text-align:center;'><b>".htmlspecialchars($usr)."</b></td>";
-        echo "<td style='padding:10px;text-align:center;'><b>{$count}</b></td>";
-        echo "<td style='padding:10px;text-align:center;'>
-                <span style='{$badge_style}color:#fff;padding:4px 12px;border-radius:12px;font-size:12px;font-weight:600;'>
+        echo "<td style='padding:12px;text-align:center;'><b>".htmlspecialchars($usr)."</b></td>";
+        echo "<td style='padding:12px;text-align:center;'>
+                <span style='background:{$badge_color};color:#fff;padding:6px 14px;border-radius:20px;font-size:13px;font-weight:600;white-space:nowrap;display:inline-block;'>
                     {$text_status}
                 </span>
               </td>";
