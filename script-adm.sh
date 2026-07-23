@@ -5,7 +5,7 @@
 #   Ubuntu 22/24/25
 # ═══════════════════════════════════════════════════════
 
-SCRIPT_VERSION="1.4"
+SCRIPT_VERSION="1.5"
 R='\033[0;31m'
 G='\033[0;32m'
 Y='\033[1;33m'
@@ -592,7 +592,7 @@ menu_udp() {
                 echo -e "\n  ${C}Instalando UDP Custom (Epro Dev Team)...${NC}"
                 wget -O /tmp/install-udp "https://drive.usercontent.google.com/download?id=1S3IE25v_fyUfCLslnujFBSBMNunDHDk2&export=download&confirm=t"
                 chmod +x /tmp/install-udp; bash /tmp/install-udp $EXCLUDE_PORTS
-                echo -e "  ${G}OK UDP Custom instalado${NC}"; sleep 2 ;;
+                echo -e "  ${G}UDP Custom instalado correctamente ${NC}"; sleep 2 ;;
             2) systemctl start udp-custom 2>/dev/null || (/root/udp/udp-custom server -exclude $EXCLUDE_PORTS &); echo -e "  ${G}Iniciado${NC}"; sleep 1 ;;
             3) systemctl stop udp-custom 2>/dev/null; pkill -f udp-custom 2>/dev/null; echo -e "  ${Y}Detenido${NC}"; sleep 1 ;;
             4) pkill -f udp-custom 2>/dev/null; sleep 1; systemctl start udp-custom 2>/dev/null || (/root/udp/udp-custom server -exclude $EXCLUDE_PORTS &); echo -e "  ${G}Reiniciado${NC}"; sleep 1 ;;
