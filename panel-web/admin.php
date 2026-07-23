@@ -9,12 +9,10 @@ if(!isset($_SESSION['user']) || $_SESSION['role'] != 'admin'){
     exit();
 }
 
-// Estadísticas para Single VPS
 $total_resellers = $conn->query("SELECT COUNT(*) total FROM users WHERE role='reseller'")->fetch_assoc()['total'];
 $total_accounts  = $conn->query("SELECT COUNT(*) total FROM ssh_accounts")->fetch_assoc()['total'];
 $total_credits   = $conn->query("SELECT SUM(credits) total FROM users WHERE role='reseller'")->fetch_assoc()['total'] ?? 0;
 
-// GESTIONAR CREDITOS
 if(isset($_POST['guardar_creditos'])){
     $reseller_id = intval($_POST['reseller_id']);
     $sumar = intval($_POST['credits_sumar']);
@@ -31,7 +29,6 @@ if(isset($_POST['guardar_creditos'])){
     exit();
 }
 
-// CREAR RESELLER
 if(isset($_POST['crear_reseller'])){
     $user = trim($_POST['username']);
     $pass = trim($_POST['password']);
@@ -47,7 +44,6 @@ if(isset($_POST['crear_reseller'])){
     }
 }
 
-// ELIMINAR RESELLER
 if(isset($_POST['delete_user'])){
     $id = intval($_POST['delete_user']);
     $conn->query("DELETE FROM users WHERE id='$id'");
@@ -93,7 +89,7 @@ input,select{width:100%;padding:12px;margin-top:10px;border-radius:8px;border:1p
 <body>
 <div class="header">
     <h2>⚡ Panel Admin - Single VPS</h2>
-    <div>Admin: <b><?php echo $_SESSION['user']; ?></b> <a href="logout.php" class="logout">Salir</a></div>
+    <div>Admin: <b><?php echo htmlspecialchars($_SESSION['user']); ?></b> <a href="logout.php" class="logout">Salir</a></div>
 </div>
 
 <div class="container">
@@ -115,8 +111,8 @@ input,select{width:100%;padding:12px;margin-top:10px;border-radius:8px;border:1p
             <?php while($r = $resellers->fetch_assoc()){ ?>
             <tr>
                 <td><?php echo $r['id']; ?></td>
-                <td><?php echo $r['username']; ?></td>
-                <td><?php echo $r['password']; ?></td>
+                <td><?php echo htmlspecialchars($r['username']); ?></td>
+                <td><?php echo htmlspecialchars($r['password']); ?></td>
                 <td><span class="badge"><?php echo $r['credits']; ?></span></td>
                 <td>
                     <button class="btn-small btn-delete" onclick="confirmDeleteUser(<?php echo $r['id']; ?>)">Eliminar</button>
@@ -127,7 +123,6 @@ input,select{width:100%;padding:12px;margin-top:10px;border-radius:8px;border:1p
     </div>
 </div>
 
-<!-- MODAL CREAR RESELLER -->
 <div class="modal" id="resellerModal">
     <div class="modal-box">
         <h3>Crear Revendedor</h3>
@@ -141,7 +136,6 @@ input,select{width:100%;padding:12px;margin-top:10px;border-radius:8px;border:1p
     </div>
 </div>
 
-<!-- MODAL CREDITOS -->
 <div class="modal" id="assignModal">
     <div class="modal-box">
         <h3>Gestionar Créditos</h3>
@@ -151,7 +145,7 @@ input,select{width:100%;padding:12px;margin-top:10px;border-radius:8px;border:1p
                 <?php
                 $u_sel = $conn->query("SELECT * FROM users WHERE role='reseller' ORDER BY username ASC");
                 while($u = $u_sel->fetch_assoc()){
-                    echo "<option value='".$u['id']."'>".$u['username']." (Actuales: ".$u['credits'].")</option>";
+                    echo "<option value='".$u['id']."'>".htmlspecialchars($u['username'])." (Actuales: ".$u['credits'].")</option>";
                 }
                 ?>
             </select>
@@ -163,10 +157,9 @@ input,select{width:100%;padding:12px;margin-top:10px;border-radius:8px;border:1p
     </div>
 </div>
 
-<!-- MODAL DELETE -->
 <div class="modal" id="deleteUserModal">
     <div class="modal-box" style="text-align:center;">
-        <h3> ¿Eliminar Revendedor?</h3>
+        <h3>⚠️ ¿Eliminar Revendedor?</h3>
         <form method="POST">
             <input type="hidden" name="delete_user" id="delete_user_id">
             <button class="modal-btn" style="background:#dc3545;">Sí, Eliminar</button>
