@@ -46,7 +46,7 @@ if(isset($_POST['crear_ssh'])){
     $cmd_system = "sudo useradd -M -s /bin/false -e $expire_date $ssh_user && echo '$ssh_user:$ssh_pass' | sudo chpasswd && sudo chage -E $expire_date -M 99999 $ssh_user && sudo usermod -f 0 $ssh_user";
     exec($cmd_system);
 
-    // 2. Crear archivo de registro en /etc/dealer-adm/userDIR/ (Compatible con script-adm.sh)
+    // 2. Crear archivo de registro en /etc/dealer-adm/userDIR/
     $file_content = "tipo: $tipo\nnombre: $ref\nusuario: $ssh_user\npassword: $ssh_pass\nfecha: $expire_date\nlimite: 1\ncreador_id: 0\ncreador_nombre: $username";
     
     $tmp_file = tempnam(sys_get_temp_dir(), 'usr_');
@@ -89,16 +89,19 @@ body{margin:0;font-family:'Segoe UI',sans-serif;background:#f4f6f9;}
 .credit-badge{background:#198754;color:#fff;padding:8px 15px;border-radius:20px;display:inline-block;margin-top:10px;font-weight:600;}
 select,input{width:100%;padding:12px;margin-top:12px;border-radius:10px;border:1px solid #ddd;}
 button{width:100%;margin-top:18px;padding:12px;border:none;border-radius:10px;background:linear-gradient(135deg,#0d6efd,#6610f2);color:#fff;font-weight:600;cursor:pointer;}
+.btn-online{background:linear-gradient(135deg,#0dcaf0,#0d6efd);margin-top:12px;}
 .links{margin-top:20px;display:flex;justify-content:space-between;}
 .links a{text-decoration:none;font-weight:600;}
-.modal{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;}
-.modal-box{background:#fff;padding:25px;border-radius:16px;width:320px;text-align:center;}
+.modal{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);display:none;align-items:center;justify-content:center;z-index:999;}
+.modal-box{background:#fff;padding:25px;border-radius:16px;width:320px;text-align:center;max-height:80vh;overflow-y:auto;}
 </style>
 </head>
 <body>
 <div class="container">
     <h2>Revendedor: <?php echo htmlspecialchars($username); ?></h2>
     <div class="credit-badge">💰 Créditos disponibles: <?php echo $reseller['credits']; ?></div>
+
+    <button class="btn-online" onclick="cargarOnline()">📡 Ver Conectados</button>
 
     <h3 style="margin-top:25px;">Crear Cuenta</h3>
     <select id="tipo" onchange="cambiarTipo()">
@@ -121,6 +124,15 @@ button{width:100%;margin-top:18px;padding:12px;border:none;border-radius:10px;ba
     </div>
 </div>
 
+<!-- MODAL ONLINE -->
+<div class="modal" id="onlineModal">
+    <div class="modal-box">
+        <h3>👥 Conectados</h3>
+        <div id="onlineContent">Cargando...</div>
+        <button type="button" style="background:#6c757d;margin-top:15px;" onclick="closeModal('onlineModal')">Cerrar</button>
+    </div>
+</div>
+
 <script>
 function cambiarTipo(){
     let t = document.getElementById("tipo").value;
@@ -130,12 +142,23 @@ function cambiarTipo(){
     document.getElementById("form_hwid").style.display = "none";
     document.getElementById("form_" + t).style.display = "block";
 }
+
+function openModal(id){ document.getElementById(id).style.display = "flex"; }
+function closeModal(id){ document.getElementById(id).style.display = "none"; }
+
+function cargarOnline(){
+    openModal('onlineModal');
+    document.getElementById('onlineContent').innerHTML = "Cargando...";
+    fetch('online.php')
+        .then(res => res.text())
+        .then(data => { document.getElementById('onlineContent').innerHTML = data; });
+}
 </script>
 
 <?php if(isset($_GET['ok'])): ?>
-<div class="modal">
+<div class="modal" style="display:flex;">
     <div class="modal-box">
-        <h3> Usuario Creado</h3>
+        <h3>✅ Usuario Creado</h3>
         <p><b>Usuario/Ref:</b> <?php echo htmlspecialchars($_GET['u']); ?></p>
         <p><b>Pass/Valor:</b> <?php echo htmlspecialchars($_GET['p']); ?></p>
         <p><b>Expira:</b> <?php echo htmlspecialchars($_GET['e']); ?></p>
