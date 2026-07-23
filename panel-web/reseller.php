@@ -8,7 +8,10 @@ if (!isset($_SESSION['user']) || $_SESSION['role'] != 'reseller') {
 }
 
 $username = $_SESSION['user'];
-$reseller = $conn->query("SELECT * FROM users WHERE username='$username'")->fetch_assoc();
+$stmt = $conn->prepare("SELECT * FROM users WHERE username=?");
+$stmt->bind_param("s", $username);
+$stmt->execute();
+$reseller = $stmt->get_result()->fetch_assoc();
 
 if(isset($_POST['crear_ssh'])){
     if($reseller['credits'] <= 0){
@@ -37,24 +40,42 @@ if(isset($_POST['crear_ssh'])){
         exit();
     }
 
-    // Ejecución de comandos del sistema local (Single VPS)
     $expire_date = date("Y-m-d", strtotime("+30 days"));
     
-    // Crear el usuario SSH real en el sistema operativo Linux
-    $cmd = "sudo useradd -M -s /bin/false -e $expire_date $ssh_user && echo '$ssh_user:$ssh_pass' | sudo chpasswd";
-    exec($cmd, $output, $return_var);
+    // 1. Crear usuario SSH real en Linux
+    $cmd_system = "sudo useradd -M -s /bin/false -e $expire_date $ssh_user && echo '$ssh_user:$ssh_pass' | sudo chpasswd && sudo chage -E $expire_date -M 99999 $ssh_user && sudo usermod -f 0 $ssh_user";
+    exec($cmd_system);
 
-    if($return_return_var === 0 || true){ // Guarda en BD
-        $conn->query("UPDATE users SET credits = credits - 1 WHERE id='".$reseller['id']."'");
-        $conn->query("INSERT INTO ssh_accounts (reseller, username, password, type, reference_name, expires) 
-                      VALUES ('$username', '$ssh_user', '$ssh_pass', '$tipo', '$ref', '$expire_date')");
+    // 2. Crear archivo de registro en /etc/dealer-adm/userDIR/ (REQUERIDO POR script-adm.sh)
+    $file_content = "tipo: $tipo\nnombre: $ref\nusuario: $ssh_user\npassword: $ssh_pass\nfecha: $expire_date\nlimite: 1\ncreador_id: 0\ncreador_nombre: $username";
+    
+    // Guardar temporalmente y mover con sudo
+    $tmp_file = tempnam(sys_get_temp_dir(), 'usr_');
+    file_put_contents($tmp_file, $file_content);
+    exec("sudo mkdir -p /etc/dealer-adm/userDIR/ && sudo mv $tmp_file /etc/dealer-adm/userDIR/$ssh_user && sudo chmod 644 /etc/dealer-adm/userDIR/$ssh_user");
 
-        header("Location: reseller.php?ok=1&tipo=$tipo&ref=".urlencode($ref)."&u=".urlencode($ssh_user)."&p=".urlencode($ssh_pass)."&e=$expire_date");
-        exit();
-    } else {
-        header("Location: reseller.php?error=2");
-        exit();
+    // 3. Sincronización opcional con Hysteria si existe el archivo
+    if(file_exists('/etc/hysteria/config.json')){
+        $sync_hys = "python3 -c \"
+import json, os
+p = '/etc/hysteria/config.json'
+if os.path.exists(p):
+    with open(p) as f: c=json.load(f)
+    cfg = c.get('auth',{}).get('config',[])
+    entry = '$ssh_user:$ssh_pass'
+    if entry not in cfg: cfg.append(entry); c['auth']['config']=cfg
+    with open(p,'w') as f: json.dump(c,f,indent=2)
+\" && sudo systemctl restart hysteria-server >/dev/null 2>&1";
+        exec($sync_hys);
     }
+
+    // 4. Actualizar Base de Datos
+    $conn->query("UPDATE users SET credits = credits - 1 WHERE id='".$reseller['id']."'");
+    $conn->query("INSERT INTO ssh_accounts (reseller, username, password, type, reference_name, expires) 
+                  VALUES ('$username', '$ssh_user', '$ssh_pass', '$tipo', '$ref', '$expire_date')");
+
+    header("Location: reseller.php?ok=1&tipo=$tipo&ref=".urlencode($ref)."&u=".urlencode($ssh_user)."&p=".urlencode($ssh_pass)."&e=$expire_date");
+    exit();
 }
 ?>
 <!DOCTYPE html>
@@ -77,7 +98,7 @@ button{width:100%;margin-top:18px;padding:12px;border:none;border-radius:10px;ba
 </head>
 <body>
 <div class="container">
-    <h2>Revendedor: <?php echo $username; ?></h2>
+    <h2>Revendedor: <?php echo htmlspecialchars($username); ?></h2>
     <div class="credit-badge">💰 Créditos disponibles: <?php echo $reseller['credits']; ?></div>
 
     <h3 style="margin-top:25px;">Crear Cuenta</h3>
@@ -115,10 +136,10 @@ function cambiarTipo(){
 <?php if(isset($_GET['ok'])): ?>
 <div class="modal">
     <div class="modal-box">
-        <h3> Usuario Creado</h3>
-        <p><b>Usuario/Ref:</b> <?php echo $_GET['u']; ?></p>
-        <p><b>Pass/Valor:</b> <?php echo $_GET['p']; ?></p>
-        <p><b>Expira:</b> <?php echo $_GET['e']; ?></p>
+        <h3>✅ Usuario Creado</h3>
+        <p><b>Usuario/Ref:</b> <?php echo htmlspecialchars($_GET['u']); ?></p>
+        <p><b>Pass/Valor:</b> <?php echo htmlspecialchars($_GET['p']); ?></p>
+        <p><b>Expira:</b> <?php echo htmlspecialchars($_GET['e']); ?></p>
         <button onclick="window.location.href='reseller.php'">OK</button>
     </div>
 </div>
