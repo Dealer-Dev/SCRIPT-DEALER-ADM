@@ -46,15 +46,14 @@ if(isset($_POST['crear_ssh'])){
     $cmd_system = "sudo useradd -M -s /bin/false -e $expire_date $ssh_user && echo '$ssh_user:$ssh_pass' | sudo chpasswd && sudo chage -E $expire_date -M 99999 $ssh_user && sudo usermod -f 0 $ssh_user";
     exec($cmd_system);
 
-    // 2. Crear archivo de registro en /etc/dealer-adm/userDIR/ (REQUERIDO POR script-adm.sh)
+    // 2. Crear archivo de registro en /etc/dealer-adm/userDIR/ (Compatible con script-adm.sh)
     $file_content = "tipo: $tipo\nnombre: $ref\nusuario: $ssh_user\npassword: $ssh_pass\nfecha: $expire_date\nlimite: 1\ncreador_id: 0\ncreador_nombre: $username";
     
-    // Guardar temporalmente y mover con sudo
     $tmp_file = tempnam(sys_get_temp_dir(), 'usr_');
     file_put_contents($tmp_file, $file_content);
     exec("sudo mkdir -p /etc/dealer-adm/userDIR/ && sudo mv $tmp_file /etc/dealer-adm/userDIR/$ssh_user && sudo chmod 644 /etc/dealer-adm/userDIR/$ssh_user");
 
-    // 3. Sincronización opcional con Hysteria si existe el archivo
+    // 3. Sincronizar con Hysteria si existe
     if(file_exists('/etc/hysteria/config.json')){
         $sync_hys = "python3 -c \"
 import json, os
@@ -69,7 +68,7 @@ if os.path.exists(p):
         exec($sync_hys);
     }
 
-    // 4. Actualizar Base de Datos
+    // 4. Actualizar Base de Datos Web
     $conn->query("UPDATE users SET credits = credits - 1 WHERE id='".$reseller['id']."'");
     $conn->query("INSERT INTO ssh_accounts (reseller, username, password, type, reference_name, expires) 
                   VALUES ('$username', '$ssh_user', '$ssh_pass', '$tipo', '$ref', '$expire_date')");
@@ -136,7 +135,7 @@ function cambiarTipo(){
 <?php if(isset($_GET['ok'])): ?>
 <div class="modal">
     <div class="modal-box">
-        <h3>✅ Usuario Creado</h3>
+        <h3> Usuario Creado</h3>
         <p><b>Usuario/Ref:</b> <?php echo htmlspecialchars($_GET['u']); ?></p>
         <p><b>Pass/Valor:</b> <?php echo htmlspecialchars($_GET['p']); ?></p>
         <p><b>Expira:</b> <?php echo htmlspecialchars($_GET['e']); ?></p>
