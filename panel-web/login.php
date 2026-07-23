@@ -1,6 +1,7 @@
 <?php
 session_start();
 include __DIR__ . "/db.php";
+include __DIR__ . "/lang.php";
 
 if(isset($_POST['login'])){
     $user = trim($_POST['user']);
@@ -25,10 +26,10 @@ if(isset($_POST['login'])){
             }
             exit();
         } else {
-            $error = "Credenciales incorrectas";
+            $error = __('err_credentials');
         }
     } else {
-        $error = "Credenciales incorrectas";
+        $error = __('err_credentials');
     }
 }
 ?>
@@ -41,34 +42,48 @@ if(isset($_POST['login'])){
 <style>
 *{box-sizing:border-box;}
 body{margin:0;font-family:'Segoe UI',sans-serif;background:#f4f6f9;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;}
-.wrapper{width:100%;max-width:900px;min-height:500px;background:#fff;border-radius:20px;overflow:hidden;display:flex;box-shadow:0 10px 35px rgba(0,0,0,0.10);}
+.wrapper{position:relative;width:100%;max-width:900px;min-height:500px;background:#fff;border-radius:20px;overflow:hidden;display:flex;box-shadow:0 10px 35px rgba(0,0,0,0.10);}
 .left{flex:1;background:linear-gradient(135deg,#0d6efd,#6610f2);color:#fff;display:flex;flex-direction:column;justify-content:center;align-items:center;padding:40px;text-align:center;}
 .logo-box img{width:110px;height:120px;object-fit:contain;}
 .title{margin:10px 0 0;font-size:36px;font-weight:700;}
 .left p{opacity:.95;font-size:16px;line-height:1.5;margin-top:15px;}
-.right{flex:1;display:flex;align-items:center;justify-content:center;padding:40px;background:#fff;}
+.right{flex:1;display:flex;align-items:center;justify-content:center;padding:40px;background:#fff;position:relative;}
 .box{width:100%;max-width:320px;}
 .box h2{margin:0 0 20px;color:#222;font-size:32px;font-weight:700;}
 input{width:100%;padding:14px;border-radius:12px;border:1px solid #ddd;margin-top:14px;font-size:15px;background:#fafafa;}
 button{width:100%;padding:14px;margin-top:20px;border:none;border-radius:12px;background:linear-gradient(135deg,#0d6efd,#6610f2);color:#fff;font-size:16px;font-weight:600;cursor:pointer;}
 .error{margin-top:15px;background:#fdecea;color:#b02a37;padding:12px;border-radius:10px;text-align:center;font-size:14px;}
-@media(max-width:768px){.wrapper{flex-direction:column;}.left,.right{padding:30px;}}
+
+/* Selector de Idioma */
+.lang-box {position:absolute;top:15px;right:20px;z-index:10;}
+.lang-box select {padding:6px 12px;border-radius:8px;border:1px solid #ddd;background:#fff;font-weight:600;font-size:13px;cursor:pointer;outline:none;}
+@media(max-width:768px){.wrapper{flex-direction:column;}.left,.right{padding:30px;}.lang-box{top:10px;right:10px;}}
 </style>
 </head>
 <body>
+
 <div class="wrapper">
+    <!-- Selector de Idiomas -->
+    <div class="lang-box">
+        <select onchange="location = this.value;">
+            <option value="?set_lang=es" <?php echo ($current_lang == 'es') ? 'selected' : ''; ?>>🇪🇸 Español</option>
+            <option value="?set_lang=en" <?php echo ($current_lang == 'en') ? 'selected' : ''; ?>>🇺🇸 English</option>
+            <option value="?set_lang=fr" <?php echo ($current_lang == 'fr') ? 'selected' : ''; ?>>🇫🇷 Français</option>
+        </select>
+    </div>
+
     <div class="left">
         <div class="logo-box"><img src="logo.png"></div>
         <h1 class="title">Panel Dealer</h1>
-        <p>Gestión local de usuarios SSH, Token y HWID en tu VPS</p>
+        <p><?php echo __('login_subtitle'); ?></p>
     </div>
     <div class="right">
         <div class="box">
-            <h2>Bienvenido</h2>
+            <h2><?php echo __('login_welcome'); ?></h2>
             <form method="POST">
-                <input name="user" placeholder="Usuario" required>
-                <input type="password" name="pass" placeholder="Contraseña" required>
-                <button type="submit" name="login">Iniciar Sesión</button>
+                <input name="user" placeholder="<?php echo __('user'); ?>" required>
+                <input type="password" name="pass" placeholder="<?php echo __('pass'); ?>" required>
+                <button type="submit" name="login"><?php echo __('login_btn'); ?></button>
             </form>
             <?php if(isset($error)): ?>
                 <div class="error"><?php echo $error; ?></div>
@@ -76,5 +91,6 @@ button{width:100%;padding:14px;margin-top:20px;border:none;border-radius:12px;ba
         </div>
     </div>
 </div>
+
 </body>
 </html>
