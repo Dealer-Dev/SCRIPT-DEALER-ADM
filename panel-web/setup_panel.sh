@@ -70,7 +70,7 @@ echo "Descargando interfaz del Panel Web..."
 rm -f $WEB_DIR/index.html
 
 REPO_URL="https://raw.githubusercontent.com/Dealer-Dev/SCRIPT-DEALER-ADM/main/panel-web"
-FILES=("admin.php" "login.php" "reseller.php" "mis_usuarios.php" "load_vps.php" "online.php" "logout.php" "logo.png")
+FILES=("admin.php" "login.php" "reseller.php" "mis_usuarios.php" "load_vps.php" "online.php" "logout.php" "lang.php" "logo.png")
 
 for file in "${FILES[@]}"; do
     wget -q -O "$WEB_DIR/$file" "$REPO_URL/$file"
