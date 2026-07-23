@@ -9,7 +9,6 @@ if (!isset($_SESSION['user']) || $_SESSION['role'] != 'reseller') {
 
 $username = $_SESSION['user'];
 
-// ELIMINAR USUARIO
 if(isset($_GET['delete'])){
     $id = intval($_GET['delete']);
     $stmt = $conn->prepare("SELECT * FROM ssh_accounts WHERE id=? AND reseller=?");
@@ -20,13 +19,13 @@ if(isset($_GET['delete'])){
     if($get){
         $user_to_del = $get['username'];
 
-        // 1. Eliminar usuario del sistema Linux
+        // 1. Eliminar usuario de Linux
         exec("sudo pkill -u $user_to_del 2>/dev/null; sudo userdel -f $user_to_del 2>/dev/null");
 
         // 2. Eliminar archivo en /etc/dealer-adm/userDIR/
         exec("sudo rm -f /etc/dealer-adm/userDIR/$user_to_del");
 
-        // 3. Eliminar de Hysteria si existe
+        // 3. Eliminar de Hysteria
         if(file_exists('/etc/hysteria/config.json')){
             $del_hys = "python3 -c \"
 import json, os
