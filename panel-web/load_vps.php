@@ -6,7 +6,6 @@ if (!isset($_SESSION['user']) || $_SESSION['role'] != 'admin') {
     exit("Acceso denegado");
 }
 
-// Muestra el resumen del sistema local
 $free_ram = shell_exec("free -h | awk '/^Mem:/{print $4}'");
 $uptime   = shell_exec("uptime -p");
 
