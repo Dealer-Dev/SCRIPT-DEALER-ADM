@@ -68,10 +68,11 @@ body{margin:0;font-family:'Segoe UI',sans-serif;background:#f4f7fb;}
 .stat-card{background:#fff;padding:20px;border-radius:16px;box-shadow:0 4px 20px rgba(0,0,0,0.05);}
 .stat-card h3{margin:0;font-size:15px;color:#666;}
 .stat-card h1{margin:10px 0 0;font-size:32px;color:#111;}
-.actions{margin-top:25px;display:flex;gap:15px;}
+.actions{margin-top:25px;display:flex;gap:15px;flex-wrap:wrap;}
 .action-btn{border:none;padding:15px 22px;border-radius:12px;color:#fff;font-size:15px;font-weight:600;cursor:pointer;}
 .btn-reseller{background:linear-gradient(135deg,#6610f2,#d63384);}
 .btn-credit{background:linear-gradient(135deg,#16a34a,#22c55e);}
+.btn-online{background:linear-gradient(135deg,#0dcaf0,#0d6efd);}
 .table-card{background:#fff;margin-top:25px;padding:20px;border-radius:16px;box-shadow:0 4px 20px rgba(0,0,0,0.05);}
 table{width:100%;border-collapse:collapse;margin-top:15px;}
 th{background:#0f172a;color:#fff;padding:12px;text-align:center;}
@@ -80,7 +81,7 @@ td{padding:12px;text-align:center;border-bottom:1px solid #eee;}
 .btn-small{border:none;padding:6px 12px;border-radius:8px;color:#fff;cursor:pointer;}
 .btn-delete{background:#dc3545;}
 .modal{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);display:none;justify-content:center;align-items:center;z-index:999;}
-.modal-box{background:#fff;width:90%;max-width:500px;padding:25px;border-radius:16px;}
+.modal-box{background:#fff;width:90%;max-width:500px;padding:25px;border-radius:16px;max-height:80vh;overflow-y:auto;}
 input,select{width:100%;padding:12px;margin-top:10px;border-radius:8px;border:1px solid #ddd;}
 .modal-btn{width:100%;margin-top:15px;padding:12px;border:none;border-radius:8px;color:#fff;font-weight:600;cursor:pointer;background:#0d6efd;}
 .close-btn{background:#6b7280;}
@@ -102,6 +103,7 @@ input,select{width:100%;padding:12px;margin-top:10px;border-radius:8px;border:1p
     <div class="actions">
         <button class="action-btn btn-reseller" onclick="openModal('resellerModal')">👤 Crear Revendedor</button>
         <button class="action-btn btn-credit" onclick="openModal('assignModal')">💳 Gestionar Créditos</button>
+        <button class="action-btn btn-online" onclick="cargarOnline()">📡 Ver Conectados</button>
     </div>
 
     <div class="table-card">
@@ -123,6 +125,16 @@ input,select{width:100%;padding:12px;margin-top:10px;border-radius:8px;border:1p
     </div>
 </div>
 
+<!-- MODAL ONLINE -->
+<div class="modal" id="onlineModal">
+    <div class="modal-box">
+        <h3>👥 Usuarios Conectados</h3>
+        <div id="onlineContent">Cargando...</div>
+        <button type="button" class="modal-btn close-btn" onclick="closeModal('onlineModal')">Cerrar</button>
+    </div>
+</div>
+
+<!-- MODAL CREAR RESELLER -->
 <div class="modal" id="resellerModal">
     <div class="modal-box">
         <h3>Crear Revendedor</h3>
@@ -136,6 +148,7 @@ input,select{width:100%;padding:12px;margin-top:10px;border-radius:8px;border:1p
     </div>
 </div>
 
+<!-- MODAL CREDITOS -->
 <div class="modal" id="assignModal">
     <div class="modal-box">
         <h3>Gestionar Créditos</h3>
@@ -157,6 +170,7 @@ input,select{width:100%;padding:12px;margin-top:10px;border-radius:8px;border:1p
     </div>
 </div>
 
+<!-- MODAL DELETE -->
 <div class="modal" id="deleteUserModal">
     <div class="modal-box" style="text-align:center;">
         <h3>⚠️ ¿Eliminar Revendedor?</h3>
@@ -172,6 +186,14 @@ input,select{width:100%;padding:12px;margin-top:10px;border-radius:8px;border:1p
 function openModal(id){ document.getElementById(id).style.display = "flex"; }
 function closeModal(id){ document.getElementById(id).style.display = "none"; }
 function confirmDeleteUser(id){ openModal('deleteUserModal'); document.getElementById('delete_user_id').value = id; }
+
+function cargarOnline(){
+    openModal('onlineModal');
+    document.getElementById('onlineContent').innerHTML = "Cargando...";
+    fetch('online.php')
+        .then(res => res.text())
+        .then(data => { document.getElementById('onlineContent').innerHTML = data; });
+}
 </script>
 </body>
 </html>
