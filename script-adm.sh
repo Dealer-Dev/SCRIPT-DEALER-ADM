@@ -5,7 +5,7 @@
 #   Ubuntu 22/24/25
 # ═══════════════════════════════════════════════════════
 
-SCRIPT_VERSION="1.3"
+SCRIPT_VERSION="1.1"
 R='\033[0;31m'
 G='\033[0;32m'
 Y='\033[1;33m'
@@ -615,7 +615,7 @@ menu_ssl() {
         echo -e "  ${W}[1]${NC} Instalar SSL/TLS Stunnel"
         echo -e "  ${W}[2]${NC} Iniciar"
         echo -e "  ${W}[3]${NC} Detener"
-        echo -e "  ${W}[4]${NC} Reiniciar"
+        echo -e "  ${W}[4]${NC} Reiniciar SSL"
         echo -e "  ${W}[0]${NC} Volver"; sep
         read -p "  Opcion: " OPT
         case $OPT in
