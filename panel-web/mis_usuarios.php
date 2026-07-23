@@ -12,18 +12,46 @@ $username = $_SESSION['user'];
 // ELIMINAR USUARIO
 if(isset($_GET['delete'])){
     $id = intval($_GET['delete']);
-    $get = $conn->query("SELECT * FROM ssh_accounts WHERE id='$id' AND reseller='$username'")->fetch_assoc();
+    $stmt = $conn->prepare("SELECT * FROM ssh_accounts WHERE id=? AND reseller=?");
+    $stmt->bind_param("is", $id, $username);
+    $stmt->execute();
+    $get = $stmt->get_result()->fetch_assoc();
 
     if($get){
         $user_to_del = $get['username'];
-        exec("sudo userdel -f $user_to_del");
+
+        // 1. Eliminar usuario del sistema Linux
+        exec("sudo pkill -u $user_to_del 2>/dev/null; sudo userdel -f $user_to_del 2>/dev/null");
+
+        // 2. Eliminar archivo en /etc/dealer-adm/userDIR/
+        exec("sudo rm -f /etc/dealer-adm/userDIR/$user_to_del");
+
+        // 3. Eliminar de Hysteria si existe
+        if(file_exists('/etc/hysteria/config.json')){
+            $del_hys = "python3 -c \"
+import json, os
+p = '/etc/hysteria/config.json'
+if os.path.exists(p):
+    with open(p) as f: c=json.load(f)
+    cfg = c.get('auth',{}).get('config',[])
+    cfg = [u for u in cfg if not u.startswith('$user_to_del:')]
+    c['auth']['config'] = cfg
+    with open(p,'w') as f: json.dump(c,f,indent=2)
+\" && sudo systemctl restart hysteria-server >/dev/null 2>&1";
+            exec($del_hys);
+        }
+
+        // 4. Eliminar de BD Web
         $conn->query("DELETE FROM ssh_accounts WHERE id='$id'");
     }
     header("Location: mis_usuarios.php");
     exit();
 }
 
-$result = $conn->query("SELECT * FROM ssh_accounts WHERE reseller='$username' ORDER BY id DESC");
+$stmt_list = $conn->prepare("SELECT * FROM ssh_accounts WHERE reseller=? ORDER BY id DESC");
+$stmt_list->bind_param("s", $username);
+$stmt_list->execute();
+$result = $stmt_list->get_result();
 ?>
 <!DOCTYPE html>
 <html>
