@@ -45,10 +45,10 @@ if(empty($usuarios_online)){
         // Definir color del badge según la cantidad de conexiones
         if ($count == 1) {
             $badge_style = "background:#198754;"; // Verde
-            $text_status = "🟢 1 Conexión";
+            $text_status = "🟢 1 Conectado";
         } else {
             $badge_style = "background:#dc3545;"; // Rojo
-            $text_status = "🔴 {$count} Conexiones";
+            $text_status = "🔴 {$count} Conectados";
         }
 
         echo "<tr style='border-bottom:1px solid #eee;'>";
