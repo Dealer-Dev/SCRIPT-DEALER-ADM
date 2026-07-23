@@ -8,41 +8,39 @@ if [ "$EUID" -ne 0 ]; then
     exit 1
 fi
 
-echo -e "\n=== 🚀 CONFIGURANDO SERVIDOR WEB Y PANEL ===\n"
+echo -e "\n===  CONFIGURANDO SERVIDOR WEB Y PANEL ===\n"
 
 # 1. Instalar Apache, PHP y MariaDB
-echo "⏳ Instalando Apache, PHP y DB..."
+echo " Instalando Apache, PHP y MariaDB...⏳"
 apt update -y > /dev/null 2>&1
 DEBIAN_FRONTEND=noninteractive apt install -y apache2 mariadb-server mariadb-client php libapache2-mod-php php-mysqli php-curl curl wget > /dev/null 2>&1
 
 # 2. Configurar Apache en Puerto 81
-echo "⏳ Configurando Apache en el puerto 81..."
+echo " Configurando Apache en el puerto...⏳"
 sed -i 's/Listen 80/Listen 81/' /etc/apache2/ports.conf
 sed -i 's/<VirtualHost \*:80>/<VirtualHost *:81>/' /etc/apache2/sites-available/000-default.conf
 
 systemctl restart apache2 mariadb
 systemctl enable apache2 mariadb
 
-# 3. Datos y Credenciales de BD
+# 3. Credenciales de BD y Admin (Sin caracteres especiales '!')
 DB_HOST="localhost"
 DB_NAME="dealer_panel"
 DB_USER="dealer_db_user"
 
-DB_PASS=$(openssl rand -hex 12)
-ADMIN_USER="admin_$(openssl rand -hex 3)"
-ADMIN_PASS=$(openssl rand -base64 9 | tr -d '=+/' | cut -c1-12)
+DB_PASS=$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 16 | head -n 1)
+ADMIN_USER="admin_$(cat /dev/urandom | tr -dc 'a-z0-9' | fold -w 6 | head -n 1)"
+ADMIN_PASS=$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 12 | head -n 1)
 
 echo "⏳ Configurando Base de Datos..."
 
-mysql <<EOF
-CREATE DATABASE IF NOT EXISTS \`$DB_NAME\` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-CREATE USER IF NOT EXISTS '$DB_USER'@'$DB_HOST' IDENTIFIED BY '$DB_PASS';
-GRANT ALL PRIVILEGES ON \`$DB_NAME\`.* TO '$DB_USER'@'$DB_HOST';
-FLUSH PRIVILEGES;
+mysql -e "CREATE DATABASE IF NOT EXISTS \`$DB_NAME\` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+mysql -e "CREATE USER IF NOT EXISTS '$DB_USER'@'$DB_HOST' IDENTIFIED BY '$DB_PASS';"
+mysql -e "ALTER USER '$DB_USER'@'$DB_HOST' IDENTIFIED BY '$DB_PASS';"
+mysql -e "GRANT ALL PRIVILEGES ON \`$DB_NAME\`.* TO '$DB_USER'@'$DB_HOST';"
+mysql -e "FLUSH PRIVILEGES;"
 
-USE \`$DB_NAME\`;
-
--- Tabla de Usuarios
+mysql -D "$DB_NAME" <<EOF
 CREATE TABLE IF NOT EXISTS \`users\` (
   \`id\` INT AUTO_INCREMENT PRIMARY KEY,
   \`username\` VARCHAR(50) NOT NULL UNIQUE,
@@ -51,7 +49,6 @@ CREATE TABLE IF NOT EXISTS \`users\` (
   \`role\` ENUM('admin', 'reseller') NOT NULL DEFAULT 'reseller'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- Tabla de Cuentas creadas localmente
 CREATE TABLE IF NOT EXISTS \`ssh_accounts\` (
   \`id\` INT AUTO_INCREMENT PRIMARY KEY,
   \`reseller\` VARCHAR(50) NOT NULL,
@@ -68,7 +65,7 @@ EOF
 
 # 4. Descargar Frontend
 WEB_DIR="/var/www/html"
-echo "⏳ Descargando interfaz del Panel Web..."
+echo "Descargando interfaz del Panel Web..."
 
 rm -f $WEB_DIR/index.html
 
@@ -82,7 +79,7 @@ done
 echo "<?php header('Location: login.php'); exit(); ?>" > "$WEB_DIR/index.php"
 
 # 5. Generar db.php
-cat > $WEB_DIR/db.php << EOF
+cat << EOF > $WEB_DIR/db.php
 <?php
 \$host = "$DB_HOST";
 \$user = "$DB_USER";
@@ -97,12 +94,13 @@ if (\$conn->connect_error) {
 ?>
 EOF
 
-# Permisos para ejecutar comandos de sistema desde PHP (www-data)
+# Permisos
 chown -R www-data:www-data $WEB_DIR
 chmod -R 755 $WEB_DIR
 
-# Permitir a www-data usar useradd/usermod/userdel sin contraseña si usas comandos del sistema
-echo "www-data ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers.d/panel_web
+# Permisos sudo para www-data
+mkdir -p /etc/dealer-adm/userDIR
+echo "www-data ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/panel_web
 chmod 0440 /etc/sudoers.d/panel_web
 
 # Firewall
@@ -112,9 +110,11 @@ iptables -I INPUT -p tcp --dport 81 -j ACCEPT 2>/dev/null
 SERVER_IP=$(curl -s -4 ifconfig.me 2>/dev/null || hostname -I | awk '{print $1}')
 
 echo -e "\n============================================="
-echo -e " ¡PANEL WEB INSTALADO CORRECTAMENTE!"
+echo -e "      PANEL WEB INSTALADO CORRECTAMENTE"
 echo -e "============================================="
-echo -e " 🌐 URL Panel:  http://$SERVER_IP:81/login.php"
-echo -e " 👤 Usuario:    \033[1;33m$ADMIN_USER\033[0m"
-echo -e " 🔑 Contraseña: \033[1;32m$ADMIN_PASS\033[0m"
+echo -e "  URL Panel:  http://$SERVER_IP:81/"
+echo -e "  Usuario:    \033[1;33m$ADMIN_USER\033[0m"
+echo -e "  Contraseña: \033[1;32m$ADMIN_PASS\033[0m"
+echo -e "============================================="
+echo -e "            SCRIPT DEALER ADM"
 echo -e "=============================================\n"
