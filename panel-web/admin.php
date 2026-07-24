@@ -58,8 +58,10 @@ if(isset($_POST['crear_cuenta'])){
     // Si es token o hwid, el límite siempre es 1
     if($tipo === 'token' || $tipo === 'hwid'){
         $limite = 1;
+        $ref = $ref_name;
     } else {
         $limite = intval($_POST['ssh_limit']);
+        $ref = $user;
     }
     
     $owner = $_SESSION['user'];
@@ -70,22 +72,42 @@ if(isset($_POST['crear_cuenta'])){
     } else {
         $expira_date = date('Y-m-d', strtotime("+$dias days"));
 
+        // 1. Crear usuario real en Linux
         if($tipo === 'ssh'){
-            // Crear usuario real en Linux para SSH Normal
-            $cmd = "sudo useradd -M -s /bin/false -e $expira_date $user && echo '$user:$pass' | sudo chpasswd";
-            shell_exec($cmd);
+            $cmd = "sudo useradd -M -s /bin/false -e $expira_date $user && echo '$user:$pass' | sudo chpasswd && sudo chage -E $expira_date -M 99999 $user && sudo usermod -f 0 $user";
+            exec($cmd);
         }
 
-        // ✅AHORA (Coincide con las columnas reales de tu BD)
-$stmt = $conn->prepare("INSERT INTO ssh_accounts (username, password, expires, reseller, type, reference_name) VALUES (?, ?, ?, ?, ?, ?)");
-$stmt->bind_param("ssssss", $user, $pass, $expira_date, $owner, $tipo, $ref_name);
-$stmt->execute();
+        // 2. Generar archivo en /etc/dealer-adm/userDIR/ (Estilo reseller.php)
+        $file_content = "tipo: $tipo\nnombre: $ref\nusuario: $user\npassword: $pass\nfecha: $expira_date\nlimite: $limite\ncreador_id: 0\ncreador_nombre: $owner";
+        $tmp_file = tempnam(sys_get_temp_dir(), 'usr_');
+        file_put_contents($tmp_file, $file_content);
+        exec("sudo mkdir -p /etc/dealer-adm/userDIR/ && sudo mv $tmp_file /etc/dealer-adm/userDIR/$user && sudo chmod 644 /etc/dealer-adm/userDIR/$user");
+
+        // 3. Sincronizar con Hysteria si existe
+        if(file_exists('/etc/hysteria/config.json')){
+            $sync_hys = "python3 -c \"
+import json, os
+p = '/etc/hysteria/config.json'
+if os.path.exists(p):
+    with open(p) as f: c=json.load(f)
+    cfg = c.get('auth',{}).get('config',[])
+    entry = '$user:$pass'
+    if entry not in cfg: cfg.append(entry); c['auth']['config']=cfg
+    with open(p,'w') as f: json.dump(c,f,indent=2)
+\" && sudo systemctl restart hysteria-server >/dev/null 2>&1";
+            exec($sync_hys);
+        }
+
+        // 4. Insertar en la Base de Datos
+        $stmt = $conn->prepare("INSERT INTO ssh_accounts (username, password, expires, reseller, type, reference_name) VALUES (?, ?, ?, ?, ?, ?)");
+        $stmt->bind_param("ssssss", $user, $pass, $expira_date, $owner, $tipo, $ref);
+        $stmt->execute();
 
         header("Location: admin.php");
         exit();
     }
 }
-
 // ELIMINAR RESELLER
 if(isset($_POST['delete_user'])){
     $id = intval($_POST['delete_user']);
