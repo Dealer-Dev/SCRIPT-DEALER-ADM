@@ -164,7 +164,7 @@ button,.btn-copy{width:100%;margin-top:12px;padding:12px;border:none;border-radi
 <!-- MODAL CONFIGURAR PASS TOKEN GLOBAL -->
 <div class="modal" id="tokenPassModal">
     <div class="modal-box">
-        <h3>🔑 Contraseña Token Global</h3>
+        <h3>Contraseña Token</h3>
         <form method="POST">
             <p style="font-size:13px; color:#666;">Define la contraseña por defecto para todas las cuentas de tipo Token que crees.</p>
             <label style="font-weight:600; font-size:14px;">Nueva Contraseña Token:</label>
