@@ -193,7 +193,7 @@ td{padding:12px;border-bottom:1px solid #eee;text-align:center;font-size:14px;}
                     <td>
                         <div style="display:flex; justify-content:center; align-items:center;">
                             <?php if($type_filter == 'ssh'): ?>
-                                <button type="button" class="btn-edit" onclick="openEditModal(<?php echo $row['id']; ?>, '<?php echo htmlspecialchars($row['username'], ENT_QUOTES); ?>', '<?php echo htmlspecialchars($row['password'], ENT_QUOTES); ?>')">✏️</button>
+                                <button type="button" class="btn-edit" onclick="openEditModal(<?php echo $row['id']; ?>, '<?php echo htmlspecialchars($row['username'], ENT_QUOTES); ?>', '<?php echo htmlspecialchars($row['password'], ENT_QUOTES); ?>')"><?php echo __('edit'); ?></button>
                             <?php endif; ?>
 
                             <a href="mis_usuarios.php?delete=<?php echo $row['id']; ?>&type=<?php echo urlencode($type_filter); ?>" onclick="return confirm('<?php echo __('delete_user_conf'); ?>')">
