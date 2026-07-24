@@ -5,7 +5,7 @@
 #   Ubuntu 22/24/25
 # ═══════════════════════════════════════════════════════
 
-SCRIPT_VERSION="1.6"
+SCRIPT_VERSION="1.1"
 R='\033[0;31m'
 G='\033[0;32m'
 Y='\033[1;33m'
@@ -2017,49 +2017,56 @@ cambiar_creds_panel_web() {
         sleep 2 && return
     fi
 
-    # Extraer usuario y contraseña de la BD desde db.php
-    DB_U=$(grep '\$user' /var/www/html/db.php | cut -d'"' -f2)
-    DB_P=$(grep '\$pass' /var/www/html/db.php | cut -d'"' -f2)
-    DB_N=$(grep '\$db' /var/www/html/db.php | cut -d'"' -f2)
+    # Extraer el usuario admin actual usando PHP directo con db.php
+    ADM_CURRENT=$(php -r '
+        include "/var/www/html/db.php";
+        $res = $conn->query("SELECT username FROM users WHERE role=\"admin\" LIMIT 1");
+        if ($res && $row = $res->fetch_assoc()) {
+            echo $row["username"];
+        }
+    ' 2>/dev/null)
 
-    # Mostrar usuario admin actual
-    ADM_CURRENT=$(mysql -u"$DB_U" -p"$DB_P" "$DB_N" -e "SELECT username FROM users WHERE role='admin' LIMIT 1;" -B -N 2>/dev/null)
-    if [ -z "$ADM_CURRENT" ]; then
-        # Intentar conectar con usuario root de MariaDB si falla con dealer_db_user
-        ADM_CURRENT=$(mysql "$DB_N" -e "SELECT username FROM users WHERE role='admin' LIMIT 1;" -B -N 2>/dev/null)
+    if [ -n "$ADM_CURRENT" ]; then
+        echo -e "  ${W}Usuario Admin actual:${NC} ${Y}$ADM_CURRENT${NC}\n"
     fi
-
-    [ -n "$ADM_CURRENT" ] && echo -e "  ${W}Usuario Admin actual:${NC} ${Y}$ADM_CURRENT${NC}\n"
 
     read -p "  Nuevo usuario Admin: " NEW_ADM_USER
     if [ -z "$NEW_ADM_USER" ]; then
-        echo -e "  ${R}❌ El usuario no puede estar vacío.${NC}"
+        echo -e "  ${R}El usuario no puede estar vacío.${NC}"
         sleep 2 && return
     fi
 
     read -p "  Nueva contraseña Admin: " NEW_ADM_PASS
     if [ -z "$NEW_ADM_PASS" ]; then
-        echo -e "  ${R}❌ La contraseña no puede estar vacía.${NC}"
+        echo -e "  ${R}La contraseña no puede estar vacía.${NC}"
         sleep 2 && return
     fi
 
     echo -e "\n  ${C}Actualizando credenciales en la base de datos...${NC}"
 
-    # Ejecutar la actualización pasando credenciales de la BD
-    mysql -u"$DB_U" -p"$DB_P" "$DB_N" -e "UPDATE users SET username='$NEW_ADM_USER', password='$NEW_ADM_PASS' WHERE role='admin';" 2>/dev/null
+    # Ejecutar UPDATE usando PHP y capturar respuesta o errores
+    RESULT=$(php -r '
+        include "/var/www/html/db.php";
+        $u = $conn->real_escape_string("'"$NEW_ADM_USER"'");
+        $p = $conn->real_escape_string("'"$NEW_ADM_PASS"'");
+        
+        $sql = "UPDATE users SET username=\"$u\", password=\"$p\" WHERE role=\"admin\"";
+        if ($conn->query($sql)) {
+            echo "OK";
+        } else {
+            echo "ERROR: " . $conn->error;
+        }
+    ' 2>/dev/null)
 
-    if [ $? -ne 0 ]; then
-        # Reintento con root directo
-        mysql "$DB_N" -e "UPDATE users SET username='$NEW_ADM_USER', password='$NEW_ADM_PASS' WHERE role='admin';" 2>/dev/null
-    fi
-
-    if [ $? -eq 0 ]; then
+    if [ "$RESULT" = "OK" ]; then
         echo ""; sep
         echo -e "  ${G}✅ Credenciales actualizadas correctamente.${NC}"
         echo -e "  ${W}👤 Usuario:${NC}    \033[1;33m$NEW_ADM_USER\033[0m"
         echo -e "  ${W}🔑 Contraseña:${NC} \033[1;32m$NEW_ADM_PASS\033[0m"
     else
+        echo ""; sep
         echo -e "  ${R}❌ Error al actualizar la base de datos.${NC}"
+        [ -n "$RESULT" ] && echo -e "  ${Y}Detalle: $RESULT${NC}"
     fi
 
     echo ""; sep
