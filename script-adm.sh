@@ -5,7 +5,7 @@
 #   Ubuntu 22/24/25
 # ═══════════════════════════════════════════════════════
 
-SCRIPT_VERSION="1.2"
+SCRIPT_VERSION="1.3"
 R='\033[0;31m'
 G='\033[0;32m'
 Y='\033[1;33m'
@@ -2343,7 +2343,52 @@ instalar_panel_web() {
     rm -rf /tmp/panel_install
     echo ""; read -p "  Presiona ENTER para continuar..."
 }
+configurar_cf_domain() {
+    banner; sep
+    echo -e "  ${Y}  CONFIGURAR DOMINIO CLOUDFLARE${NC}"; sep; echo ""
 
+    CF_CURR=$(cat /etc/dealer-adm/cf_domain 2>/dev/null)
+    [ -n "$CF_CURR" ] && echo -e "  ${W}Dominio actual:${NC} ${Y}$CF_CURR${NC}\n"
+
+    read -p "  Ingresa tu Dominio Cloudflare (ENTER para borrar): " NEW_CF
+    
+    mkdir -p /etc/dealer-adm
+    if [ -z "$NEW_CF" ]; then
+        rm -f /etc/dealer-adm/cf_domain
+        echo -e "\n  ${Y}Dominio Cloudflare eliminado.${NC}"
+    else
+        echo "$NEW_CF" > /etc/dealer-adm/cf_domain
+        echo -e "\n  ${G}✅ Dominio Cloudflare guardado correctamente.${NC}"
+    fi
+
+    echo ""; sep
+    read -p "  Presiona ENTER para continuar..."
+}
+
+configurar_payload() {
+    banner; sep
+    echo -e "  ${Y}  CONFIGURAR PAYLOAD GCP${NC}"; sep; echo ""
+
+    PAY_CURR=$(cat /etc/dealer-adm/payload.txt 2>/dev/null)
+    if [ -n "$PAY_CURR" ]; then
+        echo -e "  ${W}Payload actual:${NC}"
+        echo -e "  ${DIM}$PAY_CURR${NC}\n"
+    fi
+
+    read -p "  Ingresa el nuevo Payload (ENTER para borrar): " NEW_PAY
+    
+    mkdir -p /etc/dealer-adm
+    if [ -z "$NEW_PAY" ]; then
+        rm -f /etc/dealer-adm/payload.txt
+        echo -e "\n  ${Y}Payload eliminado.${NC}"
+    else
+        echo "$NEW_PAY" > /etc/dealer-adm/payload.txt
+        echo -e "\n  ${G}Payload guardado correctamente.${NC}"
+    fi
+
+    echo ""; sep
+    read -p "  Presiona ENTER para continuar..."
+}
 estado_panel_web() {
     banner; sep
     echo -e "  ${Y}  ESTADO DEL PANEL WEB${NC}"; sep; echo ""
@@ -2552,7 +2597,6 @@ menu_panel_web() {
         banner; sep
         echo -e "  ${Y}    GESTIÓN DE PANEL WEB (PUERTO 81)${NC}"; sep; echo ""
 
-        # Estado rápido del panel
         if ss -tlnp 2>/dev/null | grep -q ":81 "; then
             echo -e "  Estado: ${NEON}◆ ONLINE (Puerto 81)${NC}"
         else
@@ -2562,10 +2606,12 @@ menu_panel_web() {
 
         echo -e "  ${W}[1]${NC} Instalar Panel Web"
         echo -e "  ${W}[2]${NC} Ver Estado"
-        echo -e "  ${W}[3]${NC} Actualizar Panel Web (desde GitHub)"
-        echo -e "  ${W}[4]${NC} Ver URL y Credenciales"
-        echo -e "  ${W}[5]${NC} Cambiar Usuario y Contraseña de panel"
-        echo -e "  ${R}[6]${NC} Desinstalar Panel Web"
+        echo -e "  ${W}[3]${NC} Actualizar Panel Web (GitHub)"
+        echo -e "  ${W}[4]${NC} Ver URL y Credenciales Admin"
+        echo -e "  ${W}[5]${NC} Cambiar Usuario y Contraseña Admin"
+        echo -e "  ${W}[6]${NC} Configurar Dominio Cloudflare"
+        echo -e "  ${W}[7]${NC} Configurar Payload"
+        echo -e "  ${R}[8]${NC} Desinstalar Panel Web"
         echo -e "  ${W}[0]${NC} Volver"; sep
 
         read -p "  Opción: " OPT
@@ -2575,13 +2621,14 @@ menu_panel_web() {
             3) actualizar_panel_web ;;
             4) credenciales_panel_web ;;
             5) cambiar_creds_panel_web ;;
-            6) desinstalar_panel_web ;;
+            6) configurar_cf_domain ;;
+            7) configurar_payload ;;
+            8) desinstalar_panel_web ;;
             0) break ;;
             *) echo -e "  ${R}Opción inválida${NC}"; sleep 1 ;;
         esac
     done
 }
-
 instalar_motd() {
     banner; sep
     echo -e "  ${Y}  CONFIGURAR MOTD DEL SERVIDOR${NC}"; sep; echo ""
