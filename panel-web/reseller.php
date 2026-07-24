@@ -74,10 +74,16 @@ if os.path.exists(p):
     exit();
 }
 
-// Obtener IP pública del servidor y configuraciones adicionales
+// Cargar IP y Dominio
 $server_ip = $_SERVER['SERVER_ADDR'] ?? exec("curl -s -4 ifconfig.me") ?? "127.0.0.1";
 $cf_domain = file_exists('/etc/dealer-adm/cf_domain') ? trim(file_get_contents('/etc/dealer-adm/cf_domain')) : '';
-$payload   = file_exists('/etc/dealer-adm/payload.txt') ? trim(file_get_contents('/etc/dealer-adm/payload.txt')) : '';
+
+// LECTURA DE PERMISOS INDIVIDUALES DEL RESELLER
+$perm_file = '/etc/dealer-adm/resellers/' . $username . '.json';
+$reseller_perms = file_exists($perm_file) ? json_decode(file_get_contents($perm_file), true) : ['show_gcp' => 1, 'show_cf' => 1];
+
+$payload_gcp = ($reseller_perms['show_gcp'] ?? 0) && file_exists('/etc/dealer-adm/payload_gcp.txt') ? trim(file_get_contents('/etc/dealer-adm/payload_gcp.txt')) : '';
+$payload_cf  = ($reseller_perms['show_cf'] ?? 0) && file_exists('/etc/dealer-adm/payload_cloudfront.txt') ? trim(file_get_contents('/etc/dealer-adm/payload_cloudfront.txt')) : '';
 ?>
 <!DOCTYPE html>
 <html>
@@ -161,10 +167,10 @@ function cargarOnline(){
         .then(data => { document.getElementById('onlineContent').innerHTML = data; });
 }
 
-function copiarPayload(){
-    let text = document.getElementById("payload_text").innerText;
+function copiarTexto(elementId, buttonId){
+    let text = document.getElementById(elementId).innerText;
     navigator.clipboard.writeText(text).then(() => {
-        let btn = document.getElementById("btn_cp");
+        let btn = document.getElementById(buttonId);
         btn.innerText = "¡Copiado!";
         setTimeout(() => { btn.innerText = "📋 Copiar Payload"; }, 2000);
     });
@@ -201,14 +207,23 @@ function copiarPayload(){
 
         <div class="info-row"><b>Expiración:</b> <?php echo htmlspecialchars($ok_e); ?></div>
 
-        <?php if(!empty($payload)): ?>
+        <!-- PAYLOAD GCP -->
+        <?php if(!empty($payload_gcp)): ?>
             <hr style="margin:12px 0;border:0;border-top:1px solid #eee;">
-            <div class="info-row"><b>Payload:</b></div>
-            <div class="payload-box" id="payload_text"><?php echo htmlspecialchars($payload); ?></div>
-            <button id="btn_cp" class="btn-copy" onclick="copiarPayload()">Copiar Payload</button>
+            <div class="info-row"><b>Payload GCP:</b></div>
+            <div class="payload-box" id="payload_gcp_text"><?php echo htmlspecialchars($payload_gcp); ?></div>
+            <button id="btn_cp_gcp" class="btn-copy" onclick="copiarTexto('payload_gcp_text', 'btn_cp_gcp')">📋 Copiar Payload GCP</button>
         <?php endif; ?>
 
-        <button onclick="window.location.href='reseller.php'" style="background:#6c757d;margin-top:10px;">Cerrar</button>
+        <!-- PAYLOAD CLOUDFRONT -->
+        <?php if(!empty($payload_cf)): ?>
+            <hr style="margin:12px 0;border:0;border-top:1px solid #eee;">
+            <div class="info-row"><b>Payload CloudFront:</b></div>
+            <div class="payload-box" id="payload_cf_text"><?php echo htmlspecialchars($payload_cf); ?></div>
+            <button id="btn_cp_cf" class="btn-copy" onclick="copiarTexto('payload_cf_text', 'btn_cp_cf')">📋 Copiar Payload CloudFront</button>
+        <?php endif; ?>
+
+        <button onclick="window.location.href='reseller.php'" style="background:#6c757d;margin-top:15px;">Cerrar</button>
     </div>
 </div>
 <?php endif; ?>
