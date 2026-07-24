@@ -10,6 +10,18 @@ if (!isset($_SESSION['user']) || $_SESSION['role'] != 'reseller') {
 
 $username = $_SESSION['user'];
 
+// Función para obtener el límite guardado en el archivo del sistema
+function obtenerLimiteUsuario($usuario) {
+    $file_path = "/etc/dealer-adm/userDIR/" . $usuario;
+    if (file_exists($file_path)) {
+        $content = file_get_contents($file_path);
+        if (preg_match('/limite:\s*(\d+)/i', $content, $matches)) {
+            return $matches[1];
+        }
+    }
+    return "1"; // Valor por defecto si no se encuentra
+}
+
 // 1. Procesar actualización de contraseña (solo SSH)
 $update_msg = "";
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action_type']) && $_POST['action_type'] === 'update_pass') {
@@ -160,6 +172,7 @@ td{padding:12px;border-bottom:1px solid #eee;text-align:center;font-size:14px;}
                     <th><?php echo __('ref_name'); ?></th>
                     <th><?php echo __('hwid_user'); ?></th>
                 <?php endif; ?>
+                <th>Límite</th>
                 <th><?php echo __('expiration_date'); ?></th>
                 <th><?php echo __('action'); ?></th>
             </tr>
@@ -167,12 +180,13 @@ td{padding:12px;border-bottom:1px solid #eee;text-align:center;font-size:14px;}
         <tbody>
             <?php if($result->num_rows == 0): ?>
                 <tr>
-                    <td colspan="4" class="empty-msg">No se encontraron usuarios en esta categoría.</td>
+                    <td colspan="5" class="empty-msg">No se encontraron usuarios en esta categoría.</td>
                 </tr>
             <?php else: ?>
                 <?php while($row = $result->fetch_assoc()): ?>
                 <?php
                     $is_expired = ($row['expires'] <= $today);
+                    $limite_cuenta = obtenerLimiteUsuario($row['username']);
                 ?>
                 <tr>
                     <?php if($type_filter == 'ssh'): ?>
@@ -182,6 +196,8 @@ td{padding:12px;border-bottom:1px solid #eee;text-align:center;font-size:14px;}
                         <td><b><?php echo htmlspecialchars($row['reference_name']); ?></b></td>
                         <td><code><?php echo htmlspecialchars($row['username']); ?></code></td>
                     <?php endif; ?>
+
+                    <td><b><?php echo htmlspecialchars($limite_cuenta); ?></b></td>
 
                     <td>
                         <?php if($is_expired): ?>
