@@ -350,9 +350,9 @@ label{font-weight:600;display:block;margin-top:12px;font-size:14px;color:#333;}
             <thead>
                 <tr>
                     <th>Tipo</th>
-                    <th>Usuario / Identificador</th>
-                    <th>Contraseña</th>
-                    <th>Creador / Reseller</th>
+                    <th>Usuario</th>
+                    <th>Contraseña/Token/Hwid</th>
+                    <th>Creador</th>
                     <th>Límite</th>
                     <th>Expiración</th>
                     <th>Acción</th>
