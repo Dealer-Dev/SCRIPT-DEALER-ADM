@@ -45,7 +45,7 @@ if os.path.exists(p):
     exit();
 }
 
-// 2. Definir tipo/filtro activo (por defecto 'ssh')
+// 2. Definir tipo/filtro activo
 $type_filter = isset($_GET['type']) ? strtolower(trim($_GET['type'])) : 'ssh';
 if (!in_array($type_filter, ['ssh', 'token', 'hwid'])) {
     $type_filter = 'ssh';
@@ -55,6 +55,7 @@ $stmt_list = $conn->prepare("SELECT * FROM ssh_accounts WHERE reseller=? AND typ
 $stmt_list->bind_param("ss", $username, $type_filter);
 $stmt_list->execute();
 $result = $stmt_list->get_result();
+$today = date('Y-m-d');
 ?>
 <!DOCTYPE html>
 <html>
@@ -68,7 +69,7 @@ body{font-family:'Segoe UI',sans-serif;background:#f4f6f9;margin:0;padding:20px;
 .header-box{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;}
 .header-box h2{margin:0;color:#111;}
 
-/* Estilo de Pestañas (Tabs) */
+/* Pestañas */
 .tabs{display:flex;gap:10px;margin-bottom:15px;flex-wrap:wrap;}
 .tab-btn{padding:10px 18px;border-radius:10px;background:#e2e8f0;color:#334155;text-decoration:none;font-weight:600;font-size:14px;transition:0.2s;}
 .tab-btn:hover{background:#cbd5e1;}
@@ -80,6 +81,9 @@ td{padding:12px;border-bottom:1px solid #eee;text-align:center;font-size:14px;}
 .btn-del{background:#dc3545;color:#fff;border:none;padding:6px 14px;border-radius:6px;cursor:pointer;font-weight:600;}
 .btn-del:hover{background:#bb2d3b;}
 .empty-msg{padding:25px;text-align:center;color:#64748b;}
+
+/* Badge de Expirado */
+.exp-badge{background:#dc3545;color:#fff;padding:4px 10px;border-radius:6px;font-weight:800;font-size:12px;display:inline-block;}
 </style>
 </head>
 <body>
@@ -89,7 +93,7 @@ td{padding:12px;border-bottom:1px solid #eee;text-align:center;font-size:14px;}
         <a href="reseller.php" style="text-decoration:none;color:#0d6efd;font-weight:600;"><?php echo __('back'); ?></a>
     </div>
 
-    <!-- Menú de Pestañas (Sin TODOS) -->
+    <!-- Pestañas -->
     <div class="tabs">
         <a href="mis_usuarios.php?type=ssh" class="tab-btn <?php echo ($type_filter == 'ssh') ? 'active' : ''; ?>">🔑 SSH Normal</a>
         <a href="mis_usuarios.php?type=token" class="tab-btn <?php echo ($type_filter == 'token') ? 'active' : ''; ?>">🎫 Token</a>
@@ -120,6 +124,9 @@ td{padding:12px;border-bottom:1px solid #eee;text-align:center;font-size:14px;}
                 </tr>
             <?php else: ?>
                 <?php while($row = $result->fetch_assoc()): ?>
+                <?php
+                    $is_expired = ($row['expires'] <= $today);
+                ?>
                 <tr>
                     <?php if($type_filter == 'ssh'): ?>
                         <td><b><?php echo htmlspecialchars($row['username']); ?></b></td>
@@ -129,7 +136,13 @@ td{padding:12px;border-bottom:1px solid #eee;text-align:center;font-size:14px;}
                         <td><code><?php echo htmlspecialchars($row['username']); ?></code></td>
                     <?php endif; ?>
 
-                    <td><?php echo htmlspecialchars($row['expires']); ?></td>
+                    <td>
+                        <?php if($is_expired): ?>
+                            <span class="exp-badge">EXP</span>
+                        <?php else: ?>
+                            <?php echo htmlspecialchars($row['expires']); ?>
+                        <?php endif; ?>
+                    </td>
                     <td>
                         <a href="mis_usuarios.php?delete=<?php echo $row['id']; ?>&type=<?php echo urlencode($type_filter); ?>" onclick="return confirm('¿Eliminar usuario?')">
                             <button class="btn-del">Eliminar</button>
