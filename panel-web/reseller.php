@@ -147,7 +147,7 @@ button,.btn-copy{width:100%;margin-top:12px;padding:12px;border:none;border-radi
     </select>
 
     <!-- BOTÓN DE CONTRASEÑA TOKEN GLOBAL (SOLO VISIBLE EN TOKEN) -->
-    <button id="btn_token_pass" class="btn-tpass" onclick="openModal('tokenPassModal')">🔑 Pass Token Global (Actual: <?php echo htmlspecialchars($token_pass_actual); ?>)</button>
+    <button id="btn_token_pass" class="btn-tpass" onclick="openModal('tokenPassModal')">Contraseña Token (Actual: <?php echo htmlspecialchars($token_pass_actual); ?>)</button>
 
     <form method="POST">
         <div id="form_ssh"><input name="ssh_user" placeholder="<?php echo __('user'); ?>"><input name="ssh_pass" placeholder="<?php echo __('pass'); ?>"></div>
