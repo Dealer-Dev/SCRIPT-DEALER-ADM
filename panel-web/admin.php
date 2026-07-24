@@ -51,10 +51,11 @@ if(isset($_POST['crear_reseller'])){
 if(isset($_POST['crear_cuenta'])){
     $tipo = $_POST['account_type']; // 'ssh', 'token', 'hwid'
     $user = trim($_POST['username']);
+    $ref_name = isset($_POST['ref_name']) ? trim($_POST['ref_name']) : '';
     $pass = isset($_POST['password']) ? trim($_POST['password']) : '';
     $dias = intval($_POST['exp_days']);
     
-    // Si el tipo es token o hwid, el límite siempre es 1 por defecto
+    // Si es token o hwid, el límite siempre es 1
     if($tipo === 'token' || $tipo === 'hwid'){
         $limite = 1;
     } else {
@@ -208,6 +209,12 @@ label{font-weight:600;display:block;margin-top:12px;font-size:14px;color:#333;}
                 <option value="hwid">HWID</option>
             </select>
 
+            <!-- Nombre del Cliente / Referencia (Oculto en SSH Normal) -->
+            <div id="wrapper_ref_name" style="display:none;">
+                <label>Nombre del Cliente (Referencia):</label>
+                <input name="ref_name" id="input_ref_name" placeholder="Ej: Juan Pérez">
+            </div>
+
             <!-- Campo Usuario / Token / HWID -->
             <label id="lbl_username">Usuario:</label>
             <input name="username" id="input_username" placeholder="Ingrese el usuario" required>
@@ -274,6 +281,8 @@ function closeModal(id){ document.getElementById(id).style.display = "none"; }
 function confirmDeleteUser(id){ openModal('deleteUserModal'); document.getElementById('delete_user_id').value = id; }
 
 function actualizarCamposTipo(tipo){
+    const wrapperRefName = document.getElementById('wrapper_ref_name');
+    const inputRefName = document.getElementById('input_ref_name');
     const lblUser = document.getElementById('lbl_username');
     const inputUser = document.getElementById('input_username');
     const wrapperPass = document.getElementById('wrapper_password');
@@ -282,16 +291,24 @@ function actualizarCamposTipo(tipo){
     const inputLimit = document.getElementById('input_ssh_limit');
 
     if(tipo === 'ssh'){
+        wrapperRefName.style.display = 'none';
+        inputRefName.required = false;
+
         lblUser.innerText = 'Usuario:';
-        inputUser.placeholder = 'Ej: usuario123';
+        inputUser.placeholder = '';
+        
         wrapperPass.style.display = 'block';
         inputPass.required = true;
         
         wrapperLimit.style.display = 'block';
         inputLimit.required = true;
     } else if(tipo === 'token') {
+        wrapperRefName.style.display = 'block';
+        inputRefName.required = true;
+
         lblUser.innerText = 'Token:';
-        inputUser.placeholder = 'Ej: tk_abc123xyz';
+        inputUser.placeholder = '';
+        
         wrapperPass.style.display = 'none';
         inputPass.required = false;
         
@@ -299,8 +316,12 @@ function actualizarCamposTipo(tipo){
         inputLimit.required = false;
         inputLimit.value = 1;
     } else if(tipo === 'hwid') {
-        lblUser.innerText = 'Identificador HWID:';
-        inputUser.placeholder = 'Ej: A1B2-C3D4-E5F6';
+        wrapperRefName.style.display = 'block';
+        inputRefName.required = true;
+
+        lblUser.innerText = 'HWID:';
+        inputUser.placeholder = '';
+        
         wrapperPass.style.display = 'none';
         inputPass.required = false;
         
