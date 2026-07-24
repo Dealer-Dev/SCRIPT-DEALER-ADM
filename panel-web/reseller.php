@@ -1,6 +1,7 @@
 <?php
 session_start();
 include __DIR__ . "/db.php";
+include __DIR__ . "/lang.php";
 
 if (!isset($_SESSION['user']) || $_SESSION['role'] != 'reseller') {
     header("Location: login.php");
@@ -42,18 +43,15 @@ if(isset($_POST['crear_ssh'])){
 
     $expire_date = date("Y-m-d", strtotime("+30 days"));
     
-    // 1. Crear usuario SSH real en Linux
     $cmd_system = "sudo useradd -M -s /bin/false -e $expire_date $ssh_user && echo '$ssh_user:$ssh_pass' | sudo chpasswd && sudo chage -E $expire_date -M 99999 $ssh_user && sudo usermod -f 0 $ssh_user";
     exec($cmd_system);
 
-    // 2. Crear archivo de registro en /etc/dealer-adm/userDIR/
     $file_content = "tipo: $tipo\nnombre: $ref\nusuario: $ssh_user\npassword: $ssh_pass\nfecha: $expire_date\nlimite: 1\ncreador_id: 0\ncreador_nombre: $username";
     
     $tmp_file = tempnam(sys_get_temp_dir(), 'usr_');
     file_put_contents($tmp_file, $file_content);
     exec("sudo mkdir -p /etc/dealer-adm/userDIR/ && sudo mv $tmp_file /etc/dealer-adm/userDIR/$ssh_user && sudo chmod 644 /etc/dealer-adm/userDIR/$ssh_user");
 
-    // 3. Sincronizar con Hysteria si existe
     if(file_exists('/etc/hysteria/config.json')){
         $sync_hys = "python3 -c \"
 import json, os
@@ -68,7 +66,6 @@ if os.path.exists(p):
         exec($sync_hys);
     }
 
-    // 4. Actualizar Base de Datos Web
     $conn->query("UPDATE users SET credits = credits - 1 WHERE id='".$reseller['id']."'");
     $conn->query("INSERT INTO ssh_accounts (reseller, username, password, type, reference_name, expires) 
                   VALUES ('$username', '$ssh_user', '$ssh_pass', '$tipo', '$ref', '$expire_date')");
@@ -80,7 +77,7 @@ if os.path.exists(p):
 <!DOCTYPE html>
 <html>
 <head>
-<title>Panel Revendedor</title>
+<title><?php echo __('reseller_title'); ?></title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <style>
 *{box-sizing:border-box;}
@@ -98,38 +95,38 @@ button{width:100%;margin-top:18px;padding:12px;border:none;border-radius:10px;ba
 </head>
 <body>
 <div class="container">
-    <h2>Revendedor: <?php echo htmlspecialchars($username); ?></h2>
-    <div class="credit-badge">💰 Créditos disponibles: <?php echo $reseller['credits']; ?></div>
+    <h2><?php echo __('user'); ?>: <?php echo htmlspecialchars($username); ?></h2>
+    <div class="credit-badge"><?php echo __('available_credits'); ?>: <?php echo $reseller['credits']; ?></div>
 
-    <button class="btn-online" onclick="cargarOnline()">📡 Ver Conectados</button>
+    <button class="btn-online" onclick="cargarOnline()"><?php echo __('view_online'); ?></button>
 
-    <h3 style="margin-top:25px;">Crear Cuenta</h3>
+    <h3 style="margin-top:25px;"><?php echo __('create_account'); ?></h3>
     <select id="tipo" onchange="cambiarTipo()">
-        <option value="ssh">SSH Normal</option>
-        <option value="token">Token</option>
-        <option value="hwid">HWID</option>
+        <option value="ssh"><?php echo __('ssh_normal'); ?></option>
+        <option value="token"><?php echo __('token_user'); ?></option>
+        <option value="hwid"><?php echo __('hwid_user'); ?></option>
     </select>
 
     <form method="POST">
-        <div id="form_ssh"><input name="ssh_user" placeholder="Usuario"><input name="ssh_pass" placeholder="Contraseña"></div>
-        <div id="form_token" style="display:none;"><input name="ref_token" placeholder="Nombre Referencia"><input name="token_user" placeholder="Token"></div>
-        <div id="form_hwid" style="display:none;"><input name="ref_hwid" placeholder="Nombre Referencia"><input name="hwid" placeholder="HWID"></div>
+        <div id="form_ssh"><input name="ssh_user" placeholder="<?php echo __('user'); ?>"><input name="ssh_pass" placeholder="<?php echo __('pass'); ?>"></div>
+        <div id="form_token" style="display:none;"><input name="ref_token" placeholder="<?php echo __('ref_name'); ?>"><input name="token_user" placeholder="<?php echo __('token_user'); ?>"></div>
+        <div id="form_hwid" style="display:none;"><input name="ref_hwid" placeholder="<?php echo __('ref_name'); ?>"><input name="hwid" placeholder="<?php echo __('hwid_user'); ?>"></div>
         <input type="hidden" name="tipo" id="tipo_input" value="ssh">
-        <button name="crear_ssh">Crear Usuario</button>
+        <button name="crear_ssh"><?php echo __('create_account'); ?></button>
     </form>
 
     <div class="links">
-        <a href="mis_usuarios.php" style="color:#6610f2;">Mis usuarios creados</a>
-        <a href="logout.php" style="color:#dc3545;">Cerrar sesión</a>
+        <a href="mis_usuarios.php" style="color:#6610f2;"><?php echo __('my_users'); ?></a>
+        <a href="logout.php" style="color:#dc3545;"><?php echo __('logout'); ?></a>
     </div>
 </div>
 
 <!-- MODAL ONLINE -->
 <div class="modal" id="onlineModal">
     <div class="modal-box">
-        <h3>👥 Conectados</h3>
-        <div id="onlineContent">Cargando...</div>
-        <button type="button" style="background:#6c757d;margin-top:15px;" onclick="closeModal('onlineModal')">Cerrar</button>
+        <h3>👥 <?php echo __('view_online'); ?></h3>
+        <div id="onlineContent">...</div>
+        <button type="button" style="background:#6c757d;margin-top:15px;" onclick="closeModal('onlineModal')"><?php echo __('close'); ?></button>
     </div>
 </div>
 
@@ -148,7 +145,7 @@ function closeModal(id){ document.getElementById(id).style.display = "none"; }
 
 function cargarOnline(){
     openModal('onlineModal');
-    document.getElementById('onlineContent').innerHTML = "Cargando...";
+    document.getElementById('onlineContent').innerHTML = "...";
     fetch('online.php')
         .then(res => res.text())
         .then(data => { document.getElementById('onlineContent').innerHTML = data; });
