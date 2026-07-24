@@ -5,7 +5,7 @@
 #   Ubuntu 22/24/25
 # ═══════════════════════════════════════════════════════
 
-SCRIPT_VERSION="1.4"
+SCRIPT_VERSION="1.5"
 R='\033[0;31m'
 G='\033[0;32m'
 Y='\033[1;33m'
@@ -2008,6 +2008,48 @@ admin_activo_api() {
 
     echo "0"
 }
+cambiar_creds_panel_web() {
+    banner; sep
+    echo -e "  ${Y}  CAMBIAR CREDENCIALES ADMIN DEL PANEL WEB${NC}"; sep; echo ""
+
+    if [ ! -f /var/www/html/db.php ]; then
+        echo -e "  ${R}❌ No se encontró la configuración de la base de datos (/var/www/html/db.php).${NC}"
+        sleep 2 && return
+    fi
+
+    # Mostrar credencial actual
+    ADM_CURRENT=$(mysql -D dealer_panel -e "SELECT username FROM users WHERE role='admin' LIMIT 1;" -B -N 2>/dev/null)
+    [ -n "$ADM_CURRENT" ] && echo -e "  ${W}Usuario Admin actual:${NC} ${Y}$ADM_CURRENT${NC}\n"
+
+    read -p "  Nuevo usuario Admin: " NEW_ADM_USER
+    if [ -z "$NEW_ADM_USER" ]; then
+        echo -e "  ${R}❌ El usuario no puede estar vacío.${NC}"
+        sleep 2 && return
+    fi
+
+    read -p "  Nueva contraseña Admin: " NEW_ADM_PASS
+    if [ -z "$NEW_ADM_PASS" ]; then
+        echo -e "  ${R}❌ La contraseña no puede estar vacía.${NC}"
+        sleep 2 && return
+    fi
+
+    echo -e "\n  ${C}Actualizando credenciales en la base de datos...${NC}"
+
+    # Ejecutar la actualización en MariaDB
+    mysql -D dealer_panel -e "UPDATE users SET username='$NEW_ADM_USER', password='$NEW_ADM_PASS' WHERE role='admin';" 2>/dev/null
+
+    if [ $? -eq 0 ]; then
+        echo ""; sep
+        echo -e "  ${G}✅ Credenciales actualizadas correctamente.${NC}"
+        echo -e "  ${W}👤 Usuario:${NC}    \033[1;33m$NEW_ADM_USER\033[0m"
+        echo -e "  ${W}🔑 Contraseña:${NC} \033[1;32m$NEW_ADM_PASS\033[0m"
+    else
+        echo -e "  ${R}❌ Error al actualizar la base de datos.${NC}"
+    fi
+
+    echo ""; sep
+    read -p "  Presiona ENTER para continuar..."
+}
 menu_zivpn() {
     if [ ! -f /etc/dealer-adm/scripts/zivpn_manager.sh ]; then
         echo -e "\n${R}Módulo ZIVPN no encontrado en el sistema.${NC}"
@@ -2467,7 +2509,7 @@ menu_panel_web() {
     while true; do
         banner; sep
         echo -e "  ${Y}    GESTIÓN DE PANEL WEB (PUERTO 81)${NC}"; sep; echo ""
-        
+
         # Estado rápido del panel
         if ss -tlnp 2>/dev/null | grep -q ":81 "; then
             echo -e "  Estado: ${NEON}◆ ONLINE (Puerto 81)${NC}"
@@ -2475,21 +2517,23 @@ menu_panel_web() {
             echo -e "  Estado: ${R}◇ OFFLINE / No instalado${NC}"
         fi
         echo ""; sep
-        
+
         echo -e "  ${W}[1]${NC} Instalar Panel Web"
         echo -e "  ${W}[2]${NC} Ver Estado"
-        echo -e "  ${W}[3]${NC} Actualizar Panel Web (GitHub)"
-        echo -e "  ${W}[4]${NC} Ver URL y Credenciales Admin"
-        echo -e "  ${R}[5]${NC} Desinstalar Panel Web"
+        echo -e "  ${W}[3]${NC} Actualizar Panel Web (desde GitHub)"
+        echo -e "  ${W}[4]${NC} Ver URL y Credenciales"
+        echo -e "  ${W}[5]${NC} Cambiar Usuario y Contraseña de panel"
+        echo -e "  ${R}[6]${NC} Desinstalar Panel Web"
         echo -e "  ${W}[0]${NC} Volver"; sep
-        
+
         read -p "  Opción: " OPT
         case $OPT in
             1) instalar_panel_web ;;
             2) estado_panel_web ;;
             3) actualizar_panel_web ;;
             4) credenciales_panel_web ;;
-            5) desinstalar_panel_web ;;
+            5) cambiar_creds_panel_web ;;
+            6) desinstalar_panel_web ;;
             0) break ;;
             *) echo -e "  ${R}Opción inválida${NC}"; sleep 1 ;;
         esac
