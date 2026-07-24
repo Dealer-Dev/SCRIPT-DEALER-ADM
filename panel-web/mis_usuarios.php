@@ -45,19 +45,14 @@ if os.path.exists(p):
     exit();
 }
 
-// 2. Definir tipo/filtro activo
-$type_filter = isset($_GET['type']) ? trim($_GET['type']) : 'all';
-$valid_types = ['ssh', 'token', 'hwid'];
-
-if (in_array($type_filter, $valid_types)) {
-    $stmt_list = $conn->prepare("SELECT * FROM ssh_accounts WHERE reseller=? AND type=? ORDER BY id DESC");
-    $stmt_list->bind_param("ss", $username, $type_filter);
-} else {
-    $type_filter = 'all';
-    $stmt_list = $conn->prepare("SELECT * FROM ssh_accounts WHERE reseller=? ORDER BY id DESC");
-    $stmt_list->bind_param("s", $username);
+// 2. Definir tipo/filtro activo (por defecto 'ssh')
+$type_filter = isset($_GET['type']) ? strtolower(trim($_GET['type'])) : 'ssh';
+if (!in_array($type_filter, ['ssh', 'token', 'hwid'])) {
+    $type_filter = 'ssh';
 }
 
+$stmt_list = $conn->prepare("SELECT * FROM ssh_accounts WHERE reseller=? AND type=? ORDER BY id DESC");
+$stmt_list->bind_param("ss", $username, $type_filter);
 $stmt_list->execute();
 $result = $stmt_list->get_result();
 ?>
@@ -79,11 +74,6 @@ body{font-family:'Segoe UI',sans-serif;background:#f4f6f9;margin:0;padding:20px;
 .tab-btn:hover{background:#cbd5e1;}
 .tab-btn.active{background:#0d6efd;color:#fff;}
 
-.badge-type{padding:4px 10px;border-radius:6px;font-size:11px;font-weight:700;color:#fff;display:inline-block;}
-.badge-ssh{background:#0d6efd;}
-.badge-token{background:#ffc107;color:#000;}
-.badge-hwid{background:#6f42c1;}
-
 table{width:100%;background:#fff;border-collapse:collapse;border-radius:12px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,0.05);}
 th{background:#0f172a;color:#fff;padding:12px;text-align:center;font-size:14px;}
 td{padding:12px;border-bottom:1px solid #eee;text-align:center;font-size:14px;}
@@ -99,45 +89,50 @@ td{padding:12px;border-bottom:1px solid #eee;text-align:center;font-size:14px;}
         <a href="reseller.php" style="text-decoration:none;color:#0d6efd;font-weight:600;"><?php echo __('back'); ?></a>
     </div>
 
-    <!-- Menú de Pestañas de Filtrado -->
+    <!-- Menú de Pestañas (Sin TODOS) -->
     <div class="tabs">
-        <a href="mis_usuarios.php?type=all" class="tab-btn <?php echo ($type_filter == 'all') ? 'active' : ''; ?>">🌐 Todos</a>
         <a href="mis_usuarios.php?type=ssh" class="tab-btn <?php echo ($type_filter == 'ssh') ? 'active' : ''; ?>">🔑 SSH Normal</a>
-        <a href="mis_usuarios.php?type=token" class="tab-btn <?php echo ($type_filter == 'type' || $type_filter == 'token') ? 'active' : ''; ?>">🎫 Token</a>
+        <a href="mis_usuarios.php?type=token" class="tab-btn <?php echo ($type_filter == 'token') ? 'active' : ''; ?>">🎫 Token</a>
         <a href="mis_usuarios.php?type=hwid" class="tab-btn <?php echo ($type_filter == 'hwid') ? 'active' : ''; ?>">📱 HWID</a>
     </div>
 
     <table>
         <thead>
             <tr>
-                <th><?php echo __('type'); ?></th>
-                <th><?php echo __('ref_name'); ?></th>
-                <th><?php echo __('user'); ?>/HWID/Token</th>
-                <th><?php echo __('expires'); ?></th>
-                <th><?php echo __('action'); ?></th>
+                <?php if($type_filter == 'ssh'): ?>
+                    <th>Usuario</th>
+                    <th>Contraseña</th>
+                <?php elseif($type_filter == 'token'): ?>
+                    <th>Nombre</th>
+                    <th>Token</th>
+                <?php elseif($type_filter == 'hwid'): ?>
+                    <th>Nombre</th>
+                    <th>HWID</th>
+                <?php endif; ?>
+                <th>Fecha de Expiración</th>
+                <th>Acción</th>
             </tr>
         </thead>
         <tbody>
             <?php if($result->num_rows == 0): ?>
                 <tr>
-                    <td colspan="5" class="empty-msg">No se encontraron usuarios registrados en esta categoría.</td>
+                    <td colspan="4" class="empty-msg">No se encontraron usuarios en esta categoría.</td>
                 </tr>
             <?php else: ?>
                 <?php while($row = $result->fetch_assoc()): ?>
-                <?php
-                    $t = strtolower($row['type']);
-                    $badge_class = "badge-ssh";
-                    if($t == 'token') $badge_class = "badge-token";
-                    if($t == 'hwid') $badge_class = "badge-hwid";
-                ?>
                 <tr>
-                    <td><span class="badge-type <?php echo $badge_class; ?>"><?php echo strtoupper($row['type']); ?></span></td>
-                    <td><b><?php echo htmlspecialchars($row['reference_name']); ?></b></td>
-                    <td><code><?php echo htmlspecialchars($row['username']); ?></code></td>
+                    <?php if($type_filter == 'ssh'): ?>
+                        <td><b><?php echo htmlspecialchars($row['username']); ?></b></td>
+                        <td><code><?php echo htmlspecialchars($row['password']); ?></code></td>
+                    <?php elseif($type_filter == 'token' || $type_filter == 'hwid'): ?>
+                        <td><b><?php echo htmlspecialchars($row['reference_name']); ?></b></td>
+                        <td><code><?php echo htmlspecialchars($row['username']); ?></code></td>
+                    <?php endif; ?>
+
                     <td><?php echo htmlspecialchars($row['expires']); ?></td>
                     <td>
-                        <a href="mis_usuarios.php?delete=<?php echo $row['id']; ?>&type=<?php echo urlencode($type_filter); ?>" onclick="return confirm('<?php echo __('delete_user_conf'); ?>')">
-                            <button class="btn-del"><?php echo __('delete'); ?></button>
+                        <a href="mis_usuarios.php?delete=<?php echo $row['id']; ?>&type=<?php echo urlencode($type_filter); ?>" onclick="return confirm('¿Eliminar usuario?')">
+                            <button class="btn-del">Eliminar</button>
                         </a>
                     </td>
                 </tr>
