@@ -120,7 +120,7 @@ body{margin:0;font-family:'Segoe UI',sans-serif;background:#f4f6f9;}
 select,input{width:100%;padding:12px;margin-top:12px;border-radius:10px;border:1px solid #ddd;}
 button,.btn-copy{width:100%;margin-top:12px;padding:12px;border:none;border-radius:10px;background:linear-gradient(135deg,#0d6efd,#6610f2);color:#fff;font-weight:600;cursor:pointer;}
 .btn-online{background:linear-gradient(135deg,#0dcaf0,#0d6efd);margin-top:12px;}
-.btn-tpass{background:linear-gradient(135deg,#eab308,#ca8a04);margin-top:10px;}
+.btn-tpass{background:linear-gradient(135deg,#eab308,#ca8a04);margin-top:10px;display:none;} /* OCULTO POR DEFECTO */
 .btn-copy{background:#198754;}
 .links{margin-top:20px;display:flex;justify-content:space-between;}
 .links a{text-decoration:none;font-weight:600;}
@@ -138,7 +138,6 @@ button,.btn-copy{width:100%;margin-top:12px;padding:12px;border:none;border-radi
     <div class="credit-badge"><?php echo __('available_credits'); ?>: <?php echo $reseller['credits']; ?></div>
 
     <button class="btn-online" onclick="cargarOnline()"><?php echo __('view_online'); ?></button>
-    <button class="btn-tpass" onclick="openModal('tokenPassModal')">🔑 Pass Token Global (Actual: <?php echo htmlspecialchars($token_pass_actual); ?>)</button>
 
     <h3 style="margin-top:25px;"><?php echo __('create_account'); ?></h3>
     <select id="tipo" onchange="cambiarTipo()">
@@ -146,6 +145,9 @@ button,.btn-copy{width:100%;margin-top:12px;padding:12px;border:none;border-radi
         <option value="token"><?php echo __('token_user'); ?></option>
         <option value="hwid"><?php echo __('hwid_user'); ?></option>
     </select>
+
+    <!-- BOTÓN DE CONTRASEÑA TOKEN GLOBAL (SOLO VISIBLE EN TOKEN) -->
+    <button id="btn_token_pass" class="btn-tpass" onclick="openModal('tokenPassModal')">🔑 Pass Token Global (Actual: <?php echo htmlspecialchars($token_pass_actual); ?>)</button>
 
     <form method="POST">
         <div id="form_ssh"><input name="ssh_user" placeholder="<?php echo __('user'); ?>"><input name="ssh_pass" placeholder="<?php echo __('pass'); ?>"></div>
@@ -189,10 +191,22 @@ button,.btn-copy{width:100%;margin-top:12px;padding:12px;border:none;border-radi
 function cambiarTipo(){
     let t = document.getElementById("tipo").value;
     document.getElementById("tipo_input").value = t;
+    
+    // Ocultar todos los formularios
     document.getElementById("form_ssh").style.display = "none";
     document.getElementById("form_token").style.display = "none";
     document.getElementById("form_hwid").style.display = "none";
+    
+    // Mostrar el formulario seleccionado
     document.getElementById("form_" + t).style.display = "block";
+
+    // MOSTRAR U OCULTAR EL BOTÓN SEGÚN EL TIPO SELECCIONADO
+    const btnTokenPass = document.getElementById("btn_token_pass");
+    if (t === "token") {
+        btnTokenPass.style.display = "block";
+    } else {
+        btnTokenPass.style.display = "none";
+    }
 }
 
 function openModal(id){ document.getElementById(id).style.display = "flex"; }
