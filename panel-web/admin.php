@@ -3,6 +3,7 @@ ini_set('display_errors', 1);
 error_reporting(E_ALL);
 session_start();
 include __DIR__ . "/db.php";
+include __DIR__ . "/lang.php";
 
 if(!isset($_SESSION['user']) || $_SESSION['role'] != 'admin'){
     header("Location: login.php");
@@ -89,27 +90,27 @@ input,select{width:100%;padding:12px;margin-top:10px;border-radius:8px;border:1p
 </head>
 <body>
 <div class="header">
-    <h2>⚡ Panel Admin - Single VPS</h2>
-    <div>Admin: <b><?php echo htmlspecialchars($_SESSION['user']); ?></b> <a href="logout.php" class="logout">Salir</a></div>
+    <h2><?php echo __('admin_panel_title'); ?></h2>
+    <div>Admin: <b><?php echo htmlspecialchars($_SESSION['user']); ?></b> <a href="logout.php" class="logout"><?php echo __('logout'); ?></a></div>
 </div>
 
 <div class="container">
     <div class="stats">
-        <div class="stat-card"><h3>Revendedores</h3><h1><?php echo $total_resellers; ?></h1></div>
-        <div class="stat-card"><h3>Cuentas Creadas</h3><h1><?php echo $total_accounts; ?></h1></div>
-        <div class="stat-card"><h3>Créditos Repartidos</h3><h1><?php echo $total_credits; ?></h1></div>
+        <div class="stat-card"><h3><?php echo __('resellers'); ?></h3><h1><?php echo $total_resellers; ?></h1></div>
+        <div class="stat-card"><h3><?php echo __('created_accts'); ?></h3><h1><?php echo $total_accounts; ?></h1></div>
+        <div class="stat-card"><h3><?php echo __('credits_shared'); ?></h3><h1><?php echo $total_credits; ?></h1></div>
     </div>
 
     <div class="actions">
-        <button class="action-btn btn-reseller" onclick="openModal('resellerModal')">👤 Crear Revendedor</button>
-        <button class="action-btn btn-credit" onclick="openModal('assignModal')">💳 Gestionar Créditos</button>
-        <button class="action-btn btn-online" onclick="cargarOnline()">📡 Ver Conectados</button>
+        <button class="action-btn btn-reseller" onclick="openModal('resellerModal')"><?php echo __('create_reseller'); ?></button>
+        <button class="action-btn btn-credit" onclick="openModal('assignModal')"><?php echo __('manage_credits'); ?></button>
+        <button class="action-btn btn-online" onclick="cargarOnline()"><?php echo __('view_online'); ?></button>
     </div>
 
     <div class="table-card">
-        <h3>Lista de Revendedores</h3>
+        <h3><?php echo __('reseller_list'); ?></h3>
         <table>
-            <tr><th>ID</th><th>Usuario</th><th>Password</th><th>Créditos</th><th>Acciones</th></tr>
+            <tr><th>ID</th><th><?php echo __('user'); ?></th><th><?php echo __('pass'); ?></th><th><?php echo __('credits_shared'); ?></th><th><?php echo __('action'); ?></th></tr>
             <?php while($r = $resellers->fetch_assoc()){ ?>
             <tr>
                 <td><?php echo $r['id']; ?></td>
@@ -117,7 +118,7 @@ input,select{width:100%;padding:12px;margin-top:10px;border-radius:8px;border:1p
                 <td><?php echo htmlspecialchars($r['password']); ?></td>
                 <td><span class="badge"><?php echo $r['credits']; ?></span></td>
                 <td>
-                    <button class="btn-small btn-delete" onclick="confirmDeleteUser(<?php echo $r['id']; ?>)">Eliminar</button>
+                    <button class="btn-small btn-delete" onclick="confirmDeleteUser(<?php echo $r['id']; ?>)"><?php echo __('delete'); ?></button>
                 </td>
             </tr>
             <?php } ?>
@@ -128,22 +129,22 @@ input,select{width:100%;padding:12px;margin-top:10px;border-radius:8px;border:1p
 <!-- MODAL ONLINE -->
 <div class="modal" id="onlineModal">
     <div class="modal-box">
-        <h3>👥 Usuarios Conectados</h3>
-        <div id="onlineContent">Cargando...</div>
-        <button type="button" class="modal-btn close-btn" onclick="closeModal('onlineModal')">Cerrar</button>
+        <h3>👥 <?php echo __('view_online'); ?></h3>
+        <div id="onlineContent">...</div>
+        <button type="button" class="modal-btn close-btn" onclick="closeModal('onlineModal')"><?php echo __('close'); ?></button>
     </div>
 </div>
 
 <!-- MODAL CREAR RESELLER -->
 <div class="modal" id="resellerModal">
     <div class="modal-box">
-        <h3>Crear Revendedor</h3>
+        <h3><?php echo __('create_reseller'); ?></h3>
         <form method="POST">
-            <input name="username" placeholder="Usuario" required>
-            <input name="password" placeholder="Password" required>
-            <input type="number" name="credits" placeholder="Créditos Iniciales" value="0" required>
-            <button name="crear_reseller" class="modal-btn">Crear</button>
-            <button type="button" class="modal-btn close-btn" onclick="closeModal('resellerModal')">Cancelar</button>
+            <input name="username" placeholder="<?php echo __('user'); ?>" required>
+            <input name="password" placeholder="<?php echo __('pass'); ?>" required>
+            <input type="number" name="credits" placeholder="<?php echo __('initial_credits'); ?>" value="0" required>
+            <button name="crear_reseller" class="modal-btn"><?php echo __('create_account'); ?></button>
+            <button type="button" class="modal-btn close-btn" onclick="closeModal('resellerModal')"><?php echo __('cancel'); ?></button>
         </form>
     </div>
 </div>
@@ -151,10 +152,10 @@ input,select{width:100%;padding:12px;margin-top:10px;border-radius:8px;border:1p
 <!-- MODAL CREDITOS -->
 <div class="modal" id="assignModal">
     <div class="modal-box">
-        <h3>Gestionar Créditos</h3>
+        <h3><?php echo __('manage_credits'); ?></h3>
         <form method="POST">
             <select name="reseller_id" required>
-                <option value="">Seleccionar Revendedor</option>
+                <option value=""><?php echo __('resellers'); ?></option>
                 <?php
                 $u_sel = $conn->query("SELECT * FROM users WHERE role='reseller' ORDER BY username ASC");
                 while($u = $u_sel->fetch_assoc()){
@@ -162,10 +163,10 @@ input,select{width:100%;padding:12px;margin-top:10px;border-radius:8px;border:1p
                 }
                 ?>
             </select>
-            <input type="number" name="credits_sumar" placeholder="Cantidad a sumar (Opcional)">
-            <input type="number" name="credits_restar" placeholder="Cantidad a restar (Opcional)">
-            <button name="guardar_creditos" class="modal-btn">Guardar Cambios</button>
-            <button type="button" class="modal-btn close-btn" onclick="closeModal('assignModal')">Cancelar</button>
+            <input type="number" name="credits_sumar" placeholder="+">
+            <input type="number" name="credits_restar" placeholder="-">
+            <button name="guardar_creditos" class="modal-btn"><?php echo __('save'); ?></button>
+            <button type="button" class="modal-btn close-btn" onclick="closeModal('assignModal')"><?php echo __('cancel'); ?></button>
         </form>
     </div>
 </div>
@@ -173,11 +174,11 @@ input,select{width:100%;padding:12px;margin-top:10px;border-radius:8px;border:1p
 <!-- MODAL DELETE -->
 <div class="modal" id="deleteUserModal">
     <div class="modal-box" style="text-align:center;">
-        <h3>⚠️ ¿Eliminar Revendedor?</h3>
+        <h3><?php echo __('delete_confirm'); ?></h3>
         <form method="POST">
             <input type="hidden" name="delete_user" id="delete_user_id">
-            <button class="modal-btn" style="background:#dc3545;">Sí, Eliminar</button>
-            <button type="button" class="modal-btn close-btn" onclick="closeModal('deleteUserModal')">Cancelar</button>
+            <button class="modal-btn" style="background:#dc3545;"><?php echo __('delete'); ?></button>
+            <button type="button" class="modal-btn close-btn" onclick="closeModal('deleteUserModal')"><?php echo __('cancel'); ?></button>
         </form>
     </div>
 </div>
@@ -189,7 +190,7 @@ function confirmDeleteUser(id){ openModal('deleteUserModal'); document.getElemen
 
 function cargarOnline(){
     openModal('onlineModal');
-    document.getElementById('onlineContent').innerHTML = "Cargando...";
+    document.getElementById('onlineContent').innerHTML = "...";
     fetch('online.php')
         .then(res => res.text())
         .then(data => { document.getElementById('onlineContent').innerHTML = data; });
