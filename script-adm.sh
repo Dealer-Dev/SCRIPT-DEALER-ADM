@@ -2337,7 +2337,182 @@ menu_usuarios() {
         esac
     done
 }
+# ══════════════════════════════════════════
+#   MÓDULO PANEL WEB (GESTIÓN Y MENÚ)
+# ══════════════════════════════════════════
 
+instalar_panel_web() {
+    banner; sep
+    echo -e "  ${Y}  INSTALACIÓN DEL PANEL WEB${NC}"; sep; echo ""
+    echo -e "  ${C}Descargando e ejecutando instalador desde GitHub...${NC}"
+    echo ""
+    
+    mkdir -p /tmp/panel_install
+    wget -q -O /tmp/panel_install/setup_panel.sh "https://raw.githubusercontent.com/Dealer-Dev/SCRIPT-DEALER-ADM/main/panel-web/setup_panel.sh"
+    
+    if [ -f /tmp/panel_install/setup_panel.sh ]; then
+        chmod +x /tmp/panel_install/setup_panel.sh
+        bash /tmp/panel_install/setup_panel.sh
+    else
+        echo -e "  ${R}❌ Error al descargar setup_panel.sh desde el repositorio.${NC}"
+    fi
+    
+    rm -rf /tmp/panel_install
+    echo ""; read -p "  Presiona ENTER para continuar..."
+}
+
+estado_panel_web() {
+    banner; sep
+    echo -e "  ${Y}  ESTADO DEL PANEL WEB${NC}"; sep; echo ""
+    
+    echo -ne "  ${W}Servidor Apache2:${NC}  "
+    status_service apache2
+    
+    echo -ne "  ${W}Base de Datos MariaDB:${NC} "
+    status_service mariadb
+    
+    echo -ne "  ${W}Puerto 81 (HTTP Web):${NC}  "
+    status_port 81
+    
+    echo ""; sep
+    if ss -tlnp 2>/dev/null | grep -q ":81 "; then
+        SERVER_IP=$(curl -s -4 ifconfig.me 2>/dev/null || hostname -I | awk '{print $1}')
+        echo -e "  ${G}✅ Panel Web en línea en:${NC} http://$SERVER_IP:81/login.php"
+    else
+        echo -e "  ${R}❌ El Panel Web parece no estar escuchando en el puerto 81.${NC}"
+    fi
+    echo ""; read -p "  Presiona ENTER para continuar..."
+}
+
+actualizar_panel_web() {
+    banner; sep
+    echo -e "  ${Y}  ACTUALIZAR PANEL WEB DESDE GITHUB${NC}"; sep; echo ""
+    
+    if [ ! -d "/var/www/html" ]; then
+        echo -e "  ${R}El directorio /var/www/html no existe. ¿Instalaste el panel web primero?${NC}"
+        sleep 2 && return
+    fi
+    
+    echo -e "  ${C}Descargando archivos más recientes de GitHub...${NC}"
+    echo ""
+    
+    REPO_URL="https://raw.githubusercontent.com/Dealer-Dev/SCRIPT-DEALER-ADM/main/panel-web"
+    FILES=("admin.php" "login.php" "reseller.php" "mis_usuarios.php" "load_vps.php" "online.php" "logout.php" "lang.php" "logo.png")
+    
+    for file in "${FILES[@]}"; do
+        wget -q -O "/var/www/html/$file" "$REPO_URL/$file"
+        if [ $? -eq 0 ]; then
+            echo -e "  ${G}✓ Actualizado:${NC} $file"
+        else
+            echo -e "  ${R}✗ Error al actualizar:${NC} $file"
+        fi
+    done
+    
+    chown -R www-data:www-data /var/www/html
+    chmod -R 755 /var/www/html
+    
+    echo ""; sep
+    echo -e "  ${G}✅ ¡Panel Web actualizado correctamente!${NC}"
+    echo -e "  ${Y}Tu base de datos y configuración (db.php) se mantuvieron intactas.${NC}"
+    echo ""; read -p "  Presiona ENTER para continuar..."
+}
+
+credenciales_panel_web() {
+    banner; sep
+    echo -e "  ${Y}  URL Y CREDENCIALES DEL PANEL WEB${NC}"; sep; echo ""
+    
+    if [ ! -f /var/www/html/db.php ]; then
+        echo -e "  ${R}❌ No se encontró la configuración de la base de datos (/var/www/html/db.php).${NC}"
+        sleep 2 && return
+    fi
+    
+    SERVER_IP=$(curl -s -4 ifconfig.me 2>/dev/null || hostname -I | awk '{print $1}')
+    
+    # Extraer credenciales directamente de MariaDB
+    ADMIN_DATA=$(mysql -D dealer_panel -e "SELECT username, password FROM users WHERE role='admin' LIMIT 1;" -B -N 2>/dev/null)
+    
+    if [ -n "$ADMIN_DATA" ]; then
+        ADM_USER=$(echo "$ADMIN_DATA" | awk '{print $1}')
+        ADM_PASS=$(echo "$ADMIN_DATA" | awk '{print $2}')
+        
+        echo -e "  ${W}🌐 URL de Acceso:${NC} http://$SERVER_IP:81/login.php"
+        echo -e "  ${W}👤 Usuario Admin:${NC} \033[1;33m$ADM_USER\033[0m"
+        echo -e "  ${W}🔑 Contraseña:   ${NC} \033[1;32m$ADM_PASS\033[0m"
+    else
+        echo -e "  ${W}🌐 URL de Acceso:${NC} http://$SERVER_IP:81/login.php"
+        echo -e "  ${R}⚠️ No se pudo consultar el usuario Admin en la base de datos.${NC}"
+    fi
+    
+    echo ""; sep
+    read -p "  Presiona ENTER para continuar..."
+}
+
+desinstalar_panel_web() {
+    banner; sep
+    echo -e "  ${R}  DESINSTALAR PANEL WEB${NC}"; sep; echo ""
+    echo -e "  ${Y}Esta acción eliminará:${NC}"
+    echo -e "  - Los archivos del sitio web en /var/www/html"
+    echo -e "  - La base de datos dealer_panel y su usuario"
+    echo -e "  - Permisos sudo de www-data"
+    echo ""
+    read -p "  ¿Estás seguro de desinstalar el Panel Web? (si/no): " CONFIRM
+    
+    if [ "$CONFIRM" != "si" ]; then
+        echo -e "  ${Y}Desinstalación cancelada.${NC}"
+        sleep 2 && return
+    fi
+    
+    echo -e "\n  ${C}Eliminando base de datos...${NC}"
+    mysql -e "DROP DATABASE IF EXISTS dealer_panel;" 2>/dev/null
+    mysql -e "DROP USER IF EXISTS 'dealer_db_user'@'localhost';" 2>/dev/null
+    mysql -e "FLUSH PRIVILEGES;" 2>/dev/null
+    
+    echo -e "  ${C}Eliminando archivos web...${NC}"
+    rm -rf /var/www/html/*
+    rm -f /etc/sudoers.d/panel_web
+    
+    echo -e "  ${C}Restaurando puerto 80 en Apache...${NC}"
+    sed -i 's/Listen 81/Listen 80/' /etc/apache2/ports.conf 2>/dev/null
+    sed -i 's/<VirtualHost \*:81>/<VirtualHost *:80>/' /etc/apache2/sites-available/000-default.conf 2>/dev/null
+    systemctl restart apache2 2>/dev/null
+    
+    echo ""; sep
+    echo -e "  ${G}✅ Panel Web desinstalado correctamente.${NC}"
+    echo ""; read -p "  Presiona ENTER para continuar..."
+}
+
+menu_panel_web() {
+    while true; do
+        banner; sep
+        echo -e "  ${Y}    GESTIÓN DE PANEL WEB (PUERTO 81)${NC}"; sep; echo ""
+        
+        # Estado rápido del panel
+        if ss -tlnp 2>/dev/null | grep -q ":81 "; then
+            echo -e "  Estado: ${NEON}◆ ONLINE (Puerto 81)${NC}"
+        else
+            echo -e "  Estado: ${R}◇ OFFLINE / No instalado${NC}"
+        fi
+        echo ""; sep
+        
+        echo -e "  ${W}[1]${NC} Instalar Panel Web"
+        echo -e "  ${W}[2]${NC} Ver Estado"
+        echo -e "  ${W}[3]${NC} Actualizar Panel Web (GitHub)"
+        echo -e "  ${W}[4]${NC} Ver URL y Credenciales Admin"
+        echo -e "  ${R}[5]${NC} Desinstalar Panel Web"
+        echo -e "  ${W}[0]${NC} Volver"; sep
+        
+        read -p "  Opción: " OPT
+        case $OPT in
+            1) instalar_panel_web ;;
+            2) estado_panel_web ;;
+            3) actualizar_panel_web ;;
+            4) credenciales_panel_web ;;
+            5) desinstalar_panel_web ;;
+            0) break ;;
+            *) echo -e "  ${R}Opción inválida${NC}"; sleep 1 ;;
+        esac
+    done
+}
 
 instalar_motd() {
     banner; sep
@@ -4555,7 +4730,7 @@ menu_principal() {
             4) menu_herramientas ;;
             5) usuarios_ssh_online_count ;;
             6) usuarios_v2ray_online_count ;;
-            7) instalar_panel_web ;;
+            7) menu_panel_web ;;                
             8) menu_telegram ;;
             9) instalar_motd ;;
             10) desinstalar_script ;;
