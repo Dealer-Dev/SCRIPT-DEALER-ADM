@@ -28,6 +28,42 @@ $total_resellers = $conn->query("SELECT COUNT(*) total FROM users WHERE role='re
 $total_accounts  = $conn->query("SELECT COUNT(*) total FROM ssh_accounts")->fetch_assoc()['total'];
 $total_credits   = $conn->query("SELECT SUM(credits) total FROM users WHERE role='reseller'")->fetch_assoc()['total'] ?? 0;
 
+// GUARDAR CONFIGURACIÓN Y CONTENIDO DE PAYLOADS
+if(isset($_POST['guardar_payloads'])){
+    $gcp_text = $_POST['payload_gcp'] ?? '';
+    $cf_text  = $_POST['payload_cf'] ?? '';
+    
+    // Switches (1 = visible, 0 = oculto)
+    $show_gcp = isset($_POST['show_gcp']) ? 1 : 0;
+    $show_cf  = isset($_POST['show_cf']) ? 1 : 0;
+
+    // Asegurar que el directorio exista
+    if (!file_exists('/etc/dealer-adm')) {
+        exec("sudo mkdir -p /etc/dealer-adm && sudo chmod 777 /etc/dealer-adm");
+    }
+
+    // 1. Guardar archivos de texto
+    file_put_contents('/etc/dealer-adm/payload_gcp.txt', $gcp_text);
+    file_put_contents('/etc/dealer-adm/payload_cloudfront.txt', $cf_text);
+
+    // 2. Guardar visibilidad en JSON
+    $settings = [
+        'show_gcp' => $show_gcp,
+        'show_cf'  => $show_cf
+    ];
+    file_put_contents('/etc/dealer-adm/payload_settings.json', json_encode($settings));
+
+    header("Location: admin.php?payload_ok=1");
+    exit();
+}
+
+// CARGAR VALORES ACTUALES DE PAYLOADS
+$payload_gcp = file_exists('/etc/dealer-adm/payload_gcp.txt') ? file_get_contents('/etc/dealer-adm/payload_gcp.txt') : '';
+$payload_cf  = file_exists('/etc/dealer-adm/payload_cloudfront.txt') ? file_get_contents('/etc/dealer-adm/payload_cloudfront.txt') : '';
+
+$settings_file = '/etc/dealer-adm/payload_settings.json';
+$payload_settings = file_exists($settings_file) ? json_decode(file_get_contents($settings_file), true) : ['show_gcp' => 1, 'show_cf' => 1];
+
 // GUARDAR CRÉDITOS A RESELLER
 if(isset($_POST['guardar_creditos'])){
     $reseller_id = intval($_POST['reseller_id']);
@@ -214,6 +250,7 @@ body{margin:0;font-family:'Segoe UI',sans-serif;background:#f4f7fb;}
 .btn-reseller{background:linear-gradient(135deg,#6610f2,#d63384);}
 .btn-create{background:linear-gradient(135deg,#0284c7,#0369a1);}
 .btn-credit{background:linear-gradient(135deg,#16a34a,#22c55e);}
+.btn-payload{background:linear-gradient(135deg,#eab308,#ca8a04);}
 .btn-online{background:linear-gradient(135deg,#0dcaf0,#0d6efd);}
 .table-card{background:#fff;margin-top:25px;padding:20px;border-radius:16px;box-shadow:0 4px 20px rgba(0,0,0,0.05);}
 table{width:100%;border-collapse:collapse;margin-top:15px;}
@@ -251,11 +288,12 @@ td{padding:12px;text-align:center;border-bottom:1px solid #eee;font-size:14px;}
 
 .modal{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);display:none;justify-content:center;align-items:center;z-index:999;}
 .modal-box{background:#fff;width:90%;max-width:500px;padding:25px;border-radius:16px;max-height:80vh;overflow-y:auto;}
-input,select{width:100%;padding:12px;margin-top:10px;border-radius:8px;border:1px solid #ddd;}
+input,select,textarea{width:100%;padding:12px;margin-top:10px;border-radius:8px;border:1px solid #ddd;}
 label{font-weight:600;display:block;margin-top:12px;font-size:14px;color:#333;}
 .modal-btn{width:100%;margin-top:15px;padding:12px;border:none;border-radius:8px;color:#fff;font-weight:600;cursor:pointer;background:#0d6efd;}
 .close-btn{background:#6b7280;}
 .alert-error{background:#f8d7da;color:#721c24;padding:12px;border-radius:8px;margin-bottom:15px;}
+.switch-container{display:flex;align-items:center;gap:10px;margin-top:10px;background:#f8fafc;padding:10px;border-radius:8px;border:1px solid #e2e8f0;}
 </style>
 </head>
 <body>
@@ -277,6 +315,7 @@ label{font-weight:600;display:block;margin-top:12px;font-size:14px;color:#333;}
         <button class="action-btn btn-reseller" onclick="openModal('resellerModal')"><?php echo __('create_reseller'); ?></button>
         <button class="action-btn btn-create" onclick="openModal('createAccountModal')">➕ Crear Cuenta</button>
         <button class="action-btn btn-credit" onclick="openModal('assignModal')"><?php echo __('manage_credits'); ?></button>
+        <button class="action-btn btn-payload" onclick="openModal('payloadsModal')">⚙️ Configurar Payloads</button>
         <button class="action-btn btn-online" onclick="cargarOnline()"><?php echo __('view_online'); ?></button>
     </div>
 
@@ -382,6 +421,36 @@ label{font-weight:600;display:block;margin-top:12px;font-size:14px;color:#333;}
             </tr>
             <?php } ?>
         </table>
+    </div>
+</div>
+
+<!-- MODAL CONFIGURACIÓN DE PAYLOADS -->
+<div class="modal" id="payloadsModal">
+    <div class="modal-box">
+        <h3>⚙️ Configuración de Payloads</h3>
+        <form method="POST">
+            
+            <!-- PAYLOAD GCP -->
+            <label>Payload GCP:</label>
+            <textarea name="payload_gcp" rows="3" placeholder="Ingresa el Payload GCP aquí..."><?php echo htmlspecialchars($payload_gcp); ?></textarea>
+            <div class="switch-container">
+                <input type="checkbox" name="show_gcp" id="show_gcp" value="1" style="width:auto; margin:0; cursor:pointer;" <?php echo ($payload_settings['show_gcp'] ?? 1) ? 'checked' : ''; ?>>
+                <label for="show_gcp" style="margin:0; cursor:pointer;">Mostrar Payload GCP a Revendedores</label>
+            </div>
+
+            <hr style="margin:15px 0; border:0; border-top:1px solid #eee;">
+
+            <!-- PAYLOAD CLOUDFRONT -->
+            <label>Payload CloudFront:</label>
+            <textarea name="payload_cf" rows="3" placeholder="Ingresa el Payload CloudFront aquí..."><?php echo htmlspecialchars($payload_cf); ?></textarea>
+            <div class="switch-container">
+                <input type="checkbox" name="show_cf" id="show_cf" value="1" style="width:auto; margin:0; cursor:pointer;" <?php echo ($payload_settings['show_cf'] ?? 1) ? 'checked' : ''; ?>>
+                <label for="show_cf" style="margin:0; cursor:pointer;">Mostrar Payload CloudFront a Revendedores</label>
+            </div>
+
+            <button name="guardar_payloads" class="modal-btn" style="margin-top:20px;">Guardar Payloads</button>
+            <button type="button" class="modal-btn close-btn" onclick="closeModal('payloadsModal')"><?php echo __('cancel'); ?></button>
+        </form>
     </div>
 </div>
 
