@@ -5,7 +5,7 @@
 #   Ubuntu 22/24/25
 # ═══════════════════════════════════════════════════════
 
-SCRIPT_VERSION="1.2"
+SCRIPT_VERSION="1.3"
 R='\033[0;31m'
 G='\033[0;32m'
 Y='\033[1;33m'
@@ -2472,18 +2472,18 @@ cambiar_creds_panel_web() {
         sleep 2 && return
     fi
 
-    # Extraer el usuario admin actual usando PHP directo con $argv
-    ADM_CURRENT=$(php -r '
-        include "/var/www/html/db.php";
-        $res = $conn->query("SELECT username FROM users WHERE role=\"admin\" LIMIT 1");
-        if ($res && $row = $res->fetch_assoc()) {
-            echo $row["username"];
-        }
-    ' 2>/dev/null)
-
-    if [ -n "$ADM_CURRENT" ]; then
-        echo -e "  ${W}Usuario Admin actual:${NC} ${Y}$ADM_CURRENT${NC}\n"
+    # 1. Obtener usuario admin actual desde MariaDB
+    ADM_CURRENT=$(mysql -D dealer_panel -e "SELECT username FROM users WHERE role='admin' LIMIT 1;" -B -N 2>/dev/null)
+    
+    if [ -z "$ADM_CURRENT" ]; then
+        ADM_CURRENT=$(php -r '
+            include "/var/www/html/db.php";
+            $res = $conn->query("SELECT username FROM users WHERE role=\"admin\" LIMIT 1");
+            if ($res && $r = $res->fetch_assoc()) echo $r["username"];
+        ' 2>/dev/null)
     fi
+
+    [ -n "$ADM_CURRENT" ] && echo -e "  ${W}Usuario Admin actual:${NC} ${Y}$ADM_CURRENT${NC}\n"
 
     read -p "  Nuevo usuario Admin: " NEW_ADM_USER
     if [ -z "$NEW_ADM_USER" ]; then
@@ -2499,21 +2499,32 @@ cambiar_creds_panel_web() {
 
     echo -e "\n  ${C}Actualizando credenciales en la base de datos...${NC}"
 
-    # Uso limpio de $argv[1] y $argv[2] para evitar errores de comillas en Bash
-    RESULT=$(php -r '
-        include "/var/www/html/db.php";
-        $u = $conn->real_escape_string($argv[1]);
-        $p = $conn->real_escape_string($argv[2]);
-        
-        $sql = "UPDATE users SET username=\"$u\", password=\"$p\" WHERE role=\"admin\"";
-        if ($conn->query($sql)) {
-            echo "OK";
-        } else {
-            echo "ERROR: " . $conn->error;
-        }
-    ' "$NEW_ADM_USER" "$NEW_ADM_PASS" 2>/dev/null)
+    # 2. Intentar actualizar directamente mediante cliente MySQL local
+    DB_ERR=$(mysql -D dealer_panel -e "UPDATE users SET username='$NEW_ADM_USER', password='$NEW_ADM_PASS' WHERE role='admin';" 2>&1)
+    EXIT_CODE=$?
 
-    if [ "$RESULT" = "OK" ]; then
+    # 3. Si falla por permisos de socket, intentar usando credenciales de db.php vía PHP
+    if [ $EXIT_CODE -ne 0 ]; then
+        PHP_RES=$(php -r '
+            include "/var/www/html/db.php";
+            $u = $conn->real_escape_string($argv[1]);
+            $p = $conn->real_escape_string($argv[2]);
+            if ($conn->query("UPDATE users SET username=\"$u\", password=\"$p\" WHERE role=\"admin\"")) {
+                echo "OK";
+            } else {
+                echo "ERR:" . $conn->error;
+            }
+        ' "$NEW_ADM_USER" "$NEW_ADM_PASS" 2>&1)
+
+        if [ "$PHP_RES" = "OK" ]; then
+            EXIT_CODE=0
+        else
+            DB_ERR="$PHP_RES"
+        fi
+    fi
+
+    # 4. Resultado y diagnóstico
+    if [ $EXIT_CODE -eq 0 ]; then
         echo ""; sep
         echo -e "  ${G}✅ Credenciales actualizadas correctamente.${NC}"
         echo -e "  ${W}👤 Usuario:${NC}    \033[1;33m$NEW_ADM_USER\033[0m"
@@ -2521,7 +2532,7 @@ cambiar_creds_panel_web() {
     else
         echo ""; sep
         echo -e "  ${R}❌ Error al actualizar la base de datos.${NC}"
-        [ -n "$RESULT" ] && echo -e "  ${Y}Detalle: $RESULT${NC}"
+        echo -e "  ${Y}Detalle del error:${NC} $DB_ERR"
     fi
 
     echo ""; sep
