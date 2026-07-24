@@ -211,7 +211,7 @@ td{padding:12px;border-bottom:1px solid #eee;text-align:center;font-size:14px;}
 <!-- Modal para Editar Contraseña (Solo SSH) -->
 <div id="editModal" class="modal">
     <div class="modal-content">
-        <h3>✏️ Modificar Contraseña SSH</h3>
+        <h3><?php echo __('edit_ssh_pass'); ?></h3>
         <form method="POST" action="mis_usuarios.php?type=ssh">
             <input type="hidden" name="action_type" value="update_pass">
             <input type="hidden" name="user_id" id="modal_user_id">
