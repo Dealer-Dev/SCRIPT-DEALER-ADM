@@ -5,7 +5,7 @@
 #   Ubuntu 22/24/25
 # ═══════════════════════════════════════════════════════
 
-SCRIPT_VERSION="1.3"
+SCRIPT_VERSION="1.1"
 R='\033[0;31m'
 G='\033[0;32m'
 Y='\033[1;33m'
@@ -2472,16 +2472,13 @@ cambiar_creds_panel_web() {
         sleep 2 && return
     fi
 
-    # 1. Obtener usuario admin actual desde MariaDB
-    ADM_CURRENT=$(mysql -D dealer_panel -e "SELECT username FROM users WHERE role='admin' LIMIT 1;" -B -N 2>/dev/null)
-    
-    if [ -z "$ADM_CURRENT" ]; then
-        ADM_CURRENT=$(php -r '
-            include "/var/www/html/db.php";
-            $res = $conn->query("SELECT username FROM users WHERE role=\"admin\" LIMIT 1");
-            if ($res && $r = $res->fetch_assoc()) echo $r["username"];
-        ' 2>/dev/null)
-    fi
+    # Obtener usuario admin actual
+    ADM_CURRENT=$(php -r '
+        mysqli_report(MYSQLI_REPORT_OFF);
+        include "/var/www/html/db.php";
+        $res = $conn->query("SELECT username FROM users WHERE role=\"admin\" LIMIT 1");
+        if ($res && $r = $res->fetch_assoc()) echo $r["username"];
+    ' 2>/dev/null)
 
     [ -n "$ADM_CURRENT" ] && echo -e "  ${W}Usuario Admin actual:${NC} ${Y}$ADM_CURRENT${NC}\n"
 
@@ -2499,40 +2496,41 @@ cambiar_creds_panel_web() {
 
     echo -e "\n  ${C}Actualizando credenciales en la base de datos...${NC}"
 
-    # 2. Intentar actualizar directamente mediante cliente MySQL local
-    DB_ERR=$(mysql -D dealer_panel -e "UPDATE users SET username='$NEW_ADM_USER', password='$NEW_ADM_PASS' WHERE role='admin';" 2>&1)
-    EXIT_CODE=$?
+    # Ejecutar la actualización en PHP
+    RESULT=$(php -r '
+        mysqli_report(MYSQLI_REPORT_OFF);
+        include "/var/www/html/db.php";
+        $u = $conn->real_escape_string($argv[1]);
+        $p = $conn->real_escape_string($argv[2]);
 
-    # 3. Si falla por permisos de socket, intentar usando credenciales de db.php vía PHP
-    if [ $EXIT_CODE -ne 0 ]; then
-        PHP_RES=$(php -r '
-            include "/var/www/html/db.php";
-            $u = $conn->real_escape_string($argv[1]);
-            $p = $conn->real_escape_string($argv[2]);
-            if ($conn->query("UPDATE users SET username=\"$u\", password=\"$p\" WHERE role=\"admin\"")) {
-                echo "OK";
-            } else {
-                echo "ERR:" . $conn->error;
-            }
-        ' "$NEW_ADM_USER" "$NEW_ADM_PASS" 2>&1)
+        // 1. Comprobar si el nombre de usuario ya está ocupado por un reseller
+        $check = $conn->query("SELECT id FROM users WHERE username=\"$u\" AND role!=\"admin\"");
+        if ($check && $check->num_rows > 0) {
+            echo "EXISTS";
+            exit();
+        }
 
-        if [ "$PHP_RES" = "OK" ]; then
-            EXIT_CODE=0
-        else
-            DB_ERR="$PHP_RES"
-        fi
-    fi
+        // 2. Intentar actualizar el Admin
+        if ($conn->query("UPDATE users SET username=\"$u\", password=\"$p\" WHERE role=\"admin\"")) {
+            echo "OK";
+        } else {
+            echo "ERR: " . $conn->error;
+        }
+    ' "$NEW_ADM_USER" "$NEW_ADM_PASS" 2>/dev/null)
 
-    # 4. Resultado y diagnóstico
-    if [ $EXIT_CODE -eq 0 ]; then
+    if [ "$RESULT" = "OK" ]; then
         echo ""; sep
         echo -e "  ${G}✅ Credenciales actualizadas correctamente.${NC}"
         echo -e "  ${W}👤 Usuario:${NC}    \033[1;33m$NEW_ADM_USER\033[0m"
         echo -e "  ${W}🔑 Contraseña:${NC} \033[1;32m$NEW_ADM_PASS\033[0m"
+    elif [ "$RESULT" = "EXISTS" ]; then
+        echo ""; sep
+        echo -e "  ${R}❌ El usuario '$NEW_ADM_USER' ya existe como Revendedor.${NC}"
+        echo -e "  ${Y}Por favor intenta con otro nombre (ej: dealer_admin, admin_vps, etc).${NC}"
     else
         echo ""; sep
         echo -e "  ${R}❌ Error al actualizar la base de datos.${NC}"
-        echo -e "  ${Y}Detalle del error:${NC} $DB_ERR"
+        [ -n "$RESULT" ] && echo -e "  ${Y}Detalle: $RESULT${NC}"
     fi
 
     echo ""; sep
