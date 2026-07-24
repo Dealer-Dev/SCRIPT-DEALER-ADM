@@ -12,6 +12,28 @@ if(!isset($_SESSION['user']) || $_SESSION['role'] != 'admin'){
 
 $admin_user = $_SESSION['user'];
 
+// Archivo de contraseña Token personalizada del Admin
+$admin_token_pass_file = "/etc/dealer-adm/resellers/token_pass_" . $admin_user . ".txt";
+
+// GUARDAR CONTRASEÑA TOKEN GLOBAL DEL ADMIN
+if(isset($_POST['guardar_token_pass_admin'])){
+    $new_t_pass = trim($_POST['custom_token_pass']);
+    if (!file_exists('/etc/dealer-adm/resellers')) {
+        exec("sudo mkdir -p /etc/dealer-adm/resellers && sudo chmod 777 /etc/dealer-adm/resellers");
+    }
+    if(!empty($new_t_pass)){
+        file_put_contents($admin_token_pass_file, $new_t_pass);
+    } else {
+        file_put_contents($admin_token_pass_file, "dealer");
+    }
+    header("Location: admin.php?token_pass_ok=1");
+    exit();
+}
+
+// Obtener la contraseña token actual del Admin (por defecto 'dealer')
+$token_pass_admin_actual = file_exists($admin_token_pass_file) ? trim(file_get_contents($admin_token_pass_file)) : "dealer";
+if(empty($token_pass_admin_actual)) { $token_pass_admin_actual = "dealer"; }
+
 // Función auxiliar para leer el límite desde el archivo en /etc/dealer-adm/userDIR/
 function obtenerLimiteUsuario($usuario) {
     $file_path = "/etc/dealer-adm/userDIR/" . $usuario;
@@ -66,7 +88,7 @@ if(isset($_POST['guardar_payloads_text'])){
 $payload_gcp = file_exists('/etc/dealer-adm/payload_gcp.txt') ? file_get_contents('/etc/dealer-adm/payload_gcp.txt') : '';
 $payload_cf  = file_exists('/etc/dealer-adm/payload_cloudfront.txt') ? file_get_contents('/etc/dealer-adm/payload_cloudfront.txt') : '';
 
-// GUARDAR CRÉDITOS A RESELLER (CORREGIDO)
+// GUARDAR CRÉDITOS A RESELLER
 if(isset($_POST['guardar_creditos'])){
     $reseller_id = intval($_POST['reseller_id']);
     $sumar  = isset($_POST['credits_sumar']) && $_POST['credits_sumar'] !== '' ? intval($_POST['credits_sumar']) : 0;
@@ -79,7 +101,6 @@ if(isset($_POST['guardar_creditos'])){
         $conn->query("UPDATE users SET credits = GREATEST(credits - $restar, 0) WHERE id='$reseller_id'");
     }
 
-    // Obtener los datos actualizados del revendedor
     $stmt_info = $conn->prepare("SELECT username, credits FROM users WHERE id=?");
     $stmt_info->bind_param("i", $reseller_id);
     $stmt_info->execute();
@@ -133,9 +154,14 @@ if(isset($_POST['crear_cuenta'])){
     $pass = isset($_POST['password']) ? trim($_POST['password']) : '';
     $dias = intval($_POST['exp_days']);
     
-    if($tipo === 'token' || $tipo === 'hwid'){
+    if($tipo === 'token'){
         $limite = 1;
         $ref = $ref_name;
+        $pass = $token_pass_admin_actual; // Se asigna la pass token global del admin
+    } elseif($tipo === 'hwid'){
+        $limite = 1;
+        $ref = $ref_name;
+        $pass = $user;
     } else {
         $limite = intval($_POST['ssh_limit']);
         $ref = $user;
@@ -149,10 +175,9 @@ if(isset($_POST['crear_cuenta'])){
     } else {
         $expira_date = date('Y-m-d', strtotime("+$dias days"));
 
-        if($tipo === 'ssh'){
-            $cmd = "sudo useradd -M -s /bin/false -e $expira_date $user && echo '$user:$pass' | sudo chpasswd && sudo chage -E $expira_date -M 99999 $user && sudo usermod -f 0 $user";
-            exec($cmd);
-        }
+        // Crear usuario real en Linux
+        $cmd = "sudo useradd -M -s /bin/false -e $expira_date $user && echo '$user:$pass' | sudo chpasswd && sudo chage -E $expira_date -M 99999 $user && sudo usermod -f 0 $user";
+        exec($cmd);
 
         $file_content = "tipo: $tipo\nnombre: $ref\nusuario: $user\npassword: $pass\nfecha: $expira_date\nlimite: $limite\ncreador_id: 0\ncreador_nombre: $owner";
         $tmp_file = tempnam(sys_get_temp_dir(), 'usr_');
@@ -285,6 +310,7 @@ body{margin:0;font-family:'Segoe UI',sans-serif;background:#f4f7fb;}
 .btn-create{background:linear-gradient(135deg,#0284c7,#0369a1);}
 .btn-payload{background:linear-gradient(135deg,#eab308,#ca8a04);}
 .btn-online{background:linear-gradient(135deg,#0dcaf0,#0d6efd);}
+.btn-tpass{background:linear-gradient(135deg,#eab308,#ca8a04); margin-top:10px; display:none;}
 .table-card{background:#fff;margin-top:25px;padding:20px;border-radius:16px;box-shadow:0 4px 20px rgba(0,0,0,0.05);}
 table{width:100%;border-collapse:collapse;margin-top:15px;}
 th{background:#0f172a;color:#fff;padding:12px;text-align:center;font-size:14px;}
@@ -413,7 +439,7 @@ label{font-weight:600;display:block;margin-top:12px;font-size:14px;color:#333;}
         </table>
     </div>
 
-    <!-- LISTA DE RESELLERS CON BOTÓN DE CRÉDITOS EN ACCIÓN -->
+    <!-- LISTA DE RESELLERS -->
     <div class="table-card">
         <h3><?php echo __('reseller_list'); ?></h3>
         <table>
@@ -562,17 +588,20 @@ label{font-weight:600;display:block;margin-top:12px;font-size:14px;color:#333;}
     </div>
 </div>
 
-<!-- MODAL CREAR CUENTA -->
+<!-- MODAL CREAR CUENTA (ADMIN) -->
 <div class="modal" id="createAccountModal">
     <div class="modal-box">
         <h3>➕ Crear Cuenta</h3>
         <form method="POST">
             <label>Tipo de usuario:</label>
-            <select name="account_type" id="account_type_select" onchange="actualizarCamposTipo(this.value)" required>
+            <select name="account_type" id="account_type_select" onchange="actualizarCamposTipoAdmin(this.value)" required>
                 <option value="ssh">Usuario SSH Normal</option>
                 <option value="token">Token</option>
                 <option value="hwid">HWID</option>
             </select>
+
+            <!-- BOTÓN DE PASS TOKEN GLOBAL PARA ADMIN (SOLO VISIBLE SI ES TOKEN) -->
+            <button type="button" id="btn_token_pass_admin" class="btn-tpass" onclick="openModal('tokenPassAdminModal')">Contraseña Token (Actual: <?php echo htmlspecialchars($token_pass_admin_actual); ?>)</button>
 
             <div id="wrapper_ref_name" style="display:none;">
                 <label>Nombre del Cliente (Referencia):</label>
@@ -597,6 +626,21 @@ label{font-weight:600;display:block;margin-top:12px;font-size:14px;color:#333;}
 
             <button name="crear_cuenta" class="modal-btn">Guardar Cuenta</button>
             <button type="button" class="modal-btn close-btn" onclick="closeModal('createAccountModal')"><?php echo __('cancel'); ?></button>
+        </form>
+    </div>
+</div>
+
+<!-- MODAL CONFIGURAR PASS TOKEN GLOBAL (ADMIN) -->
+<div class="modal" id="tokenPassAdminModal">
+    <div class="modal-box">
+        <h3>Contraseña Token (Admin)</h3>
+        <form method="POST">
+            <p style="font-size:13px; color:#666;">Define la contraseña por defecto para todas las cuentas Token que crees como Administrador.</p>
+            <label style="font-weight:600; font-size:14px;">Nueva Contraseña Token:</label>
+            <input name="custom_token_pass" value="<?php echo htmlspecialchars($token_pass_admin_actual); ?>" placeholder="dealer" required>
+            
+            <button name="guardar_token_pass_admin" class="modal-btn" style="background:#198754; margin-top:15px;">Guardar Contraseña</button>
+            <button type="button" class="modal-btn close-btn" onclick="closeModal('tokenPassAdminModal')">Cancelar</button>
         </form>
     </div>
 </div>
@@ -642,7 +686,7 @@ function abrirEditarPermisos(resellerUser, showGcp, showCf){
     openModal('editPermisosModal');
 }
 
-function actualizarCamposTipo(tipo){
+function actualizarCamposTipoAdmin(tipo){
     const wrapperRefName = document.getElementById('wrapper_ref_name');
     const inputRefName = document.getElementById('input_ref_name');
     const lblUser = document.getElementById('lbl_username');
@@ -651,6 +695,7 @@ function actualizarCamposTipo(tipo){
     const inputPass = document.getElementById('input_password');
     const wrapperLimit = document.getElementById('wrapper_limit');
     const inputLimit = document.getElementById('input_ssh_limit');
+    const btnTokenPass = document.getElementById('btn_token_pass_admin');
 
     if(tipo === 'ssh'){
         wrapperRefName.style.display = 'none';
@@ -664,6 +709,8 @@ function actualizarCamposTipo(tipo){
         
         wrapperLimit.style.display = 'block';
         inputLimit.required = true;
+
+        btnTokenPass.style.display = 'none';
     } else if(tipo === 'token') {
         wrapperRefName.style.display = 'block';
         inputRefName.required = true;
@@ -677,6 +724,8 @@ function actualizarCamposTipo(tipo){
         wrapperLimit.style.display = 'none';
         inputLimit.required = false;
         inputLimit.value = 1;
+
+        btnTokenPass.style.display = 'block'; // Se muestra solo en tipo Token
     } else if(tipo === 'hwid') {
         wrapperRefName.style.display = 'block';
         inputRefName.required = true;
@@ -690,6 +739,8 @@ function actualizarCamposTipo(tipo){
         wrapperLimit.style.display = 'none';
         inputLimit.required = false;
         inputLimit.value = 1;
+
+        btnTokenPass.style.display = 'none';
     }
 }
 
