@@ -350,8 +350,8 @@ label{font-weight:600;display:block;margin-top:12px;font-size:14px;color:#333;}
             <thead>
                 <tr>
                     <th>Tipo</th>
-                    <th>Usuario</th>
-                    <th>Contraseña/Token/Hwid</th>
+                    <th>Nombre</th>
+                    <th>Contraseña/Token/HWID</th>
                     <th>Creador</th>
                     <th>Límite</th>
                     <th>Expiración</th>
@@ -366,11 +366,23 @@ label{font-weight:600;display:block;margin-top:12px;font-size:14px;color:#333;}
                     <?php 
                         $is_exp = ($acc['expires'] <= $today);
                         $limite_cnt = obtenerLimiteUsuario($acc['username']);
+                        $acc_type = strtolower($acc['type']);
+
+                        // Lógica para alternar datos según el tipo de usuario
+                        if ($acc_type === 'token' || $acc_type === 'hwid') {
+                            // Nombre de referencia en la 2da columna, Token/HWID en la 3ra columna
+                            $col_nombre = !empty($acc['reference_name']) ? $acc['reference_name'] : $acc['username'];
+                            $col_valor  = $acc['username'];
+                        } else {
+                            // Usuario SSH en la 2da columna, Contraseña en la 3ra columna
+                            $col_nombre = $acc['username'];
+                            $col_valor  = $acc['password'];
+                        }
                     ?>
                     <tr>
                         <td><span class="badge-type"><?php echo htmlspecialchars($acc['type']); ?></span></td>
-                        <td><b><?php echo htmlspecialchars($acc['username']); ?></b></td>
-                        <td><code><?php echo htmlspecialchars($acc['password']); ?></code></td>
+                        <td><b><?php echo htmlspecialchars($col_nombre); ?></b></td>
+                        <td><code><?php echo htmlspecialchars($col_valor); ?></code></td>
                         <td><span class="badge"><?php echo htmlspecialchars($acc['reseller']); ?></span></td>
                         <td><b><?php echo htmlspecialchars($limite_cnt); ?></b></td>
                         <td>
