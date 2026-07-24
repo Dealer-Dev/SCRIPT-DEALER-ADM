@@ -2017,8 +2017,18 @@ cambiar_creds_panel_web() {
         sleep 2 && return
     fi
 
-    # Mostrar credencial actual
-    ADM_CURRENT=$(mysql -D dealer_panel -e "SELECT username FROM users WHERE role='admin' LIMIT 1;" -B -N 2>/dev/null)
+    # Extraer usuario y contraseña de la BD desde db.php
+    DB_U=$(grep '\$user' /var/www/html/db.php | cut -d'"' -f2)
+    DB_P=$(grep '\$pass' /var/www/html/db.php | cut -d'"' -f2)
+    DB_N=$(grep '\$db' /var/www/html/db.php | cut -d'"' -f2)
+
+    # Mostrar usuario admin actual
+    ADM_CURRENT=$(mysql -u"$DB_U" -p"$DB_P" "$DB_N" -e "SELECT username FROM users WHERE role='admin' LIMIT 1;" -B -N 2>/dev/null)
+    if [ -z "$ADM_CURRENT" ]; then
+        # Intentar conectar con usuario root de MariaDB si falla con dealer_db_user
+        ADM_CURRENT=$(mysql "$DB_N" -e "SELECT username FROM users WHERE role='admin' LIMIT 1;" -B -N 2>/dev/null)
+    fi
+
     [ -n "$ADM_CURRENT" ] && echo -e "  ${W}Usuario Admin actual:${NC} ${Y}$ADM_CURRENT${NC}\n"
 
     read -p "  Nuevo usuario Admin: " NEW_ADM_USER
@@ -2035,8 +2045,13 @@ cambiar_creds_panel_web() {
 
     echo -e "\n  ${C}Actualizando credenciales en la base de datos...${NC}"
 
-    # Ejecutar la actualización en MariaDB
-    mysql -D dealer_panel -e "UPDATE users SET username='$NEW_ADM_USER', password='$NEW_ADM_PASS' WHERE role='admin';" 2>/dev/null
+    # Ejecutar la actualización pasando credenciales de la BD
+    mysql -u"$DB_U" -p"$DB_P" "$DB_N" -e "UPDATE users SET username='$NEW_ADM_USER', password='$NEW_ADM_PASS' WHERE role='admin';" 2>/dev/null
+
+    if [ $? -ne 0 ]; then
+        # Reintento con root directo
+        mysql "$DB_N" -e "UPDATE users SET username='$NEW_ADM_USER', password='$NEW_ADM_PASS' WHERE role='admin';" 2>/dev/null
+    fi
 
     if [ $? -eq 0 ]; then
         echo ""; sep
