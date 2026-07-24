@@ -271,7 +271,6 @@ body{margin:0;font-family:'Segoe UI',sans-serif;background:#f4f7fb;}
 .action-btn{border:none;padding:15px 22px;border-radius:12px;color:#fff;font-size:15px;font-weight:600;cursor:pointer;}
 .btn-reseller{background:linear-gradient(135deg,#6610f2,#d63384);}
 .btn-create{background:linear-gradient(135deg,#0284c7,#0369a1);}
-.btn-credit{background:linear-gradient(135deg,#16a34a,#22c55e);}
 .btn-payload{background:linear-gradient(135deg,#eab308,#ca8a04);}
 .btn-online{background:linear-gradient(135deg,#0dcaf0,#0d6efd);}
 .table-card{background:#fff;margin-top:25px;padding:20px;border-radius:16px;box-shadow:0 4px 20px rgba(0,0,0,0.05);}
@@ -283,6 +282,7 @@ td{padding:12px;text-align:center;border-bottom:1px solid #eee;font-size:14px;}
 .exp-badge{background:#dc3545;color:#fff;padding:4px 10px;border-radius:6px;font-weight:800;font-size:12px;}
 .btn-small{border:none;padding:6px 12px;border-radius:8px;color:#fff;cursor:pointer;}
 .btn-delete{background:#dc3545;}
+.btn-credit-act{background:#22c55e;margin-right:5px;}
 .btn-edit-perm{background:#17a2b8;margin-right:5px;}
 
 .tabs-container{display:flex;gap:10px;margin-top:15px;flex-wrap:wrap;align-items:center;border-bottom:2px solid #e2e8f0;padding-bottom:12px;}
@@ -321,7 +321,6 @@ label{font-weight:600;display:block;margin-top:12px;font-size:14px;color:#333;}
     <div class="actions">
         <button class="action-btn btn-reseller" onclick="openModal('resellerModal')"><?php echo __('create_reseller'); ?></button>
         <button class="action-btn btn-create" onclick="openModal('createAccountModal')">➕ Crear Cuenta</button>
-        <button class="action-btn btn-credit" onclick="openModal('assignModal')"><?php echo __('manage_credits'); ?></button>
         <button class="action-btn btn-payload" onclick="openModal('payloadsTextModal')">📝 Editar Textos Payloads</button>
         <button class="action-btn btn-online" onclick="cargarOnline()"><?php echo __('view_online'); ?></button>
     </div>
@@ -368,13 +367,10 @@ label{font-weight:600;display:block;margin-top:12px;font-size:14px;color:#333;}
                         $limite_cnt = obtenerLimiteUsuario($acc['username']);
                         $acc_type = strtolower($acc['type']);
 
-                        // Lógica para alternar datos según el tipo de usuario
                         if ($acc_type === 'token' || $acc_type === 'hwid') {
-                            // Nombre de referencia en la 2da columna, Token/HWID en la 3ra columna
                             $col_nombre = !empty($acc['reference_name']) ? $acc['reference_name'] : $acc['username'];
                             $col_valor  = $acc['username'];
                         } else {
-                            // Usuario SSH en la 2da columna, Contraseña en la 3ra columna
                             $col_nombre = $acc['username'];
                             $col_valor  = $acc['password'];
                         }
@@ -405,7 +401,7 @@ label{font-weight:600;display:block;margin-top:12px;font-size:14px;color:#333;}
         </table>
     </div>
 
-    <!-- LISTA DE RESELLERS -->
+    <!-- LISTA DE RESELLERS CON BOTÓN DE CRÉDITOS EN ACCIÓN -->
     <div class="table-card">
         <h3><?php echo __('reseller_list'); ?></h3>
         <table>
@@ -432,12 +428,37 @@ label{font-weight:600;display:block;margin-top:12px;font-size:14px;color:#333;}
                     </small>
                 </td>
                 <td>
-                    <button class="btn-small btn-edit-perm" onclick="abrirEditarPermisos('<?php echo htmlspecialchars($r['username']); ?>', <?php echo $perm['show_gcp']; ?>, <?php echo $perm['show_cf']; ?>)">⚙️ Permisos</button>
+                    <button class="btn-small btn-credit-act" onclick="abrirGestionCreditos(<?php echo $r['id']; ?>, '<?php echo htmlspecialchars($r['username'], ENT_QUOTES); ?>', <?php echo $r['credits']; ?>)">💳 Créditos</button>
+                    <button class="btn-small btn-edit-perm" onclick="abrirEditarPermisos('<?php echo htmlspecialchars($r['username'], ENT_QUOTES); ?>', <?php echo $perm['show_gcp']; ?>, <?php echo $perm['show_cf']; ?>)">⚙️ Permisos</button>
                     <button class="btn-small btn-delete" onclick="confirmDeleteUser(<?php echo $r['id']; ?>)"><?php echo __('delete'); ?></button>
                 </td>
             </tr>
             <?php } ?>
         </table>
+    </div>
+</div>
+
+<!-- MODAL GESTIÓN DE CRÉDITOS INDIVIDUAL -->
+<div class="modal" id="assignModal">
+    <div class="modal-box">
+        <h3>💳 Gestionar Créditos</h3>
+        <form method="POST">
+            <input type="hidden" name="reseller_id" id="credit_reseller_id">
+            
+            <p style="margin-top:5px; margin-bottom:15px; font-size:15px;">
+                Revendedor: <b id="credit_reseller_name" style="color:#0d6efd;"></b><br>
+                Créditos actuales: <span class="badge" id="credit_reseller_current" style="background:#16a34a;">0</span>
+            </p>
+
+            <label>Sumar Créditos (+):</label>
+            <input type="number" name="credits_sumar" placeholder="Cantidad a agregar" min="0">
+
+            <label>Restar Créditos (-):</label>
+            <input type="number" name="credits_restar" placeholder="Cantidad a descontar" min="0">
+
+            <button name="guardar_creditos" class="modal-btn" style="margin-top:20px;">Guardar Créditos</button>
+            <button type="button" class="modal-btn close-btn" onclick="closeModal('assignModal')"><?php echo __('cancel'); ?></button>
+        </form>
     </div>
 </div>
 
@@ -545,28 +566,6 @@ label{font-weight:600;display:block;margin-top:12px;font-size:14px;color:#333;}
     </div>
 </div>
 
-<!-- MODAL CRÉDITOS -->
-<div class="modal" id="assignModal">
-    <div class="modal-box">
-        <h3><?php echo __('manage_credits'); ?></h3>
-        <form method="POST">
-            <select name="reseller_id" required>
-                <option value=""><?php echo __('resellers'); ?></option>
-                <?php
-                $u_sel = $conn->query("SELECT * FROM users WHERE role='reseller' ORDER BY username ASC");
-                while($u = $u_sel->fetch_assoc()){
-                    echo "<option value='".$u['id']."'>".htmlspecialchars($u['username'])." (Actuales: ".$u['credits'].")</option>";
-                }
-                ?>
-            </select>
-            <input type="number" name="credits_sumar" placeholder="+">
-            <input type="number" name="credits_restar" placeholder="-">
-            <button name="guardar_creditos" class="modal-btn"><?php echo __('save'); ?></button>
-            <button type="button" class="modal-btn close-btn" onclick="closeModal('assignModal')"><?php echo __('cancel'); ?></button>
-        </form>
-    </div>
-</div>
-
 <!-- MODAL DELETE RESELLER -->
 <div class="modal" id="deleteUserModal">
     <div class="modal-box" style="text-align:center;">
@@ -592,6 +591,13 @@ label{font-weight:600;display:block;margin-top:12px;font-size:14px;color:#333;}
 function openModal(id){ document.getElementById(id).style.display = "flex"; }
 function closeModal(id){ document.getElementById(id).style.display = "none"; }
 function confirmDeleteUser(id){ openModal('deleteUserModal'); document.getElementById('delete_user_id').value = id; }
+
+function abrirGestionCreditos(id, username, creditosActuales) {
+    document.getElementById('credit_reseller_id').value = id;
+    document.getElementById('credit_reseller_name').innerText = username;
+    document.getElementById('credit_reseller_current').innerText = creditosActuales;
+    openModal('assignModal');
+}
 
 function abrirEditarPermisos(resellerUser, showGcp, showCf){
     document.getElementById('edit_reseller_user').value = resellerUser;
