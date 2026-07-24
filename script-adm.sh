@@ -5,7 +5,7 @@
 #   Ubuntu 22/24/25
 # ═══════════════════════════════════════════════════════
 
-SCRIPT_VERSION="1.3"
+SCRIPT_VERSION="1.4"
 R='\033[0;31m'
 G='\033[0;32m'
 Y='\033[1;33m'
@@ -977,7 +977,7 @@ PYEOF
 
 menu_users_ziv() {
     while true; do
-        banner; sep; echo -e "  ${Y}   USUARIOS ZIVPN${NC}"; sep; echo ""
+        banner; sep; echo -e "  ${Y}    USUARIOS ZIVPN${NC}"; sep; echo ""
         [ ! -f /etc/zivpn/users.json ] && echo "[]" > /etc/zivpn/users.json
         TOTAL=$(python3 -c "import json; print(len(json.load(open('/etc/zivpn/users.json'))))" 2>/dev/null || echo 0)
         echo -e "  Total usuarios: ${G}${TOTAL}${NC}"
@@ -997,10 +997,9 @@ menu_users_ziv() {
             4) limpiar_expirados_ziv; aplicar_passwords_ziv; echo -e "  ${G}Limpiado${NC}"; sleep 1 ;;
             5) usuarios_ziv_online_count ;;
             0) break ;;
+            *) echo -e "  ${R}Opción inválida${NC}"; sleep 1 ;;
         esac
     done
-# Dentro de la función menu_zivpn o menu_users_ziv:
-usuarios_ziv_online_cou
 }
 
 # ══════════════════════════════════════════
@@ -1008,17 +1007,13 @@ usuarios_ziv_online_cou
 # ══════════════════════════════════════════
 
 listar_usuarios() {
-
-    banner
-    sep
-    echo -e "  ${Y}  USUARIOS ACTIVOS${NC}"
-    sep
-    echo ""
+    banner; sep
+    echo -e "  ${Y}    USUARIOS REGISTRADOS${NC}"; sep; echo ""
 
     NUM=1
+    TODAY_SEC=$(date +%s)
 
-    for FILE in $(find /etc/dealer-adm/userDIR -type f -printf '%T@ %p\n' | sort -n | cut -d' ' -f2-); do
-
+    for FILE in $(find /etc/dealer-adm/userDIR -type f -printf '%T@ %p\n' 2>/dev/null | sort -n | cut -d' ' -f2-); do
         [ ! -f "$FILE" ] && continue
 
         TIPO=$(grep '^tipo:' "$FILE" | cut -d' ' -f2-)
@@ -1028,55 +1023,42 @@ listar_usuarios() {
         FECHA=$(grep '^fecha:' "$FILE" | cut -d' ' -f2-)
         LIMITE=$(grep '^limite:' "$FILE" | cut -d' ' -f2-)
 
-        # Compatibilidad con usuarios antiguos
         [ -z "$USUARIO" ] && USUARIO=$(basename "$FILE")
         [ -z "$NOMBRE" ] && NOMBRE="$USUARIO"
         [ -z "$TIPO" ] && TIPO="ssh"
         [ -z "$LIMITE" ] && LIMITE="1"
 
-        FECHA_SHOW=$(date -d "$FECHA" +%d-%m-%Y 2>/dev/null)
-        [ -z "$FECHA_SHOW" ] && FECHA_SHOW="$FECHA"
+        # Comprobar expiración
+        EXP_SEC=$(date -d "$FECHA" +%s 2>/dev/null || echo 0)
+        if [ "$EXP_SEC" -le "$TODAY_SEC" ]; then
+            FECHA_DISPLAY="${R}EXP${NC}"
+        else
+            FECHA_DISPLAY="${G}$(date -d "$FECHA" +%d-%m-%Y 2>/dev/null || echo "$FECHA")${NC}"
+        fi
 
         case "$TIPO" in
-
             ssh)
-
                 echo -e " ${W}[$NUM]${NC} ${G}$NOMBRE${NC}"
-                echo -e "     └ ${G}SSH${NC} | ${W}$PASSWORD${NC} | Limite:${LIMITE} | Expira:${FECHA_SHOW}"
-
+                echo -e "     └ ${G}SSH${NC} | ${W}$PASSWORD${NC} | Limite:${LIMITE} | Expira:${FECHA_DISPLAY}"
             ;;
-
             token)
-
                 echo -e " ${W}[$NUM]${NC} ${Y}$NOMBRE${NC}"
-                echo -e "     └ ${Y}TOKEN${NC} | ${W}$USUARIO${NC} | Expira:${FECHA_SHOW}"
-
+                echo -e "     └ ${Y}TOKEN${NC} | ${W}$USUARIO${NC} | Expira:${FECHA_DISPLAY}"
             ;;
-
             hwid)
-
                 echo -e " ${W}[$NUM]${NC} ${C}$NOMBRE${NC}"
-                echo -e "     └ ${C}HWID${NC} | ${W}$USUARIO${NC} | Expira:${FECHA_SHOW}"
-
+                echo -e "     └ ${C}HWID${NC} | ${W}$USUARIO${NC} | Expira:${FECHA_DISPLAY}"
             ;;
-
             *)
-
                 echo -e " ${W}[$NUM]${NC} ${G}$NOMBRE${NC}"
-                echo -e "     └ ${W}$TIPO${NC} | ${W}$USUARIO${NC} | Expira:${FECHA_SHOW}"
-
+                echo -e "     └ ${W}$TIPO${NC} | ${W}$USUARIO${NC} | Expira:${FECHA_DISPLAY}"
             ;;
-
         esac
 
         ((NUM++))
-
     done
 
-    echo ""
-    sep
-    read -p "  ENTER..."
-
+    echo ""; sep; read -p "  Presiona ENTER para continuar..."
 }
 crear_usuario() {
 
@@ -1811,8 +1793,8 @@ usuarios_ssh_online_count() {
     read -p "  ENTER..."
 
 }
-usuarios_ziv_online_cou() {
-    banner; sep; echo -e "  ${Y}   USUARIOS ONLINE ZIVPN UDP${NC}"; sep; echo ""
+usuarios_ziv_online_count() {
+    banner; sep; echo -e "  ${Y}    USUARIOS ONLINE ZIVPN UDP${NC}"; sep; echo ""
 
     ZIV_PORT=$(cat /etc/zivpn/config.json 2>/dev/null | python3 -c "import json,sys; print(json.load(sys.stdin).get('listen',':5667').replace(':',''))" 2>/dev/null)
     ZIV_PORT=${ZIV_PORT:-5667}
@@ -1837,7 +1819,7 @@ usuarios_ziv_online_cou() {
     else
         echo -e "  ${G}TIENES${NC}  ${W}[ ${CONTADOR} ]${NC}  ${G}CONEXIONES UDP ACTIVAS EN ZIVPN${NC}"
     fi
-    sep; echo ""; read -p "  ENTER..."
+    sep; echo ""; read -p "  ENTER para continuar..."
 }
 obtener_usuario_api() {
 
@@ -4395,6 +4377,26 @@ menu_banner_ssh() {
             0) break ;;
         esac
     done
+}
+usuarios_v2ray_online_count() {
+    banner; sep
+    echo -e "  ${Y}    USUARIOS CONECTADOS A V2RAY${NC}"; sep; echo ""
+    
+    if [ ! -f /var/log/v2ray/access.log ]; then
+        echo -e "  ${R}No se encontró el registro de accesos de V2Ray (/var/log/v2ray/access.log).${NC}"
+    else
+        echo -e "  ${C}Analizando conexiones recientes...${NC}\n"
+        # Muestra emails/perfiles activos en los últimos logs
+        USERS_ONLINE=$(tail -n 100 /var/log/v2ray/access.log 2>/dev/null | grep "accepted" | awk '{print $NF}' | sort -u)
+        if [ -n "$USERS_ONLINE" ]; then
+            echo "$USERS_ONLINE" | while read -r usr; do
+                echo -e "  ${NEON}◈${NC} ${G}$usr${NC}"
+            done
+        else
+            echo -e "  ${R}No se detectaron usuarios V2Ray activos actualmente.${NC}"
+        fi
+    fi
+    echo ""; sep; read -p "  ENTER para continuar..."
 }
 menu_hysteria() {
     while true; do
