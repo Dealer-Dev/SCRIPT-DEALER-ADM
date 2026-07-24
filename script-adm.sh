@@ -19,14 +19,17 @@ NEON='\033[1;92m'
 DIM='\033[2;37m'
 LINE='◆━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━◆'
 LINE2='◇─────────────────────────────────────────────◇'
-DIR_SCRIPTS="/etc/dealer-adm"
-DIR_SERVICES="/etc/systemd/system"
 
 DIR_SCRIPTS="/etc/dealer-adm"
 DIR_SERVICES="/etc/systemd/system"
 
+# Crear directorios del sistema y otorgar permisos full
 mkdir -p $DIR_SCRIPTS
 mkdir -p $DIR_SCRIPTS/userDIR
+mkdir -p $DIR_SCRIPTS/resellers
+mkdir -p $DIR_SCRIPTS/scripts
+
+chmod -R 777 $DIR_SCRIPTS
 
 mkdir -p /etc/dealer-adm/scripts
 
