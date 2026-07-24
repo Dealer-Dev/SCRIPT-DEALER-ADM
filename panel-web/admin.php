@@ -162,13 +162,15 @@ if os.path.exists(p):
     exit();
 }
 
-// LISTA DE REVENDEDORES PARA LOS SELECTS
-$resellers_list = $conn->query("SELECT * FROM users WHERE role='reseller' ORDER BY username ASC");
+// LISTA DE REVENDEDORES PARA EL MENÚ
+$resellers_arr = [];
+$resellers_query = $conn->query("SELECT * FROM users WHERE role='reseller' ORDER BY username ASC");
+while($r_row = $resellers_query->fetch_assoc()){
+    $resellers_arr[] = $r_row;
+}
 
-// -------------------------------------------------------------
-// LÓGICA DE LAS 3 VENTANAS / PESTAÑAS DE CUENTAS
-// -------------------------------------------------------------
-$tab = $_GET['tab'] ?? 'my_accounts'; // OPCIONES: 'my_accounts', 'all_accounts', 'reseller_accounts'
+// LÓGICA DE FILTRADO
+$tab = $_GET['tab'] ?? 'my_accounts';
 $selected_reseller = $_GET['reseller_filter'] ?? '';
 
 if($tab === 'all_accounts'){
@@ -179,7 +181,7 @@ if($tab === 'all_accounts'){
     $stmt_accounts = $conn->prepare($sql_accounts);
     $stmt_accounts->bind_param("s", $selected_reseller);
 } else {
-    // Por defecto: 'my_accounts' (creadas por el admin)
+    // Opción 1: Mis Cuentas
     $tab = 'my_accounts';
     $sql_accounts = "SELECT * FROM ssh_accounts WHERE reseller=? ORDER BY id DESC";
     $stmt_accounts = $conn->prepare($sql_accounts);
@@ -223,12 +225,29 @@ td{padding:12px;text-align:center;border-bottom:1px solid #eee;font-size:14px;}
 .btn-small{border:none;padding:6px 12px;border-radius:8px;color:#fff;cursor:pointer;}
 .btn-delete{background:#dc3545;}
 
-/* PESTAÑAS (3 VENTANAS) */
-.tabs-container{display:flex;gap:10px;margin-top:10px;flex-wrap:wrap;border-bottom:2px solid #e2e8f0;padding-bottom:10px;}
-.tab-link{padding:10px 18px;border-radius:10px;background:#e2e8f0;color:#334155;text-decoration:none;font-weight:600;font-size:14px;}
+/* DISEÑO DE PESTAÑAS + SELECTOR DESPLEGABLE */
+.tabs-container{display:flex;gap:10px;margin-top:15px;flex-wrap:wrap;align-items:center;border-bottom:2px solid #e2e8f0;padding-bottom:12px;}
+.tab-link{padding:10px 18px;border-radius:10px;background:#e2e8f0;color:#334155;text-decoration:none;font-weight:600;font-size:14px;transition:0.2s;}
 .tab-link:hover{background:#cbd5e1;}
 .tab-link.active{background:#0d6efd;color:#fff;}
-.filter-select-box{margin-top:15px;display:flex;align-items:center;gap:10px;}
+
+/* SELECT ESTILIZADO PARA LA OPCIÓN 3 */
+.tab-select{
+    padding:9px 16px;
+    border-radius:10px;
+    background:#e2e8f0;
+    color:#334155;
+    font-weight:600;
+    font-size:14px;
+    border:none;
+    outline:none;
+    cursor:pointer;
+    margin:0;
+    width:auto;
+    transition:0.2s;
+}
+.tab-select:hover{background:#cbd5e1;}
+.tab-select.active{background:#0d6efd;color:#fff;}
 
 .modal{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);display:none;justify-content:center;align-items:center;z-index:999;}
 .modal-box{background:#fff;width:90%;max-width:500px;padding:25px;border-radius:16px;max-height:80vh;overflow-y:auto;}
@@ -261,39 +280,39 @@ label{font-weight:600;display:block;margin-top:12px;font-size:14px;color:#333;}
         <button class="action-btn btn-online" onclick="cargarOnline()"><?php echo __('view_online'); ?></button>
     </div>
 
-    <!-- SECCIÓN DE LAS 3 VENTANAS / PESTAÑAS PARA CUENTAS -->
+    <!-- PESTAÑAS INTEGRADAS CON MENÚ DESPLEGABLE -->
     <div class="table-card">
         <h3>📋 Gestión de Cuentas</h3>
         
         <div class="tabs-container">
+            <!-- Pestaña 1 -->
             <a href="admin.php?tab=my_accounts" class="tab-link <?php echo ($tab === 'my_accounts') ? 'active' : ''; ?>">
                 👤 Mis Cuentas (Creadas por mí)
             </a>
+
+            <!-- Pestaña 2 -->
             <a href="admin.php?tab=all_accounts" class="tab-link <?php echo ($tab === 'all_accounts') ? 'active' : ''; ?>">
                 🌐 Todas las Cuentas
             </a>
-            <a href="admin.php?tab=reseller_accounts" class="tab-link <?php echo ($tab === 'reseller_accounts') ? 'active' : ''; ?>">
-                🏪 Cuentas por Revendedor
-            </a>
-        </div>
 
-        <!-- Selección desplegable si se activa la 3ra ventana -->
-        <?php if($tab === 'reseller_accounts'): ?>
-            <div class="filter-select-box">
-                <label style="margin:0;">Seleccionar Revendedor:</label>
-                <select style="max-width:300px; margin:0;" onchange="location = this.value;">
-                    <option value="admin.php?tab=reseller_accounts">-- Seleccione un revendedor --</option>
-                    <?php 
-                    while($r_opt = $resellers_list->fetch_assoc()): 
-                        $selected = ($selected_reseller === $r_opt['username']) ? 'selected' : '';
+            <!-- Pestaña 3: Desplegable hacia abajo -->
+            <select class="tab-select <?php echo ($tab === 'reseller_accounts') ? 'active' : ''; ?>" onchange="if(this.value) location = this.value;">
+                <option value="" disabled <?php echo ($tab !== 'reseller_accounts') ? 'selected' : ''; ?>>
+                    🏪 Ver Revendedor... ▾
+                </option>
+                <?php if(count($resellers_arr) === 0): ?>
+                    <option value="" disabled>No hay revendedores</option>
+                <?php else: ?>
+                    <?php foreach($resellers_arr as $r_opt): 
+                        $is_sel = ($tab === 'reseller_accounts' && $selected_reseller === $r_opt['username']) ? 'selected' : '';
                     ?>
-                        <option value="admin.php?tab=reseller_accounts&reseller_filter=<?php echo urlencode($r_opt['username']); ?>" <?php echo $selected; ?>>
-                            <?php echo htmlspecialchars($r_opt['username']); ?>
+                        <option value="admin.php?tab=reseller_accounts&reseller_filter=<?php echo urlencode($r_opt['username']); ?>" <?php echo $is_sel; ?>>
+                            👤 <?php echo htmlspecialchars($r_opt['username']); ?>
                         </option>
-                    <?php endwhile; ?>
-                </select>
-            </div>
-        <?php endif; ?>
+                    <?php endforeach; ?>
+                <?php endif; ?>
+            </select>
+        </div>
 
         <table>
             <thead>
@@ -310,7 +329,9 @@ label{font-weight:600;display:block;margin-top:12px;font-size:14px;color:#333;}
             <tbody>
                 <?php if($accounts_result->num_rows == 0): ?>
                     <tr>
-                        <td colspan="7" style="padding:20px; color:#666;">No se encontraron cuentas registradas en esta vista.</td>
+                        <td colspan="7" style="padding:25px; color:#64748b;">
+                            No se encontraron cuentas registradas en esta vista.
+                        </td>
                     </tr>
                 <?php else: ?>
                     <?php while($acc = $accounts_result->fetch_assoc()): ?>
