@@ -10,6 +10,20 @@ if(!isset($_SESSION['user']) || $_SESSION['role'] != 'admin'){
     exit();
 }
 
+$admin_user = $_SESSION['user'];
+
+// Función auxiliar para leer el límite desde el archivo en /etc/dealer-adm/userDIR/
+function obtenerLimiteUsuario($usuario) {
+    $file_path = "/etc/dealer-adm/userDIR/" . $usuario;
+    if (file_exists($file_path)) {
+        $content = file_get_contents($file_path);
+        if (preg_match('/limite:\s*(\d+)/i', $content, $matches)) {
+            return $matches[1];
+        }
+    }
+    return "1";
+}
+
 $total_resellers = $conn->query("SELECT COUNT(*) total FROM users WHERE role='reseller'")->fetch_assoc()['total'];
 $total_accounts  = $conn->query("SELECT COUNT(*) total FROM ssh_accounts")->fetch_assoc()['total'];
 $total_credits   = $conn->query("SELECT SUM(credits) total FROM users WHERE role='reseller'")->fetch_assoc()['total'] ?? 0;
@@ -55,7 +69,6 @@ if(isset($_POST['crear_cuenta'])){
     $pass = isset($_POST['password']) ? trim($_POST['password']) : '';
     $dias = intval($_POST['exp_days']);
     
-    // Si es token o hwid, el límite siempre es 1
     if($tipo === 'token' || $tipo === 'hwid'){
         $limite = 1;
         $ref = $ref_name;
@@ -64,7 +77,7 @@ if(isset($_POST['crear_cuenta'])){
         $ref = $user;
     }
     
-    $owner = $_SESSION['user'];
+    $owner = $admin_user;
 
     $exist = $conn->query("SELECT id FROM ssh_accounts WHERE username='$user'");
     if($exist->num_rows > 0){
@@ -72,19 +85,16 @@ if(isset($_POST['crear_cuenta'])){
     } else {
         $expira_date = date('Y-m-d', strtotime("+$dias days"));
 
-        // 1. Crear usuario real en Linux
         if($tipo === 'ssh'){
             $cmd = "sudo useradd -M -s /bin/false -e $expira_date $user && echo '$user:$pass' | sudo chpasswd && sudo chage -E $expira_date -M 99999 $user && sudo usermod -f 0 $user";
             exec($cmd);
         }
 
-        // 2. Generar archivo en /etc/dealer-adm/userDIR/ (Estilo reseller.php)
         $file_content = "tipo: $tipo\nnombre: $ref\nusuario: $user\npassword: $pass\nfecha: $expira_date\nlimite: $limite\ncreador_id: 0\ncreador_nombre: $owner";
         $tmp_file = tempnam(sys_get_temp_dir(), 'usr_');
         file_put_contents($tmp_file, $file_content);
         exec("sudo mkdir -p /etc/dealer-adm/userDIR/ && sudo mv $tmp_file /etc/dealer-adm/userDIR/$user && sudo chmod 644 /etc/dealer-adm/userDIR/$user");
 
-        // 3. Sincronizar con Hysteria si existe
         if(file_exists('/etc/hysteria/config.json')){
             $sync_hys = "python3 -c \"
 import json, os
@@ -99,7 +109,6 @@ if os.path.exists(p):
             exec($sync_hys);
         }
 
-        // 4. Insertar en la Base de Datos
         $stmt = $conn->prepare("INSERT INTO ssh_accounts (username, password, expires, reseller, type, reference_name) VALUES (?, ?, ?, ?, ?, ?)");
         $stmt->bind_param("ssssss", $user, $pass, $expira_date, $owner, $tipo, $ref);
         $stmt->execute();
@@ -108,6 +117,7 @@ if os.path.exists(p):
         exit();
     }
 }
+
 // ELIMINAR RESELLER
 if(isset($_POST['delete_user'])){
     $id = intval($_POST['delete_user']);
@@ -115,6 +125,70 @@ if(isset($_POST['delete_user'])){
     header("Location: admin.php");
     exit();
 }
+
+// ELIMINAR CUENTA SSH / TOKEN / HWID
+if(isset($_POST['delete_account'])){
+    $acc_id = intval($_POST['delete_account']);
+    $stmt_acc = $conn->prepare("SELECT username FROM ssh_accounts WHERE id=?");
+    $stmt_acc->bind_param("i", $acc_id);
+    $stmt_acc->execute();
+    $acc_data = $stmt_acc->get_result()->fetch_assoc();
+
+    if($acc_data){
+        $user_to_del = $acc_data['username'];
+        exec("sudo pkill -u $user_to_del 2>/dev/null; sudo userdel -f $user_to_del 2>/dev/null");
+        exec("sudo rm -f /etc/dealer-adm/userDIR/$user_to_del");
+
+        if(file_exists('/etc/hysteria/config.json')){
+            $del_hys = "python3 -c \"
+import json, os
+p = '/etc/hysteria/config.json'
+if os.path.exists(p):
+    with open(p) as f: c=json.load(f)
+    cfg = c.get('auth',{}).get('config',[])
+    cfg = [u for u in cfg if not u.startswith('$user_to_del:')]
+    c['auth']['config'] = cfg
+    with open(p,'w') as f: json.dump(c,f,indent=2)
+\" && sudo systemctl restart hysteria-server >/dev/null 2>&1";
+            exec($del_hys);
+        }
+
+        $conn->query("DELETE FROM ssh_accounts WHERE id='$acc_id'");
+    }
+    
+    $tab_redirect = isset($_GET['tab']) ? "?tab=" . urlencode($_GET['tab']) : "";
+    $reseller_redirect = isset($_GET['reseller_filter']) ? "&reseller_filter=" . urlencode($_GET['reseller_filter']) : "";
+    header("Location: admin.php" . $tab_redirect . $reseller_redirect);
+    exit();
+}
+
+// LISTA DE REVENDEDORES PARA LOS SELECTS
+$resellers_list = $conn->query("SELECT * FROM users WHERE role='reseller' ORDER BY username ASC");
+
+// -------------------------------------------------------------
+// LÓGICA DE LAS 3 VENTANAS / PESTAÑAS DE CUENTAS
+// -------------------------------------------------------------
+$tab = $_GET['tab'] ?? 'my_accounts'; // OPCIONES: 'my_accounts', 'all_accounts', 'reseller_accounts'
+$selected_reseller = $_GET['reseller_filter'] ?? '';
+
+if($tab === 'all_accounts'){
+    $sql_accounts = "SELECT * FROM ssh_accounts ORDER BY id DESC";
+    $stmt_accounts = $conn->prepare($sql_accounts);
+} elseif($tab === 'reseller_accounts' && !empty($selected_reseller)) {
+    $sql_accounts = "SELECT * FROM ssh_accounts WHERE reseller=? ORDER BY id DESC";
+    $stmt_accounts = $conn->prepare($sql_accounts);
+    $stmt_accounts->bind_param("s", $selected_reseller);
+} else {
+    // Por defecto: 'my_accounts' (creadas por el admin)
+    $tab = 'my_accounts';
+    $sql_accounts = "SELECT * FROM ssh_accounts WHERE reseller=? ORDER BY id DESC";
+    $stmt_accounts = $conn->prepare($sql_accounts);
+    $stmt_accounts->bind_param("s", $admin_user);
+}
+
+$stmt_accounts->execute();
+$accounts_result = $stmt_accounts->get_result();
+$today = date('Y-m-d');
 
 $resellers = $conn->query("SELECT * FROM users WHERE role='reseller' ORDER BY id DESC");
 ?>
@@ -141,11 +215,21 @@ body{margin:0;font-family:'Segoe UI',sans-serif;background:#f4f7fb;}
 .btn-online{background:linear-gradient(135deg,#0dcaf0,#0d6efd);}
 .table-card{background:#fff;margin-top:25px;padding:20px;border-radius:16px;box-shadow:0 4px 20px rgba(0,0,0,0.05);}
 table{width:100%;border-collapse:collapse;margin-top:15px;}
-th{background:#0f172a;color:#fff;padding:12px;text-align:center;}
-td{padding:12px;text-align:center;border-bottom:1px solid #eee;}
+th{background:#0f172a;color:#fff;padding:12px;text-align:center;font-size:14px;}
+td{padding:12px;text-align:center;border-bottom:1px solid #eee;font-size:14px;}
 .badge{background:#0d6efd;color:#fff;padding:5px 10px;border-radius:15px;font-size:12px;}
+.badge-type{background:#6c757d;color:#fff;padding:3px 8px;border-radius:8px;font-size:11px;text-transform:uppercase;}
+.exp-badge{background:#dc3545;color:#fff;padding:4px 10px;border-radius:6px;font-weight:800;font-size:12px;}
 .btn-small{border:none;padding:6px 12px;border-radius:8px;color:#fff;cursor:pointer;}
 .btn-delete{background:#dc3545;}
+
+/* PESTAÑAS (3 VENTANAS) */
+.tabs-container{display:flex;gap:10px;margin-top:10px;flex-wrap:wrap;border-bottom:2px solid #e2e8f0;padding-bottom:10px;}
+.tab-link{padding:10px 18px;border-radius:10px;background:#e2e8f0;color:#334155;text-decoration:none;font-weight:600;font-size:14px;}
+.tab-link:hover{background:#cbd5e1;}
+.tab-link.active{background:#0d6efd;color:#fff;}
+.filter-select-box{margin-top:15px;display:flex;align-items:center;gap:10px;}
+
 .modal{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);display:none;justify-content:center;align-items:center;z-index:999;}
 .modal-box{background:#fff;width:90%;max-width:500px;padding:25px;border-radius:16px;max-height:80vh;overflow-y:auto;}
 input,select{width:100%;padding:12px;margin-top:10px;border-radius:8px;border:1px solid #ddd;}
@@ -158,7 +242,7 @@ label{font-weight:600;display:block;margin-top:12px;font-size:14px;color:#333;}
 <body>
 <div class="header">
     <h2><?php echo __('admin_panel_title'); ?></h2>
-    <div>Admin: <b><?php echo htmlspecialchars($_SESSION['user']); ?></b> <a href="logout.php" class="logout"><?php echo __('logout'); ?></a></div>
+    <div>Admin: <b><?php echo htmlspecialchars($admin_user); ?></b> <a href="logout.php" class="logout"><?php echo __('logout'); ?></a></div>
 </div>
 
 <div class="container">
@@ -177,6 +261,90 @@ label{font-weight:600;display:block;margin-top:12px;font-size:14px;color:#333;}
         <button class="action-btn btn-online" onclick="cargarOnline()"><?php echo __('view_online'); ?></button>
     </div>
 
+    <!-- SECCIÓN DE LAS 3 VENTANAS / PESTAÑAS PARA CUENTAS -->
+    <div class="table-card">
+        <h3>📋 Gestión de Cuentas</h3>
+        
+        <div class="tabs-container">
+            <a href="admin.php?tab=my_accounts" class="tab-link <?php echo ($tab === 'my_accounts') ? 'active' : ''; ?>">
+                👤 Mis Cuentas (Creadas por mí)
+            </a>
+            <a href="admin.php?tab=all_accounts" class="tab-link <?php echo ($tab === 'all_accounts') ? 'active' : ''; ?>">
+                🌐 Todas las Cuentas
+            </a>
+            <a href="admin.php?tab=reseller_accounts" class="tab-link <?php echo ($tab === 'reseller_accounts') ? 'active' : ''; ?>">
+                🏪 Cuentas por Revendedor
+            </a>
+        </div>
+
+        <!-- Selección desplegable si se activa la 3ra ventana -->
+        <?php if($tab === 'reseller_accounts'): ?>
+            <div class="filter-select-box">
+                <label style="margin:0;">Seleccionar Revendedor:</label>
+                <select style="max-width:300px; margin:0;" onchange="location = this.value;">
+                    <option value="admin.php?tab=reseller_accounts">-- Seleccione un revendedor --</option>
+                    <?php 
+                    while($r_opt = $resellers_list->fetch_assoc()): 
+                        $selected = ($selected_reseller === $r_opt['username']) ? 'selected' : '';
+                    ?>
+                        <option value="admin.php?tab=reseller_accounts&reseller_filter=<?php echo urlencode($r_opt['username']); ?>" <?php echo $selected; ?>>
+                            <?php echo htmlspecialchars($r_opt['username']); ?>
+                        </option>
+                    <?php endwhile; ?>
+                </select>
+            </div>
+        <?php endif; ?>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Tipo</th>
+                    <th>Usuario / Identificador</th>
+                    <th>Contraseña</th>
+                    <th>Creador / Reseller</th>
+                    <th>Límite</th>
+                    <th>Expiración</th>
+                    <th>Acción</th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php if($accounts_result->num_rows == 0): ?>
+                    <tr>
+                        <td colspan="7" style="padding:20px; color:#666;">No se encontraron cuentas registradas en esta vista.</td>
+                    </tr>
+                <?php else: ?>
+                    <?php while($acc = $accounts_result->fetch_assoc()): ?>
+                    <?php 
+                        $is_exp = ($acc['expires'] <= $today);
+                        $limite_cnt = obtenerLimiteUsuario($acc['username']);
+                    ?>
+                    <tr>
+                        <td><span class="badge-type"><?php echo htmlspecialchars($acc['type']); ?></span></td>
+                        <td><b><?php echo htmlspecialchars($acc['username']); ?></b></td>
+                        <td><code><?php echo htmlspecialchars($acc['password']); ?></code></td>
+                        <td><span class="badge"><?php echo htmlspecialchars($acc['reseller']); ?></span></td>
+                        <td><b><?php echo htmlspecialchars($limite_cnt); ?></b></td>
+                        <td>
+                            <?php if($is_exp): ?>
+                                <span class="exp-badge">EXP</span>
+                            <?php else: ?>
+                                <?php echo htmlspecialchars($acc['expires']); ?>
+                            <?php endif; ?>
+                        </td>
+                        <td>
+                            <form method="POST" style="display:inline;" onsubmit="return confirm('¿Seguro que deseas eliminar esta cuenta?');">
+                                <input type="hidden" name="delete_account" value="<?php echo $acc['id']; ?>">
+                                <button type="submit" class="btn-small btn-delete">Eliminar</button>
+                            </form>
+                        </td>
+                    </tr>
+                    <?php endwhile; ?>
+                <?php endif; ?>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- LISTA DE RESELLERS -->
     <div class="table-card">
         <h3><?php echo __('reseller_list'); ?></h3>
         <table>
@@ -231,27 +399,22 @@ label{font-weight:600;display:block;margin-top:12px;font-size:14px;color:#333;}
                 <option value="hwid">HWID</option>
             </select>
 
-            <!-- Nombre del Cliente / Referencia (Oculto en SSH Normal) -->
             <div id="wrapper_ref_name" style="display:none;">
                 <label>Nombre del Cliente (Referencia):</label>
                 <input name="ref_name" id="input_ref_name" placeholder="Ej: Juan Pérez">
             </div>
 
-            <!-- Campo Usuario / Token / HWID -->
             <label id="lbl_username">Usuario:</label>
             <input name="username" id="input_username" placeholder="Ingrese el usuario" required>
 
-            <!-- Campo Contraseña (Oculto para HWID o Token) -->
             <div id="wrapper_password">
                 <label>Contraseña:</label>
                 <input name="password" id="input_password" placeholder="••••••••">
             </div>
 
-            <!-- Días de Expiración -->
             <label>Días de duración:</label>
             <input type="number" name="exp_days" value="30" min="1" required>
 
-            <!-- Límite de Conexiones (Oculto para HWID o Token) -->
             <div id="wrapper_limit">
                 <label>Límite de conexiones simultáneas:</label>
                 <input type="number" name="ssh_limit" id="input_ssh_limit" value="1" min="1" required>
@@ -285,7 +448,7 @@ label{font-weight:600;display:block;margin-top:12px;font-size:14px;color:#333;}
     </div>
 </div>
 
-<!-- MODAL DELETE -->
+<!-- MODAL DELETE RESELLER -->
 <div class="modal" id="deleteUserModal">
     <div class="modal-box" style="text-align:center;">
         <h3><?php echo __('delete_confirm'); ?></h3>
