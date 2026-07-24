@@ -604,8 +604,8 @@ label{font-weight:600;display:block;margin-top:12px;font-size:14px;color:#333;}
             <button type="button" id="btn_token_pass_admin" class="btn-tpass" onclick="openModal('tokenPassAdminModal')">Contraseña Token (Actual: <?php echo htmlspecialchars($token_pass_admin_actual); ?>)</button>
 
             <div id="wrapper_ref_name" style="display:none;">
-                <label>Nombre del Cliente (Referencia):</label>
-                <input name="ref_name" id="input_ref_name" placeholder="Ej: Juan Pérez">
+                <label>Nombre:</label>
+                <input name="ref_name" id="input_ref_name" placeholder="">
             </div>
 
             <label id="lbl_username">Usuario:</label>
