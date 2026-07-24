@@ -648,11 +648,11 @@ label{font-weight:600;display:block;margin-top:12px;font-size:14px;color:#333;}
             </select>
 
             <!-- BOTÓN DE PASS TOKEN GLOBAL PARA ADMIN (SOLO VISIBLE SI ES TOKEN) -->
-            <button type="button" id="btn_token_pass_admin" class="btn-tpass" onclick="openModal('tokenPassAdminModal')">🔑 Pass Token Global (Actual: <?php echo htmlspecialchars($token_pass_admin_actual); ?>)</button>
+            <button type="button" id="btn_token_pass_admin" class="btn-tpass" onclick="openModal('tokenPassAdminModal')"> Contraseña Token (Actual: <?php echo htmlspecialchars($token_pass_admin_actual); ?>)</button>
 
             <div id="wrapper_ref_name" style="display:none;">
-                <label>Nombre del Cliente (Referencia):</label>
-                <input name="ref_name" id="input_ref_name" placeholder="Ej: Juan Pérez">
+                <label>Nombre:</label>
+                <input name="ref_name" id="input_ref_name" placeholder="">
             </div>
 
             <label id="lbl_username">Usuario:</label>
@@ -660,7 +660,7 @@ label{font-weight:600;display:block;margin-top:12px;font-size:14px;color:#333;}
 
             <div id="wrapper_password">
                 <label>Contraseña:</label>
-                <input name="password" id="input_password" placeholder="••••••••">
+                <input name="password" id="input_password" placeholder="">
             </div>
 
             <label>Días de duración:</label>
@@ -680,7 +680,7 @@ label{font-weight:600;display:block;margin-top:12px;font-size:14px;color:#333;}
 <!-- MODAL CONFIGURAR PASS TOKEN GLOBAL (ADMIN) -->
 <div class="modal" id="tokenPassAdminModal">
     <div class="modal-box">
-        <h3>🔑 Contraseña Token Global (Admin)</h3>
+        <h3>Contraseña Token</h3>
         <form method="POST">
             <p style="font-size:13px; color:#666;">Define la contraseña por defecto para todas las cuentas Token que crees como Administrador.</p>
             <label style="font-weight:600; font-size:14px;">Nueva Contraseña Token:</label>
