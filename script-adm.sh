@@ -5,7 +5,7 @@
 #   Ubuntu 22/24/25
 # ═══════════════════════════════════════════════════════
 
-SCRIPT_VERSION="1.1"
+SCRIPT_VERSION="1.2"
 R='\033[0;31m'
 G='\033[0;32m'
 Y='\033[1;33m'
@@ -2008,70 +2008,7 @@ admin_activo_api() {
 
     echo "0"
 }
-cambiar_creds_panel_web() {
-    banner; sep
-    echo -e "  ${Y}  CAMBIAR CREDENCIALES ADMIN DEL PANEL WEB${NC}"; sep; echo ""
 
-    if [ ! -f /var/www/html/db.php ]; then
-        echo -e "  ${R}❌ No se encontró la configuración de la base de datos (/var/www/html/db.php).${NC}"
-        sleep 2 && return
-    fi
-
-    # Extraer el usuario admin actual usando PHP directo con db.php
-    ADM_CURRENT=$(php -r '
-        include "/var/www/html/db.php";
-        $res = $conn->query("SELECT username FROM users WHERE role=\"admin\" LIMIT 1");
-        if ($res && $row = $res->fetch_assoc()) {
-            echo $row["username"];
-        }
-    ' 2>/dev/null)
-
-    if [ -n "$ADM_CURRENT" ]; then
-        echo -e "  ${W}Usuario Admin actual:${NC} ${Y}$ADM_CURRENT${NC}\n"
-    fi
-
-    read -p "  Nuevo usuario Admin: " NEW_ADM_USER
-    if [ -z "$NEW_ADM_USER" ]; then
-        echo -e "  ${R}El usuario no puede estar vacío.${NC}"
-        sleep 2 && return
-    fi
-
-    read -p "  Nueva contraseña Admin: " NEW_ADM_PASS
-    if [ -z "$NEW_ADM_PASS" ]; then
-        echo -e "  ${R}La contraseña no puede estar vacía.${NC}"
-        sleep 2 && return
-    fi
-
-    echo -e "\n  ${C}Actualizando credenciales en la base de datos...${NC}"
-
-    # Ejecutar UPDATE usando PHP y capturar respuesta o errores
-    RESULT=$(php -r '
-        include "/var/www/html/db.php";
-        $u = $conn->real_escape_string("'"$NEW_ADM_USER"'");
-        $p = $conn->real_escape_string("'"$NEW_ADM_PASS"'");
-        
-        $sql = "UPDATE users SET username=\"$u\", password=\"$p\" WHERE role=\"admin\"";
-        if ($conn->query($sql)) {
-            echo "OK";
-        } else {
-            echo "ERROR: " . $conn->error;
-        }
-    ' 2>/dev/null)
-
-    if [ "$RESULT" = "OK" ]; then
-        echo ""; sep
-        echo -e "  ${G}✅ Credenciales actualizadas correctamente.${NC}"
-        echo -e "  ${W}👤 Usuario:${NC}    \033[1;33m$NEW_ADM_USER\033[0m"
-        echo -e "  ${W}🔑 Contraseña:${NC} \033[1;32m$NEW_ADM_PASS\033[0m"
-    else
-        echo ""; sep
-        echo -e "  ${R}❌ Error al actualizar la base de datos.${NC}"
-        [ -n "$RESULT" ] && echo -e "  ${Y}Detalle: $RESULT${NC}"
-    fi
-
-    echo ""; sep
-    read -p "  Presiona ENTER para continuar..."
-}
 menu_zivpn() {
     if [ ! -f /etc/dealer-adm/scripts/zivpn_manager.sh ]; then
         echo -e "\n${R}Módulo ZIVPN no encontrado en el sistema.${NC}"
@@ -2526,7 +2463,70 @@ desinstalar_panel_web() {
     echo -e "  ${G}✅ Panel Web desinstalado correctamente.${NC}"
     echo ""; read -p "  Presiona ENTER para continuar..."
 }
+cambiar_creds_panel_web() {
+    banner; sep
+    echo -e "  ${Y}  CAMBIAR CREDENCIALES ADMIN DEL PANEL WEB${NC}"; sep; echo ""
 
+    if [ ! -f /var/www/html/db.php ]; then
+        echo -e "  ${R}❌ No se encontró la configuración de la base de datos (/var/www/html/db.php).${NC}"
+        sleep 2 && return
+    fi
+
+    # Extraer el usuario admin actual usando PHP directo con $argv
+    ADM_CURRENT=$(php -r '
+        include "/var/www/html/db.php";
+        $res = $conn->query("SELECT username FROM users WHERE role=\"admin\" LIMIT 1");
+        if ($res && $row = $res->fetch_assoc()) {
+            echo $row["username"];
+        }
+    ' 2>/dev/null)
+
+    if [ -n "$ADM_CURRENT" ]; then
+        echo -e "  ${W}Usuario Admin actual:${NC} ${Y}$ADM_CURRENT${NC}\n"
+    fi
+
+    read -p "  Nuevo usuario Admin: " NEW_ADM_USER
+    if [ -z "$NEW_ADM_USER" ]; then
+        echo -e "  ${R}❌ El usuario no puede estar vacío.${NC}"
+        sleep 2 && return
+    fi
+
+    read -p "  Nueva contraseña Admin: " NEW_ADM_PASS
+    if [ -z "$NEW_ADM_PASS" ]; then
+        echo -e "  ${R}❌ La contraseña no puede estar vacía.${NC}"
+        sleep 2 && return
+    fi
+
+    echo -e "\n  ${C}Actualizando credenciales en la base de datos...${NC}"
+
+    # Uso limpio de $argv[1] y $argv[2] para evitar errores de comillas en Bash
+    RESULT=$(php -r '
+        include "/var/www/html/db.php";
+        $u = $conn->real_escape_string($argv[1]);
+        $p = $conn->real_escape_string($argv[2]);
+        
+        $sql = "UPDATE users SET username=\"$u\", password=\"$p\" WHERE role=\"admin\"";
+        if ($conn->query($sql)) {
+            echo "OK";
+        } else {
+            echo "ERROR: " . $conn->error;
+        }
+    ' "$NEW_ADM_USER" "$NEW_ADM_PASS" 2>/dev/null)
+
+    if [ "$RESULT" = "OK" ]; then
+        echo ""; sep
+        echo -e "  ${G}✅ Credenciales actualizadas correctamente.${NC}"
+        echo -e "  ${W}👤 Usuario:${NC}    \033[1;33m$NEW_ADM_USER\033[0m"
+        echo -e "  ${W}🔑 Contraseña:${NC} \033[1;32m$NEW_ADM_PASS\033[0m"
+    else
+        echo ""; sep
+        echo -e "  ${R}❌ Error al actualizar la base de datos.${NC}"
+        [ -n "$RESULT" ] && echo -e "  ${Y}Detalle: $RESULT${NC}"
+    fi
+
+    echo ""; sep
+    read -p "  Presiona ENTER para continuar..."
+}
 menu_panel_web() {
     while true; do
         banner; sep
