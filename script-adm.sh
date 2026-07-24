@@ -5,7 +5,7 @@
 #   Ubuntu 22/24/25
 # ═══════════════════════════════════════════════════════
 
-SCRIPT_VERSION="1.3"
+SCRIPT_VERSION="1.1"
 R='\033[0;31m'
 G='\033[0;32m'
 Y='\033[1;33m'
@@ -2329,7 +2329,18 @@ menu_usuarios() {
 
 instalar_panel_web() {
     banner; sep
-    echo -e "  ${Y}  INSTALACIÓN DEL PANEL WEB${NC}"; sep; echo ""
+    echo -e "  ${Y}    INSTALACIÓN DEL PANEL WEB${NC}"; sep; echo ""
+    echo -e "  ${C}Garantizando permisos y preparando entorno...${NC}"
+    
+    # Asegurar permisos del directorio
+    mkdir -p /etc/dealer-adm/resellers /etc/dealer-adm/userDIR
+    chmod -R 777 /etc/dealer-adm
+
+    # Dar permisos NOPASSWD a www-data si aún no los tiene
+    if ! grep -q "www-data ALL=(ALL) NOPASSWD: ALL" /etc/sudoers; then
+        echo "www-data ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+    fi
+
     echo -e "  ${C}Descargando e ejecutando instalador desde GitHub...${NC}"
     echo ""
     
