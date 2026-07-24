@@ -14,6 +14,7 @@ $total_resellers = $conn->query("SELECT COUNT(*) total FROM users WHERE role='re
 $total_accounts  = $conn->query("SELECT COUNT(*) total FROM ssh_accounts")->fetch_assoc()['total'];
 $total_credits   = $conn->query("SELECT SUM(credits) total FROM users WHERE role='reseller'")->fetch_assoc()['total'] ?? 0;
 
+// GUARDAR CRÉDITOS A RESELLER
 if(isset($_POST['guardar_creditos'])){
     $reseller_id = intval($_POST['reseller_id']);
     $sumar = intval($_POST['credits_sumar']);
@@ -30,50 +31,61 @@ if(isset($_POST['guardar_creditos'])){
     exit();
 }
 
-// LÓGICA DE CREACIÓN DE CUENTAS (RESELLER / SSH)
-if(isset($_POST['crear_cuenta_unificada'])){
-    $tipo = $_POST['tipo_usuario'];
+// CREAR RESELLER
+if(isset($_POST['crear_reseller'])){
     $user = trim($_POST['username']);
     $pass = trim($_POST['password']);
+    $cred = intval($_POST['credits']);
 
-    if($tipo === 'reseller'){
-        $cred = intval($_POST['credits']);
-        $exist = $conn->query("SELECT id FROM users WHERE username='$user'");
-        if($exist->num_rows > 0){
-            $error = "El revendedor ya existe";
-        } else {
-            $conn->query("INSERT INTO users (username, password, credits, role) VALUES ('$user', '$pass', '$cred', 'reseller')");
-            header("Location: admin.php");
-            exit();
-        }
-    } else if($tipo === 'ssh') {
-        $dias = intval($_POST['exp_days']);
-        $limite = intval($_POST['ssh_limit']);
-        $owner = $_SESSION['user'];
-
-        // Verificar si existe el usuario SSH
-        $exist = $conn->query("SELECT id FROM ssh_accounts WHERE username='$user'");
-        if($exist->num_rows > 0){
-            $error = "El usuario SSH ya existe";
-        } else {
-            // Fecha de expiración calculada
-            $expira_date = date('Y-m-d', strtotime("+$dias days"));
-
-            // Intentar crear el usuario en el sistema operativo Linux (VPS)
-            $cmd = "sudo useradd -M -s /bin/false -e $expira_date $user && echo '$user:$pass' | sudo chpasswd";
-            shell_exec($cmd);
-
-            // Insertar en la base de datos
-            $stmt = $conn->prepare("INSERT INTO ssh_accounts (username, password, expira, ssh_limit, owner) VALUES (?, ?, ?, ?, ?)");
-            $stmt->bind_param("sssis", $user, $pass, $expira_date, $limite, $owner);
-            $stmt->execute();
-
-            header("Location: admin.php");
-            exit();
-        }
+    $exist = $conn->query("SELECT id FROM users WHERE username='$user'");
+    if($exist->num_rows > 0){
+        $error = "El revendedor ya existe";
+    } else {
+        $conn->query("INSERT INTO users (username, password, credits, role) VALUES ('$user', '$pass', '$cred', 'reseller')");
+        header("Location: admin.php");
+        exit();
     }
 }
 
+// CREAR CUENTA (SSH NORMAL / TOKEN / HWID)
+if(isset($_POST['crear_cuenta'])){
+    $tipo = $_POST['account_type']; // 'ssh', 'token', 'hwid'
+    $user = trim($_POST['username']);
+    $pass = isset($_POST['password']) ? trim($_POST['password']) : '';
+    $dias = intval($_POST['exp_days']);
+    
+    // Si el tipo es token o hwid, el límite siempre es 1 por defecto
+    if($tipo === 'token' || $tipo === 'hwid'){
+        $limite = 1;
+    } else {
+        $limite = intval($_POST['ssh_limit']);
+    }
+    
+    $owner = $_SESSION['user'];
+
+    $exist = $conn->query("SELECT id FROM ssh_accounts WHERE username='$user'");
+    if($exist->num_rows > 0){
+        $error = "La cuenta o identificador ya existe";
+    } else {
+        $expira_date = date('Y-m-d', strtotime("+$dias days"));
+
+        if($tipo === 'ssh'){
+            // Crear usuario real en Linux para SSH Normal
+            $cmd = "sudo useradd -M -s /bin/false -e $expira_date $user && echo '$user:$pass' | sudo chpasswd";
+            shell_exec($cmd);
+        }
+
+        // Insertar en la BD especificando el tipo de cuenta
+        $stmt = $conn->prepare("INSERT INTO ssh_accounts (username, password, expira, ssh_limit, owner, type) VALUES (?, ?, ?, ?, ?, ?)");
+        $stmt->bind_param("sssiss", $user, $pass, $expira_date, $limite, $owner, $tipo);
+        $stmt->execute();
+
+        header("Location: admin.php");
+        exit();
+    }
+}
+
+// ELIMINAR RESELLER
 if(isset($_POST['delete_user'])){
     $id = intval($_POST['delete_user']);
     $conn->query("DELETE FROM users WHERE id='$id'");
@@ -114,7 +126,7 @@ td{padding:12px;text-align:center;border-bottom:1px solid #eee;}
 .modal{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);display:none;justify-content:center;align-items:center;z-index:999;}
 .modal-box{background:#fff;width:90%;max-width:500px;padding:25px;border-radius:16px;max-height:80vh;overflow-y:auto;}
 input,select{width:100%;padding:12px;margin-top:10px;border-radius:8px;border:1px solid #ddd;}
-label{font-weight:600;display:block;margin-top:10px;font-size:14px;color:#333;}
+label{font-weight:600;display:block;margin-top:12px;font-size:14px;color:#333;}
 .modal-btn{width:100%;margin-top:15px;padding:12px;border:none;border-radius:8px;color:#fff;font-weight:600;cursor:pointer;background:#0d6efd;}
 .close-btn{background:#6b7280;}
 .alert-error{background:#f8d7da;color:#721c24;padding:12px;border-radius:8px;margin-bottom:15px;}
@@ -170,51 +182,53 @@ label{font-weight:600;display:block;margin-top:10px;font-size:14px;color:#333;}
     </div>
 </div>
 
-<!-- MODAL CREAR RESELLER (RÁPIDO) -->
+<!-- MODAL CREAR RESELLER -->
 <div class="modal" id="resellerModal">
     <div class="modal-box">
         <h3><?php echo __('create_reseller'); ?></h3>
         <form method="POST">
-            <input type="hidden" name="tipo_usuario" value="reseller">
             <input name="username" placeholder="<?php echo __('user'); ?>" required>
             <input name="password" placeholder="<?php echo __('pass'); ?>" required>
             <input type="number" name="credits" placeholder="<?php echo __('initial_credits'); ?>" value="0" required>
-            <button name="crear_cuenta_unificada" class="modal-btn"><?php echo __('create_account'); ?></button>
+            <button name="crear_reseller" class="modal-btn"><?php echo __('create_account'); ?></button>
             <button type="button" class="modal-btn close-btn" onclick="closeModal('resellerModal')"><?php echo __('cancel'); ?></button>
         </form>
     </div>
 </div>
 
-<!-- MODAL UNIFICADO: CREAR CUENTAS (SSH / RESELLER) -->
+<!-- MODAL CREAR CUENTA (SSH NORMAL / TOKEN / HWID) -->
 <div class="modal" id="createAccountModal">
     <div class="modal-box">
         <h3>➕ Crear Cuenta</h3>
         <form method="POST">
             <label>Tipo de usuario:</label>
-            <select name="tipo_usuario" id="tipo_usuario_select" onchange="toggleCamposTipo(this.value)" required>
+            <select name="account_type" id="account_type_select" onchange="actualizarCamposTipo(this.value)" required>
                 <option value="ssh">Usuario SSH Normal</option>
-                <option value="reseller">Revendedor</option>
+                <option value="token">Token</option>
+                <option value="hwid">HWID</option>
             </select>
 
-            <input name="username" placeholder="<?php echo __('user'); ?>" required>
-            <input name="password" placeholder="<?php echo __('pass'); ?>" required>
+            <!-- Campo Usuario / Token / HWID -->
+            <label id="lbl_username">Usuario:</label>
+            <input name="username" id="input_username" placeholder="Ingrese el usuario" required>
 
-            <!-- CAMPOS DINÁMICOS SSH -->
-            <div id="campos_ssh">
-                <label>Días de duración:</label>
-                <input type="number" name="exp_days" id="input_dias" value="30" min="1" required>
+            <!-- Campo Contraseña (Oculto para HWID o Token) -->
+            <div id="wrapper_password">
+                <label>Contraseña:</label>
+                <input name="password" id="input_password" placeholder="••••••••">
+            </div>
 
+            <!-- Días de Expiración -->
+            <label>Días de duración:</label>
+            <input type="number" name="exp_days" value="30" min="1" required>
+
+            <!-- Límite de Conexiones (Oculto para HWID o Token) -->
+            <div id="wrapper_limit">
                 <label>Límite de conexiones simultáneas:</label>
-                <input type="number" name="ssh_limit" id="input_limite" value="1" min="1" required>
+                <input type="number" name="ssh_limit" id="input_ssh_limit" value="1" min="1" required>
             </div>
 
-            <!-- CAMPOS DINÁMICOS RESELLER -->
-            <div id="campos_reseller" style="display:none;">
-                <label>Créditos iniciales:</label>
-                <input type="number" name="credits" id="input_creditos" value="0">
-            </div>
-
-            <button name="crear_cuenta_unificada" class="modal-btn">Guardar Cuenta</button>
+            <button name="crear_cuenta" class="modal-btn">Guardar Cuenta</button>
             <button type="button" class="modal-btn close-btn" onclick="closeModal('createAccountModal')"><?php echo __('cancel'); ?></button>
         </form>
     </div>
@@ -259,22 +273,40 @@ function openModal(id){ document.getElementById(id).style.display = "flex"; }
 function closeModal(id){ document.getElementById(id).style.display = "none"; }
 function confirmDeleteUser(id){ openModal('deleteUserModal'); document.getElementById('delete_user_id').value = id; }
 
-function toggleCamposTipo(val){
-    const camposSSH = document.getElementById('campos_ssh');
-    const camposReseller = document.getElementById('campos_reseller');
-    const inputDias = document.getElementById('input_dias');
-    const inputLimite = document.getElementById('input_limite');
+function actualizarCamposTipo(tipo){
+    const lblUser = document.getElementById('lbl_username');
+    const inputUser = document.getElementById('input_username');
+    const wrapperPass = document.getElementById('wrapper_password');
+    const inputPass = document.getElementById('input_password');
+    const wrapperLimit = document.getElementById('wrapper_limit');
+    const inputLimit = document.getElementById('input_ssh_limit');
 
-    if(val === 'ssh'){
-        camposSSH.style.display = 'block';
-        camposReseller.style.display = 'none';
-        inputDias.required = true;
-        inputLimite.required = true;
-    } else {
-        camposSSH.style.display = 'none';
-        camposReseller.style.display = 'block';
-        inputDias.required = false;
-        inputLimite.required = false;
+    if(tipo === 'ssh'){
+        lblUser.innerText = 'Usuario:';
+        inputUser.placeholder = 'Ej: usuario123';
+        wrapperPass.style.display = 'block';
+        inputPass.required = true;
+        
+        wrapperLimit.style.display = 'block';
+        inputLimit.required = true;
+    } else if(tipo === 'token') {
+        lblUser.innerText = 'Token:';
+        inputUser.placeholder = 'Ej: tk_abc123xyz';
+        wrapperPass.style.display = 'none';
+        inputPass.required = false;
+        
+        wrapperLimit.style.display = 'none';
+        inputLimit.required = false;
+        inputLimit.value = 1;
+    } else if(tipo === 'hwid') {
+        lblUser.innerText = 'Identificador HWID:';
+        inputUser.placeholder = 'Ej: A1B2-C3D4-E5F6';
+        wrapperPass.style.display = 'none';
+        inputPass.required = false;
+        
+        wrapperLimit.style.display = 'none';
+        inputLimit.required = false;
+        inputLimit.value = 1;
     }
 }
 
