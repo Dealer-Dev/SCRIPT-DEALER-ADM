@@ -5,7 +5,7 @@
 #   Ubuntu 22/24/25
 # ═══════════════════════════════════════════════════════
 
-SCRIPT_VERSION="1.2"
+SCRIPT_VERSION="1.3"
 R='\033[0;31m'
 G='\033[0;32m'
 Y='\033[1;33m'
@@ -2412,7 +2412,7 @@ actualizar_panel_web() {
     chmod -R 755 /var/www/html
     
     echo ""; sep
-    echo -e "  ${G}✅ ¡Panel Web actualizado correctamente!${NC}"
+    echo -e "  ${G}¡Panel Web actualizado correctamente!${NC}"
     echo -e "  ${Y}Tu base de datos y configuración (db.php) se mantuvieron intactas.${NC}"
     echo ""; read -p "  Presiona ENTER para continuar..."
 }
