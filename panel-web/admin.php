@@ -66,11 +66,11 @@ if(isset($_POST['guardar_payloads_text'])){
 $payload_gcp = file_exists('/etc/dealer-adm/payload_gcp.txt') ? file_get_contents('/etc/dealer-adm/payload_gcp.txt') : '';
 $payload_cf  = file_exists('/etc/dealer-adm/payload_cloudfront.txt') ? file_get_contents('/etc/dealer-adm/payload_cloudfront.txt') : '';
 
-// GUARDAR CRÉDITOS A RESELLER
+// GUARDAR CRÉDITOS A RESELLER (CORREGIDO)
 if(isset($_POST['guardar_creditos'])){
     $reseller_id = intval($_POST['reseller_id']);
-    $sumar = intval($_POST['credits_sumar']);
-    $restar = intval($_POST['credits_restar']);
+    $sumar  = isset($_POST['credits_sumar']) && $_POST['credits_sumar'] !== '' ? intval($_POST['credits_sumar']) : 0;
+    $restar = isset($_POST['credits_restar']) && $_POST['credits_restar'] !== '' ? intval($_POST['credits_restar']) : 0;
 
     if($sumar > 0){
         $conn->query("UPDATE users SET credits = credits + $sumar WHERE id='$reseller_id'");
@@ -456,7 +456,7 @@ label{font-weight:600;display:block;margin-top:12px;font-size:14px;color:#333;}
     $cred_user = $_GET['u'] ?? '';
     $cred_total = $_GET['c'] ?? '0';
 ?>
-<div class="modal" style="display:flex;">
+<div class="modal" id="creditsResultModal" style="display:flex;">
     <div class="modal-box" style="text-align:center;">
         <h3 style="color:#16a34a; margin-top:0;">✅ Créditos Actualizados</h3>
         <p style="font-size:15px; margin-top:10px;">
@@ -464,7 +464,7 @@ label{font-weight:600;display:block;margin-top:12px;font-size:14px;color:#333;}
         </p>
         <div style="margin:20px 0; background:#f8fafc; padding:15px; border-radius:12px; border:1px solid #e2e8f0;">
             <span style="font-size:14px; color:#64748b; font-weight:600;">NUEVO TOTAL DE CRÉDITOS:</span><br>
-            <span style="font-size:28px; font-weight:800; color:#16a34a; display:inline-block; margin-top:5px;">
+            <span style="font-size:32px; font-weight:800; color:#16a34a; display:inline-block; margin-top:5px;">
                 <?php echo htmlspecialchars($cred_total); ?>
             </span>
         </div>
@@ -486,10 +486,10 @@ label{font-weight:600;display:block;margin-top:12px;font-size:14px;color:#333;}
             </p>
 
             <label>Sumar Créditos (+):</label>
-            <input type="number" name="credits_sumar" placeholder="Cantidad a agregar" min="0">
+            <input type="number" name="credits_sumar" placeholder="Cantidad a agregar" min="0" value="0">
 
             <label>Restar Créditos (-):</label>
-            <input type="number" name="credits_restar" placeholder="Cantidad a descontar" min="0">
+            <input type="number" name="credits_restar" placeholder="Cantidad a descontar" min="0" value="0">
 
             <button name="guardar_creditos" class="modal-btn" style="margin-top:20px;">Guardar Créditos</button>
             <button type="button" class="modal-btn close-btn" onclick="closeModal('assignModal')"><?php echo __('cancel'); ?></button>
