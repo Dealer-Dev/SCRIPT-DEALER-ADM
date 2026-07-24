@@ -172,6 +172,13 @@ function copiarPayload(){
 </script>
 
 <?php if(isset($_GET['ok'])): ?>
+<?php
+    $ok_tipo = $_GET['tipo'] ?? 'ssh';
+    $ok_ref  = $_GET['ref'] ?? '';
+    $ok_u    = $_GET['u'] ?? '';
+    $ok_p    = $_GET['p'] ?? '';
+    $ok_e    = $_GET['e'] ?? '';
+?>
 <div class="modal" style="display:flex;">
     <div class="modal-box">
         <h3>Usuario Creado</h3>
@@ -181,9 +188,18 @@ function copiarPayload(){
             <div class="info-row"><b>Dominio Cloudflare:</b> <code><?php echo htmlspecialchars($cf_domain); ?></code></div>
         <?php endif; ?>
 
-        <div class="info-row"><b>Usuario / Ref:</b> <code><?php echo htmlspecialchars($_GET['u']); ?></code></div>
-        <div class="info-row"><b>Pass / Valor:</b> <code><?php echo htmlspecialchars($_GET['p']); ?></code></div>
-        <div class="info-row"><b>Expiración:</b> <?php echo htmlspecialchars($_GET['e']); ?></div>
+        <?php if($ok_tipo == 'ssh'): ?>
+            <div class="info-row"><b>Usuario:</b> <code><?php echo htmlspecialchars($ok_u); ?></code></div>
+            <div class="info-row"><b>Contraseña:</b> <code><?php echo htmlspecialchars($ok_p); ?></code></div>
+        <?php elseif($ok_tipo == 'token'): ?>
+            <div class="info-row"><b>Nombre:</b> <code><?php echo htmlspecialchars($ok_ref); ?></code></div>
+            <div class="info-row"><b>Token:</b> <code><?php echo htmlspecialchars($ok_u); ?></code></div>
+        <?php elseif($ok_tipo == 'hwid'): ?>
+            <div class="info-row"><b>Nombre:</b> <code><?php echo htmlspecialchars($ok_ref); ?></code></div>
+            <div class="info-row"><b>HWID:</b> <code><?php echo htmlspecialchars($ok_u); ?></code></div>
+        <?php endif; ?>
+
+        <div class="info-row"><b>Expiración:</b> <?php echo htmlspecialchars($ok_e); ?></div>
 
         <?php if(!empty($payload)): ?>
             <hr style="margin:12px 0;border:0;border-top:1px solid #eee;">
