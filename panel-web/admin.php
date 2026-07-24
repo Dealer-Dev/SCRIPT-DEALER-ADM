@@ -510,7 +510,6 @@ label{font-weight:600;display:block;margin-top:12px;font-size:14px;color:#333;}
         <?php elseif($ok_tipo == 'token'): ?>
             <div class="info-row"><b>Nombre:</b> <code><?php echo htmlspecialchars($ok_ref); ?></code></div>
             <div class="info-row"><b>Token:</b> <code><?php echo htmlspecialchars($ok_u); ?></code></div>
-            <div class="info-row"><b>Contraseña Token:</b> <code><?php echo htmlspecialchars($ok_p); ?></code></div>
         <?php elseif($ok_tipo == 'hwid'): ?>
             <div class="info-row"><b>Nombre:</b> <code><?php echo htmlspecialchars($ok_ref); ?></code></div>
             <div class="info-row"><b>HWID:</b> <code><?php echo htmlspecialchars($ok_u); ?></code></div>
@@ -531,7 +530,7 @@ label{font-weight:600;display:block;margin-top:12px;font-size:14px;color:#333;}
 ?>
 <div class="modal" id="creditsResultModal" style="display:flex;">
     <div class="modal-box" style="text-align:center;">
-        <h3 style="color:#16a34a; margin-top:0;">✅ Créditos Actualizados</h3>
+        <h3 style="color:#16a34a; margin-top:0;">Créditos Actualizados</h3>
         <p style="font-size:15px; margin-top:10px;">
             Revendedor: <b style="color:#0d6efd;"><?php echo htmlspecialchars($cred_user); ?></b>
         </p>
