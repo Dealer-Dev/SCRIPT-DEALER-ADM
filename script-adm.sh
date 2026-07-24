@@ -5,7 +5,7 @@
 #   Ubuntu 22/24/25
 # ═══════════════════════════════════════════════════════
 
-SCRIPT_VERSION="1.1"
+SCRIPT_VERSION="1.2"
 R='\033[0;31m'
 G='\033[0;32m'
 Y='\033[1;33m'
@@ -2472,15 +2472,25 @@ cambiar_creds_panel_web() {
         sleep 2 && return
     fi
 
-    # Obtener usuario admin actual
-    ADM_CURRENT=$(php -r '
+    # Obtener ID y usuario del admin principal (el primer registro con role='admin')
+    ADMIN_INFO=$(php -r '
         mysqli_report(MYSQLI_REPORT_OFF);
         include "/var/www/html/db.php";
-        $res = $conn->query("SELECT username FROM users WHERE role=\"admin\" LIMIT 1");
-        if ($res && $r = $res->fetch_assoc()) echo $r["username"];
+        $res = $conn->query("SELECT id, username FROM users WHERE role=\"admin\" ORDER BY id ASC LIMIT 1");
+        if ($res && $r = $res->fetch_assoc()) {
+            echo $r["id"] . "|" . $r["username"];
+        }
     ' 2>/dev/null)
 
-    [ -n "$ADM_CURRENT" ] && echo -e "  ${W}Usuario Admin actual:${NC} ${Y}$ADM_CURRENT${NC}\n"
+    if [ -z "$ADMIN_INFO" ]; then
+        echo -e "  ${R}❌ No se encontró ninguna cuenta de Administrador en la base de datos.${NC}"
+        sleep 2 && return
+    fi
+
+    ADM_ID=$(echo "$ADMIN_INFO" | cut -d'|' -f1)
+    ADM_CURRENT=$(echo "$ADMIN_INFO" | cut -d'|' -f2)
+
+    echo -e "  ${W}Usuario Admin actual:${NC} ${Y}$ADM_CURRENT${NC}\n"
 
     read -p "  Nuevo usuario Admin: " NEW_ADM_USER
     if [ -z "$NEW_ADM_USER" ]; then
@@ -2496,27 +2506,28 @@ cambiar_creds_panel_web() {
 
     echo -e "\n  ${C}Actualizando credenciales en la base de datos...${NC}"
 
-    # Ejecutar la actualización en PHP
+    # Ejecutar la actualización especificando el ID exacto y LIMIT 1
     RESULT=$(php -r '
         mysqli_report(MYSQLI_REPORT_OFF);
         include "/var/www/html/db.php";
-        $u = $conn->real_escape_string($argv[1]);
-        $p = $conn->real_escape_string($argv[2]);
+        $id = intval($argv[1]);
+        $u  = $conn->real_escape_string($argv[2]);
+        $p  = $conn->real_escape_string($argv[3]);
 
-        // 1. Comprobar si el nombre de usuario ya está ocupado por un reseller
-        $check = $conn->query("SELECT id FROM users WHERE username=\"$u\" AND role!=\"admin\"");
+        // 1. Verificar si el usuario ingresado ya existe en OTRO ID
+        $check = $conn->query("SELECT id FROM users WHERE username=\"$u\" AND id != $id");
         if ($check && $check->num_rows > 0) {
             echo "EXISTS";
             exit();
         }
 
-        // 2. Intentar actualizar el Admin
-        if ($conn->query("UPDATE users SET username=\"$u\", password=\"$p\" WHERE role=\"admin\"")) {
+        // 2. Actualizar solo la cuenta admin específica por su ID
+        if ($conn->query("UPDATE users SET username=\"$u\", password=\"$p\" WHERE id=$id LIMIT 1")) {
             echo "OK";
         } else {
             echo "ERR: " . $conn->error;
         }
-    ' "$NEW_ADM_USER" "$NEW_ADM_PASS" 2>/dev/null)
+    ' "$ADM_ID" "$NEW_ADM_USER" "$NEW_ADM_PASS" 2>/dev/null)
 
     if [ "$RESULT" = "OK" ]; then
         echo ""; sep
@@ -2525,8 +2536,8 @@ cambiar_creds_panel_web() {
         echo -e "  ${W}🔑 Contraseña:${NC} \033[1;32m$NEW_ADM_PASS\033[0m"
     elif [ "$RESULT" = "EXISTS" ]; then
         echo ""; sep
-        echo -e "  ${R}❌ El usuario '$NEW_ADM_USER' ya existe como Revendedor.${NC}"
-        echo -e "  ${Y}Por favor intenta con otro nombre (ej: dealer_admin, admin_vps, etc).${NC}"
+        echo -e "  ${R}❌ El usuario '$NEW_ADM_USER' ya está registrado por otra cuenta.${NC}"
+        echo -e "  ${Y}Por favor prueba con otro nombre.${NC}"
     else
         echo ""; sep
         echo -e "  ${R}❌ Error al actualizar la base de datos.${NC}"
