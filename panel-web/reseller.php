@@ -14,6 +14,28 @@ $stmt->bind_param("s", $username);
 $stmt->execute();
 $reseller = $stmt->get_result()->fetch_assoc();
 
+// Archivo de contraseña Token personalizada del revendedor
+$reseller_token_pass_file = "/etc/dealer-adm/resellers/token_pass_" . $username . ".txt";
+
+// GUARDAR CONTRASEÑA TOKEN GLOBAL DEL REVENDEDOR
+if(isset($_POST['guardar_token_pass'])){
+    $new_t_pass = trim($_POST['custom_token_pass']);
+    if (!file_exists('/etc/dealer-adm/resellers')) {
+        exec("sudo mkdir -p /etc/dealer-adm/resellers && sudo chmod 777 /etc/dealer-adm/resellers");
+    }
+    if(!empty($new_t_pass)){
+        file_put_contents($reseller_token_pass_file, $new_t_pass);
+    } else {
+        file_put_contents($reseller_token_pass_file, "dealer");
+    }
+    header("Location: reseller.php?token_pass_ok=1");
+    exit();
+}
+
+// Obtener la contraseña token actual del revendedor (por defecto 'dealer')
+$token_pass_actual = file_exists($reseller_token_pass_file) ? trim(file_get_contents($reseller_token_pass_file)) : "dealer";
+if(empty($token_pass_actual)) { $token_pass_actual = "dealer"; }
+
 if(isset($_POST['crear_ssh'])){
     if($reseller['credits'] <= 0){
         header("Location: reseller.php?error=1");
@@ -28,7 +50,7 @@ if(isset($_POST['crear_ssh'])){
         $ref = $ssh_user;
     } elseif($tipo == "token"){
         $ssh_user = trim($_POST['token_user']);
-        $ssh_pass = "dealer";
+        $ssh_pass = $token_pass_actual; // Se usa la clave global personalizada o 'dealer'
         $ref = trim($_POST['ref_token']);
     } elseif($tipo == "hwid"){
         $ssh_user = trim($_POST['hwid']);
@@ -98,6 +120,7 @@ body{margin:0;font-family:'Segoe UI',sans-serif;background:#f4f6f9;}
 select,input{width:100%;padding:12px;margin-top:12px;border-radius:10px;border:1px solid #ddd;}
 button,.btn-copy{width:100%;margin-top:12px;padding:12px;border:none;border-radius:10px;background:linear-gradient(135deg,#0d6efd,#6610f2);color:#fff;font-weight:600;cursor:pointer;}
 .btn-online{background:linear-gradient(135deg,#0dcaf0,#0d6efd);margin-top:12px;}
+.btn-tpass{background:linear-gradient(135deg,#eab308,#ca8a04);margin-top:10px;}
 .btn-copy{background:#198754;}
 .links{margin-top:20px;display:flex;justify-content:space-between;}
 .links a{text-decoration:none;font-weight:600;}
@@ -115,6 +138,7 @@ button,.btn-copy{width:100%;margin-top:12px;padding:12px;border:none;border-radi
     <div class="credit-badge"><?php echo __('available_credits'); ?>: <?php echo $reseller['credits']; ?></div>
 
     <button class="btn-online" onclick="cargarOnline()"><?php echo __('view_online'); ?></button>
+    <button class="btn-tpass" onclick="openModal('tokenPassModal')">🔑 Pass Token Global (Actual: <?php echo htmlspecialchars($token_pass_actual); ?>)</button>
 
     <h3 style="margin-top:25px;"><?php echo __('create_account'); ?></h3>
     <select id="tipo" onchange="cambiarTipo()">
@@ -134,6 +158,21 @@ button,.btn-copy{width:100%;margin-top:12px;padding:12px;border:none;border-radi
     <div class="links">
         <a href="mis_usuarios.php" style="color:#6610f2;"><?php echo __('my_users'); ?></a>
         <a href="logout.php" style="color:#dc3545;"><?php echo __('logout'); ?></a>
+    </div>
+</div>
+
+<!-- MODAL CONFIGURAR PASS TOKEN GLOBAL -->
+<div class="modal" id="tokenPassModal">
+    <div class="modal-box">
+        <h3>🔑 Contraseña Token Global</h3>
+        <form method="POST">
+            <p style="font-size:13px; color:#666;">Define la contraseña por defecto para todas las cuentas de tipo Token que crees.</p>
+            <label style="font-weight:600; font-size:14px;">Nueva Contraseña Token:</label>
+            <input name="custom_token_pass" value="<?php echo htmlspecialchars($token_pass_actual); ?>" placeholder="dealer" required>
+            
+            <button name="guardar_token_pass" style="background:#198754; margin-top:15px;">Guardar Contraseña</button>
+            <button type="button" style="background:#6c757d; margin-top:8px;" onclick="closeModal('tokenPassModal')">Cancelar</button>
+        </form>
     </div>
 </div>
 
@@ -200,6 +239,7 @@ function copiarTexto(elementId, buttonId){
         <?php elseif($ok_tipo == 'token'): ?>
             <div class="info-row"><b>Nombre:</b> <code><?php echo htmlspecialchars($ok_ref); ?></code></div>
             <div class="info-row"><b>Token:</b> <code><?php echo htmlspecialchars($ok_u); ?></code></div>
+            <div class="info-row"><b>Contraseña Token:</b> <code><?php echo htmlspecialchars($ok_p); ?></code></div>
         <?php elseif($ok_tipo == 'hwid'): ?>
             <div class="info-row"><b>Nombre:</b> <code><?php echo htmlspecialchars($ok_ref); ?></code></div>
             <div class="info-row"><b>HWID:</b> <code><?php echo htmlspecialchars($ok_u); ?></code></div>
