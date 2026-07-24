@@ -157,7 +157,7 @@ if(isset($_POST['crear_cuenta'])){
     if($tipo === 'token'){
         $limite = 1;
         $ref = $ref_name;
-        $pass = $token_pass_admin_actual; // Se asigna la pass token global del admin
+        $pass = $token_pass_admin_actual;
     } elseif($tipo === 'hwid'){
         $limite = 1;
         $ref = $ref_name;
@@ -175,9 +175,10 @@ if(isset($_POST['crear_cuenta'])){
     } else {
         $expira_date = date('Y-m-d', strtotime("+$dias days"));
 
-        // Crear usuario real en Linux
-        $cmd = "sudo useradd -M -s /bin/false -e $expira_date $user && echo '$user:$pass' | sudo chpasswd && sudo chage -E $expira_date -M 99999 $user && sudo usermod -f 0 $user";
-        exec($cmd);
+        if($tipo === 'ssh'){
+            $cmd = "sudo useradd -M -s /bin/false -e $expira_date $user && echo '$user:$pass' | sudo chpasswd && sudo chage -E $expira_date -M 99999 $user && sudo usermod -f 0 $user";
+            exec($cmd);
+        }
 
         $file_content = "tipo: $tipo\nnombre: $ref\nusuario: $user\npassword: $pass\nfecha: $expira_date\nlimite: $limite\ncreador_id: 0\ncreador_nombre: $owner";
         $tmp_file = tempnam(sys_get_temp_dir(), 'usr_');
@@ -202,7 +203,8 @@ if os.path.exists(p):
         $stmt->bind_param("ssssss", $user, $pass, $expira_date, $owner, $tipo, $ref);
         $stmt->execute();
 
-        header("Location: admin.php");
+        // Redireccionar mostrando el modal de datos creados
+        header("Location: admin.php?ok=1&tipo=$tipo&ref=".urlencode($ref)."&u=".urlencode($user)."&p=".urlencode($pass)."&e=$expira_date&l=$limite");
         exit();
     }
 }
@@ -257,6 +259,10 @@ if os.path.exists(p):
     header("Location: admin.php" . $tab_redirect . $reseller_redirect);
     exit();
 }
+
+// Cargar IP VPS y Dominio Cloudflare
+$server_ip = $_SERVER['SERVER_ADDR'] ?? exec("curl -s -4 ifconfig.me") ?? "127.0.0.1";
+$cf_domain = file_exists('/etc/dealer-adm/cf_domain') ? trim(file_get_contents('/etc/dealer-adm/cf_domain')) : '';
 
 // LISTA DE REVENDEDORES PARA EL MENÚ
 $resellers_arr = [];
@@ -339,6 +345,8 @@ label{font-weight:600;display:block;margin-top:12px;font-size:14px;color:#333;}
 .close-btn{background:#6b7280;}
 .alert-error{background:#f8d7da;color:#721c24;padding:12px;border-radius:8px;margin-bottom:15px;}
 .switch-box{display:flex;align-items:center;gap:10px;margin-top:10px;background:#f8fafc;padding:10px;border-radius:8px;border:1px solid #e2e8f0;}
+.info-row{margin-bottom:8px;font-size:14px;text-align:left;}
+.info-row b{color:#333;}
 </style>
 </head>
 <body>
@@ -476,6 +484,45 @@ label{font-weight:600;display:block;margin-top:12px;font-size:14px;color:#333;}
     </div>
 </div>
 
+<!-- MODAL USUARIO CREADO (ESTILO RESELLER SIN PAYLOADS) -->
+<?php if(isset($_GET['ok'])): ?>
+<?php
+    $ok_tipo = $_GET['tipo'] ?? 'ssh';
+    $ok_ref  = $_GET['ref'] ?? '';
+    $ok_u    = $_GET['u'] ?? '';
+    $ok_p    = $_GET['p'] ?? '';
+    $ok_e    = $_GET['e'] ?? '';
+    $ok_l    = $_GET['l'] ?? '1';
+?>
+<div class="modal" style="display:flex;">
+    <div class="modal-box" style="text-align:center;">
+        <h3>Usuario Creado</h3>
+        <div class="info-row"><b>IP VPS:</b> <code><?php echo htmlspecialchars($server_ip); ?></code></div>
+        
+        <?php if(!empty($cf_domain)): ?>
+            <div class="info-row"><b>Dominio Cloudflare:</b> <code><?php echo htmlspecialchars($cf_domain); ?></code></div>
+        <?php endif; ?>
+
+        <?php if($ok_tipo == 'ssh'): ?>
+            <div class="info-row"><b>Usuario:</b> <code><?php echo htmlspecialchars($ok_u); ?></code></div>
+            <div class="info-row"><b>Contraseña:</b> <code><?php echo htmlspecialchars($ok_p); ?></code></div>
+            <div class="info-row"><b>Límite de Conexiones:</b> <code><?php echo htmlspecialchars($ok_l); ?></code></div>
+        <?php elseif($ok_tipo == 'token'): ?>
+            <div class="info-row"><b>Nombre:</b> <code><?php echo htmlspecialchars($ok_ref); ?></code></div>
+            <div class="info-row"><b>Token:</b> <code><?php echo htmlspecialchars($ok_u); ?></code></div>
+            <div class="info-row"><b>Contraseña Token:</b> <code><?php echo htmlspecialchars($ok_p); ?></code></div>
+        <?php elseif($ok_tipo == 'hwid'): ?>
+            <div class="info-row"><b>Nombre:</b> <code><?php echo htmlspecialchars($ok_ref); ?></code></div>
+            <div class="info-row"><b>HWID:</b> <code><?php echo htmlspecialchars($ok_u); ?></code></div>
+        <?php endif; ?>
+
+        <div class="info-row"><b>Expiración:</b> <?php echo htmlspecialchars($ok_e); ?></div>
+
+        <button onclick="window.location.href='admin.php'" class="modal-btn" style="background:#6c757d; margin-top:15px;">Cerrar</button>
+    </div>
+</div>
+<?php endif; ?>
+
 <!-- MODAL CONFIRMACIÓN DE CRÉDITOS ACTUALIZADOS -->
 <?php if(isset($_GET['credits_updated'])): ?>
 <?php
@@ -601,11 +648,11 @@ label{font-weight:600;display:block;margin-top:12px;font-size:14px;color:#333;}
             </select>
 
             <!-- BOTÓN DE PASS TOKEN GLOBAL PARA ADMIN (SOLO VISIBLE SI ES TOKEN) -->
-            <button type="button" id="btn_token_pass_admin" class="btn-tpass" onclick="openModal('tokenPassAdminModal')">Contraseña Token (Actual: <?php echo htmlspecialchars($token_pass_admin_actual); ?>)</button>
+            <button type="button" id="btn_token_pass_admin" class="btn-tpass" onclick="openModal('tokenPassAdminModal')">🔑 Pass Token Global (Actual: <?php echo htmlspecialchars($token_pass_admin_actual); ?>)</button>
 
             <div id="wrapper_ref_name" style="display:none;">
-                <label>Nombre:</label>
-                <input name="ref_name" id="input_ref_name" placeholder="">
+                <label>Nombre del Cliente (Referencia):</label>
+                <input name="ref_name" id="input_ref_name" placeholder="Ej: Juan Pérez">
             </div>
 
             <label id="lbl_username">Usuario:</label>
@@ -633,7 +680,7 @@ label{font-weight:600;display:block;margin-top:12px;font-size:14px;color:#333;}
 <!-- MODAL CONFIGURAR PASS TOKEN GLOBAL (ADMIN) -->
 <div class="modal" id="tokenPassAdminModal">
     <div class="modal-box">
-        <h3>Contraseña Token (Admin)</h3>
+        <h3>🔑 Contraseña Token Global (Admin)</h3>
         <form method="POST">
             <p style="font-size:13px; color:#666;">Define la contraseña por defecto para todas las cuentas Token que crees como Administrador.</p>
             <label style="font-weight:600; font-size:14px;">Nueva Contraseña Token:</label>
@@ -725,7 +772,7 @@ function actualizarCamposTipoAdmin(tipo){
         inputLimit.required = false;
         inputLimit.value = 1;
 
-        btnTokenPass.style.display = 'block'; // Se muestra solo en tipo Token
+        btnTokenPass.style.display = 'block';
     } else if(tipo === 'hwid') {
         wrapperRefName.style.display = 'block';
         inputRefName.required = true;
