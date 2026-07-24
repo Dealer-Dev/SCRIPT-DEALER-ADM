@@ -76,10 +76,10 @@ if(isset($_POST['crear_cuenta'])){
             shell_exec($cmd);
         }
 
-        // Insertar en la BD especificando el tipo de cuenta
-        $stmt = $conn->prepare("INSERT INTO ssh_accounts (username, password, expires, ssh_limit, owner, type) VALUES (?, ?, ?, ?, ?, ?)");
-        $stmt->bind_param("sssiss", $user, $pass, $expira_date, $limite, $owner, $tipo);
-        $stmt->execute();
+        // ✅AHORA (Coincide con las columnas reales de tu BD)
+$stmt = $conn->prepare("INSERT INTO ssh_accounts (username, password, expires, reseller, type, reference_name) VALUES (?, ?, ?, ?, ?, ?)");
+$stmt->bind_param("ssssss", $user, $pass, $expira_date, $owner, $tipo, $ref_name);
+$stmt->execute();
 
         header("Location: admin.php");
         exit();
