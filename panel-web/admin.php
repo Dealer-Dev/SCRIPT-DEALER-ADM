@@ -79,7 +79,19 @@ if(isset($_POST['guardar_creditos'])){
         $conn->query("UPDATE users SET credits = GREATEST(credits - $restar, 0) WHERE id='$reseller_id'");
     }
 
-    header("Location: admin.php");
+    // Obtener los datos actualizados del revendedor
+    $stmt_info = $conn->prepare("SELECT username, credits FROM users WHERE id=?");
+    $stmt_info->bind_param("i", $reseller_id);
+    $stmt_info->execute();
+    $res_info = $stmt_info->get_result()->fetch_assoc();
+
+    if($res_info){
+        $u_name = urlencode($res_info['username']);
+        $new_cred = $res_info['credits'];
+        header("Location: admin.php?credits_updated=1&u=$u_name&c=$new_cred");
+    } else {
+        header("Location: admin.php");
+    }
     exit();
 }
 
@@ -437,6 +449,29 @@ label{font-weight:600;display:block;margin-top:12px;font-size:14px;color:#333;}
         </table>
     </div>
 </div>
+
+<!-- MODAL CONFIRMACIÓN DE CRÉDITOS ACTUALIZADOS -->
+<?php if(isset($_GET['credits_updated'])): ?>
+<?php
+    $cred_user = $_GET['u'] ?? '';
+    $cred_total = $_GET['c'] ?? '0';
+?>
+<div class="modal" style="display:flex;">
+    <div class="modal-box" style="text-align:center;">
+        <h3 style="color:#16a34a; margin-top:0;">✅ Créditos Actualizados</h3>
+        <p style="font-size:15px; margin-top:10px;">
+            Revendedor: <b style="color:#0d6efd;"><?php echo htmlspecialchars($cred_user); ?></b>
+        </p>
+        <div style="margin:20px 0; background:#f8fafc; padding:15px; border-radius:12px; border:1px solid #e2e8f0;">
+            <span style="font-size:14px; color:#64748b; font-weight:600;">NUEVO TOTAL DE CRÉDITOS:</span><br>
+            <span style="font-size:28px; font-weight:800; color:#16a34a; display:inline-block; margin-top:5px;">
+                <?php echo htmlspecialchars($cred_total); ?>
+            </span>
+        </div>
+        <button onclick="window.location.href='admin.php'" class="modal-btn" style="background:#0d6efd;">Aceptar</button>
+    </div>
+</div>
+<?php endif; ?>
 
 <!-- MODAL GESTIÓN DE CRÉDITOS INDIVIDUAL -->
 <div class="modal" id="assignModal">
