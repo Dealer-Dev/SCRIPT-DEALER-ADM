@@ -95,26 +95,26 @@ td{padding:12px;border-bottom:1px solid #eee;text-align:center;font-size:14px;}
 
     <!-- Pestañas -->
     <div class="tabs">
-        <a href="mis_usuarios.php?type=ssh" class="tab-btn <?php echo ($type_filter == 'ssh') ? 'active' : ''; ?>">🔑 SSH Normal</a>
-        <a href="mis_usuarios.php?type=token" class="tab-btn <?php echo ($type_filter == 'token') ? 'active' : ''; ?>">🎫 Token</a>
-        <a href="mis_usuarios.php?type=hwid" class="tab-btn <?php echo ($type_filter == 'hwid') ? 'active' : ''; ?>">📱 HWID</a>
+        <a href="mis_usuarios.php?type=ssh" class="tab-btn <?php echo ($type_filter == 'ssh') ? 'active' : ''; ?>">🔑 <?php echo __('ssh_normal'); ?></a>
+        <a href="mis_usuarios.php?type=token" class="tab-btn <?php echo ($type_filter == 'token') ? 'active' : ''; ?>">🎫 <?php echo __('token_user'); ?></a>
+        <a href="mis_usuarios.php?type=hwid" class="tab-btn <?php echo ($type_filter == 'hwid') ? 'active' : ''; ?>">📱 <?php echo __('hwid_user'); ?></a>
     </div>
 
     <table>
         <thead>
             <tr>
                 <?php if($type_filter == 'ssh'): ?>
-                    <th>Usuario</th>
-                    <th>Contraseña</th>
+                    <th><?php echo __('user'); ?></th>
+                    <th><?php echo __('pass'); ?></th>
                 <?php elseif($type_filter == 'token'): ?>
-                    <th>Nombre</th>
-                    <th>Token</th>
+                    <th><?php echo __('ref_name'); ?></th>
+                    <th><?php echo __('token_user'); ?></th>
                 <?php elseif($type_filter == 'hwid'): ?>
-                    <th>Nombre</th>
-                    <th>HWID</th>
+                    <th><?php echo __('ref_name'); ?></th>
+                    <th><?php echo __('hwid_user'); ?></th>
                 <?php endif; ?>
-                <th>Fecha de Expiración</th>
-                <th>Acción</th>
+                <th><?php echo __('expiration_date'); ?></th>
+                <th><?php echo __('action'); ?></th>
             </tr>
         </thead>
         <tbody>
@@ -144,8 +144,8 @@ td{padding:12px;border-bottom:1px solid #eee;text-align:center;font-size:14px;}
                         <?php endif; ?>
                     </td>
                     <td>
-                        <a href="mis_usuarios.php?delete=<?php echo $row['id']; ?>&type=<?php echo urlencode($type_filter); ?>" onclick="return confirm('¿Eliminar usuario?')">
-                            <button class="btn-del">Eliminar</button>
+                        <a href="mis_usuarios.php?delete=<?php echo $row['id']; ?>&type=<?php echo urlencode($type_filter); ?>" onclick="return confirm('<?php echo __('delete_user_conf'); ?>')">
+                            <button class="btn-del"><?php echo __('delete'); ?></button>
                         </a>
                     </td>
                 </tr>
