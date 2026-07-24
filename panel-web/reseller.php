@@ -73,6 +73,11 @@ if os.path.exists(p):
     header("Location: reseller.php?ok=1&tipo=$tipo&ref=".urlencode($ref)."&u=".urlencode($ssh_user)."&p=".urlencode($ssh_pass)."&e=$expire_date");
     exit();
 }
+
+// Obtener IP pública del servidor y configuraciones adicionales
+$server_ip = $_SERVER['SERVER_ADDR'] ?? exec("curl -s -4 ifconfig.me") ?? "127.0.0.1";
+$cf_domain = file_exists('/etc/dealer-adm/cf_domain') ? trim(file_get_contents('/etc/dealer-adm/cf_domain')) : '';
+$payload   = file_exists('/etc/dealer-adm/payload.txt') ? trim(file_get_contents('/etc/dealer-adm/payload.txt')) : '';
 ?>
 <!DOCTYPE html>
 <html>
@@ -85,12 +90,17 @@ body{margin:0;font-family:'Segoe UI',sans-serif;background:#f4f6f9;}
 .container{max-width:550px;margin:30px auto;background:#fff;padding:25px;border-radius:18px;box-shadow:0 8px 30px rgba(0,0,0,0.06);}
 .credit-badge{background:#198754;color:#fff;padding:8px 15px;border-radius:20px;display:inline-block;margin-top:10px;font-weight:600;}
 select,input{width:100%;padding:12px;margin-top:12px;border-radius:10px;border:1px solid #ddd;}
-button{width:100%;margin-top:18px;padding:12px;border:none;border-radius:10px;background:linear-gradient(135deg,#0d6efd,#6610f2);color:#fff;font-weight:600;cursor:pointer;}
+button,.btn-copy{width:100%;margin-top:12px;padding:12px;border:none;border-radius:10px;background:linear-gradient(135deg,#0d6efd,#6610f2);color:#fff;font-weight:600;cursor:pointer;}
 .btn-online{background:linear-gradient(135deg,#0dcaf0,#0d6efd);margin-top:12px;}
+.btn-copy{background:#198754;}
 .links{margin-top:20px;display:flex;justify-content:space-between;}
 .links a{text-decoration:none;font-weight:600;}
 .modal{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);display:none;align-items:center;justify-content:center;z-index:999;}
-.modal-box{background:#fff;padding:25px;border-radius:16px;width:320px;text-align:center;max-height:80vh;overflow-y:auto;}
+.modal-box{background:#fff;padding:25px;border-radius:16px;width:90%;max-width:380px;text-align:left;max-height:85vh;overflow-y:auto;}
+.modal-box h3{margin-top:0;text-align:center;}
+.info-row{margin-bottom:8px;font-size:14px;}
+.info-row b{color:#333;}
+.payload-box{background:#f8f9fa;border:1px solid #e9ecef;padding:10px;border-radius:8px;font-family:monospace;font-size:12px;word-break:break-all;margin-top:5px;max-height:80px;overflow-y:auto;}
 </style>
 </head>
 <body>
@@ -123,7 +133,7 @@ button{width:100%;margin-top:18px;padding:12px;border:none;border-radius:10px;ba
 
 <!-- MODAL ONLINE -->
 <div class="modal" id="onlineModal">
-    <div class="modal-box">
+    <div class="modal-box" style="text-align:center;">
         <h3>👥 <?php echo __('view_online'); ?></h3>
         <div id="onlineContent">...</div>
         <button type="button" style="background:#6c757d;margin-top:15px;" onclick="closeModal('onlineModal')"><?php echo __('close'); ?></button>
@@ -150,16 +160,39 @@ function cargarOnline(){
         .then(res => res.text())
         .then(data => { document.getElementById('onlineContent').innerHTML = data; });
 }
+
+function copiarPayload(){
+    let text = document.getElementById("payload_text").innerText;
+    navigator.clipboard.writeText(text).then(() => {
+        let btn = document.getElementById("btn_cp");
+        btn.innerText = "¡Copiado!";
+        setTimeout(() => { btn.innerText = "📋 Copiar Payload"; }, 2000);
+    });
+}
 </script>
 
 <?php if(isset($_GET['ok'])): ?>
 <div class="modal" style="display:flex;">
     <div class="modal-box">
-        <h3>✅ Usuario Creado</h3>
-        <p><b>Usuario/Ref:</b> <?php echo htmlspecialchars($_GET['u']); ?></p>
-        <p><b>Pass/Valor:</b> <?php echo htmlspecialchars($_GET['p']); ?></p>
-        <p><b>Expira:</b> <?php echo htmlspecialchars($_GET['e']); ?></p>
-        <button onclick="window.location.href='reseller.php'">OK</button>
+        <h3>Usuario Creado</h3>
+        <div class="info-row"><b>IP VPS:</b> <code><?php echo htmlspecialchars($server_ip); ?></code></div>
+        
+        <?php if(!empty($cf_domain)): ?>
+            <div class="info-row"><b>Dominio Cloudflare:</b> <code><?php echo htmlspecialchars($cf_domain); ?></code></div>
+        <?php endif; ?>
+
+        <div class="info-row"><b>Usuario / Ref:</b> <code><?php echo htmlspecialchars($_GET['u']); ?></code></div>
+        <div class="info-row"><b>Pass / Valor:</b> <code><?php echo htmlspecialchars($_GET['p']); ?></code></div>
+        <div class="info-row"><b>Expiración:</b> <?php echo htmlspecialchars($_GET['e']); ?></div>
+
+        <?php if(!empty($payload)): ?>
+            <hr style="margin:12px 0;border:0;border-top:1px solid #eee;">
+            <div class="info-row"><b>Payload:</b></div>
+            <div class="payload-box" id="payload_text"><?php echo htmlspecialchars($payload); ?></div>
+            <button id="btn_cp" class="btn-copy" onclick="copiarPayload()">Copiar Payload</button>
+        <?php endif; ?>
+
+        <button onclick="window.location.href='reseller.php'" style="background:#6c757d;margin-top:10px;">Cerrar</button>
     </div>
 </div>
 <?php endif; ?>
