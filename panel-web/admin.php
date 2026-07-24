@@ -77,7 +77,7 @@ if(isset($_POST['crear_cuenta'])){
         }
 
         // Insertar en la BD especificando el tipo de cuenta
-        $stmt = $conn->prepare("INSERT INTO ssh_accounts (username, password, expira, ssh_limit, owner, type) VALUES (?, ?, ?, ?, ?, ?)");
+        $stmt = $conn->prepare("INSERT INTO ssh_accounts (username, password, expires, ssh_limit, owner, type) VALUES (?, ?, ?, ?, ?, ?)");
         $stmt->bind_param("sssiss", $user, $pass, $expira_date, $limite, $owner, $tipo);
         $stmt->execute();
 
