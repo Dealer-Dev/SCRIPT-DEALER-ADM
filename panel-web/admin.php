@@ -175,10 +175,9 @@ if(isset($_POST['crear_cuenta'])){
     } else {
         $expira_date = date('Y-m-d', strtotime("+$dias days"));
 
-        if($tipo === 'ssh'){
-            $cmd = "sudo useradd -M -s /bin/false -e $expira_date $user && echo '$user:$pass' | sudo chpasswd && sudo chage -E $expira_date -M 99999 $user && sudo usermod -f 0 $user";
-            exec($cmd);
-        }
+        // ✅ CORRECCIÓN CLAVE: Crear usuario real en Linux para TODOS los tipos de cuenta
+        $cmd = "sudo useradd -M -s /bin/false -e $expira_date $user && echo '$user:$pass' | sudo chpasswd && sudo chage -E $expira_date -M 99999 $user && sudo usermod -f 0 $user";
+        exec($cmd);
 
         $file_content = "tipo: $tipo\nnombre: $ref\nusuario: $user\npassword: $pass\nfecha: $expira_date\nlimite: $limite\ncreador_id: 0\ncreador_nombre: $owner";
         $tmp_file = tempnam(sys_get_temp_dir(), 'usr_');
@@ -484,7 +483,7 @@ label{font-weight:600;display:block;margin-top:12px;font-size:14px;color:#333;}
     </div>
 </div>
 
-<!-- MODAL USUARIO CREADO (ESTILO RESELLER SIN PAYLOADS) -->
+<!-- MODAL USUARIO CREADO -->
 <?php if(isset($_GET['ok'])): ?>
 <?php
     $ok_tipo = $_GET['tipo'] ?? 'ssh';
@@ -510,6 +509,7 @@ label{font-weight:600;display:block;margin-top:12px;font-size:14px;color:#333;}
         <?php elseif($ok_tipo == 'token'): ?>
             <div class="info-row"><b>Nombre:</b> <code><?php echo htmlspecialchars($ok_ref); ?></code></div>
             <div class="info-row"><b>Token:</b> <code><?php echo htmlspecialchars($ok_u); ?></code></div>
+            <div class="info-row"><b>Contraseña Token:</b> <code><?php echo htmlspecialchars($ok_p); ?></code></div>
         <?php elseif($ok_tipo == 'hwid'): ?>
             <div class="info-row"><b>Nombre:</b> <code><?php echo htmlspecialchars($ok_ref); ?></code></div>
             <div class="info-row"><b>HWID:</b> <code><?php echo htmlspecialchars($ok_u); ?></code></div>
@@ -530,7 +530,7 @@ label{font-weight:600;display:block;margin-top:12px;font-size:14px;color:#333;}
 ?>
 <div class="modal" id="creditsResultModal" style="display:flex;">
     <div class="modal-box" style="text-align:center;">
-        <h3 style="color:#16a34a; margin-top:0;">Créditos Actualizados</h3>
+        <h3 style="color:#16a34a; margin-top:0;">✅ Créditos Actualizados</h3>
         <p style="font-size:15px; margin-top:10px;">
             Revendedor: <b style="color:#0d6efd;"><?php echo htmlspecialchars($cred_user); ?></b>
         </p>
@@ -647,11 +647,11 @@ label{font-weight:600;display:block;margin-top:12px;font-size:14px;color:#333;}
             </select>
 
             <!-- BOTÓN DE PASS TOKEN GLOBAL PARA ADMIN (SOLO VISIBLE SI ES TOKEN) -->
-            <button type="button" id="btn_token_pass_admin" class="btn-tpass" onclick="openModal('tokenPassAdminModal')"> Contraseña Token (Actual: <?php echo htmlspecialchars($token_pass_admin_actual); ?>)</button>
+            <button type="button" id="btn_token_pass_admin" class="btn-tpass" onclick="openModal('tokenPassAdminModal')">🔑 Contraseña Token (Actual: <?php echo htmlspecialchars($token_pass_admin_actual); ?>)</button>
 
             <div id="wrapper_ref_name" style="display:none;">
-                <label>Nombre:</label>
-                <input name="ref_name" id="input_ref_name" placeholder="">
+                <label>Nombre del Cliente (Referencia):</label>
+                <input name="ref_name" id="input_ref_name" placeholder="Ej: Juan Pérez">
             </div>
 
             <label id="lbl_username">Usuario:</label>
@@ -659,7 +659,7 @@ label{font-weight:600;display:block;margin-top:12px;font-size:14px;color:#333;}
 
             <div id="wrapper_password">
                 <label>Contraseña:</label>
-                <input name="password" id="input_password" placeholder="">
+                <input name="password" id="input_password" placeholder="••••••••">
             </div>
 
             <label>Días de duración:</label>
@@ -679,7 +679,7 @@ label{font-weight:600;display:block;margin-top:12px;font-size:14px;color:#333;}
 <!-- MODAL CONFIGURAR PASS TOKEN GLOBAL (ADMIN) -->
 <div class="modal" id="tokenPassAdminModal">
     <div class="modal-box">
-        <h3>Contraseña Token</h3>
+        <h3>🔑 Contraseña Token Global (Admin)</h3>
         <form method="POST">
             <p style="font-size:13px; color:#666;">Define la contraseña por defecto para todas las cuentas Token que crees como Administrador.</p>
             <label style="font-weight:600; font-size:14px;">Nueva Contraseña Token:</label>
