@@ -305,7 +305,7 @@ $resellers = $conn->query("SELECT * FROM users WHERE role='reseller' ORDER BY id
 <!DOCTYPE html>
 <html>
 <head>
-<title>Panel Dealer</title>
+<title>Panel Dealer ADM</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <style>
 *{box-sizing:border-box;}
