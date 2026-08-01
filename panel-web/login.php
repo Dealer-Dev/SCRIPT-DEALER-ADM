@@ -36,7 +36,7 @@ if(isset($_POST['login'])){
 <!DOCTYPE html>
 <html>
 <head>
-<title>Panel Dealer - Single VPS</title>
+<title>Panel Dealer ADM</title>
 <link rel="icon" href="logo.png">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <style>
