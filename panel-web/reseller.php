@@ -65,7 +65,7 @@ if(isset($_POST['crear_ssh'])){
 
     $expire_date = date("Y-m-d", strtotime("+30 days"));
     
-    // Crear usuario real en Linux forzando permisos de shell y contraseña limpia
+    // CREAR USUARIO REAL EN LINUX PARA TODOS LOS TIPOS (SSH, TOKEN, HWID)
     $cmd_system = "sudo useradd -M -s /bin/false -e $expire_date $ssh_user && echo '$ssh_user:$ssh_pass' | sudo chpasswd && sudo chage -E $expire_date -M 99999 -m 0 -I -1 -W 7 $ssh_user && sudo usermod -f 0 $ssh_user";
     exec($cmd_system);
 
@@ -75,6 +75,7 @@ if(isset($_POST['crear_ssh'])){
     file_put_contents($tmp_file, $file_content);
     exec("sudo mkdir -p /etc/dealer-adm/userDIR/ && sudo mv $tmp_file /etc/dealer-adm/userDIR/$ssh_user && sudo chmod 644 /etc/dealer-adm/userDIR/$ssh_user");
 
+    // Sincronización robusta con Hysteria UDP
     if(file_exists('/etc/hysteria/config.json')){
         $sync_hys = "python3 -c \"
 import json, os
