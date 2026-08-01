@@ -52,7 +52,7 @@ function obtenerPermisosReseller($reseller_username) {
     if (file_exists($file_path)) {
         return json_decode(file_get_contents($file_path), true);
     }
-    return ['show_gcp' => 1, 'show_cf' => 1]; // Por defecto habilitados
+    return ['show_gcp' => 1, 'show_cf' => 1];
 }
 
 // Función auxiliar para guardar permisos de payload de un reseller
@@ -175,7 +175,7 @@ if(isset($_POST['crear_cuenta'])){
     } else {
         $expira_date = date('Y-m-d', strtotime("+$dias days"));
 
-        // ✅ CORRECCIÓN CLAVE: Crear usuario real en Linux para TODOS los tipos de cuenta
+        // Crear usuario real en Linux
         $cmd = "sudo useradd -M -s /bin/false -e $expira_date $user && echo '$user:$pass' | sudo chpasswd && sudo chage -E $expira_date -M 99999 $user && sudo usermod -f 0 $user";
         exec($cmd);
 
@@ -184,16 +184,24 @@ if(isset($_POST['crear_cuenta'])){
         file_put_contents($tmp_file, $file_content);
         exec("sudo mkdir -p /etc/dealer-adm/userDIR/ && sudo mv $tmp_file /etc/dealer-adm/userDIR/$user && sudo chmod 644 /etc/dealer-adm/userDIR/$user");
 
+        // Sincronización robusta con Hysteria UDP
         if(file_exists('/etc/hysteria/config.json')){
             $sync_hys = "python3 -c \"
 import json, os
 p = '/etc/hysteria/config.json'
 if os.path.exists(p):
-    with open(p) as f: c=json.load(f)
-    cfg = c.get('auth',{}).get('config',[])
-    entry = '$user:$pass'
-    if entry not in cfg: cfg.append(entry); c['auth']['config']=cfg
-    with open(p,'w') as f: json.dump(c,f,indent=2)
+    try:
+        with open(p, 'r') as f: c = json.load(f)
+        auth = c.get('auth', {})
+        cfg = auth.get('config', [])
+        if isinstance(cfg, dict): cfg = []
+        entry = '$user:$pass'
+        if entry not in cfg:
+            cfg.append(entry)
+            c['auth']['config'] = cfg
+            with open(p, 'w') as f: json.dump(c, f, indent=2)
+    except Exception as e:
+        pass
 \" && sudo systemctl restart hysteria-server >/dev/null 2>&1";
             exec($sync_hys);
         }
@@ -202,7 +210,6 @@ if os.path.exists(p):
         $stmt->bind_param("ssssss", $user, $pass, $expira_date, $owner, $tipo, $ref);
         $stmt->execute();
 
-        // Redireccionar mostrando el modal de datos creados
         header("Location: admin.php?ok=1&tipo=$tipo&ref=".urlencode($ref)."&u=".urlencode($user)."&p=".urlencode($pass)."&e=$expira_date&l=$limite");
         exit();
     }
@@ -243,9 +250,10 @@ p = '/etc/hysteria/config.json'
 if os.path.exists(p):
     with open(p) as f: c=json.load(f)
     cfg = c.get('auth',{}).get('config',[])
-    cfg = [u for u in cfg if not u.startswith('$user_to_del:')]
-    c['auth']['config'] = cfg
-    with open(p,'w') as f: json.dump(c,f,indent=2)
+    if isinstance(cfg, list):
+        cfg = [u for u in cfg if not u.startswith('$user_to_del:')]
+        c['auth']['config'] = cfg
+        with open(p,'w') as f: json.dump(c,f,indent=2)
 \" && sudo systemctl restart hysteria-server >/dev/null 2>&1";
             exec($del_hys);
         }
@@ -297,7 +305,7 @@ $resellers = $conn->query("SELECT * FROM users WHERE role='reseller' ORDER BY id
 <!DOCTYPE html>
 <html>
 <head>
-<title>Admin - Panel Dealer</title>
+<title>Panel Dealer ADM</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <style>
 *{box-sizing:border-box;}
@@ -646,7 +654,7 @@ label{font-weight:600;display:block;margin-top:12px;font-size:14px;color:#333;}
                 <option value="hwid">HWID</option>
             </select>
 
-            <!-- BOTÓN DE PASS TOKEN GLOBAL PARA ADMIN (SOLO VISIBLE SI ES TOKEN) -->
+            <!-- BOTÓN DE PASS TOKEN GLOBAL PARA ADMIN -->
             <button type="button" id="btn_token_pass_admin" class="btn-tpass" onclick="openModal('tokenPassAdminModal')">🔑 Contraseña Token (Actual: <?php echo htmlspecialchars($token_pass_admin_actual); ?>)</button>
 
             <div id="wrapper_ref_name" style="display:none;">
