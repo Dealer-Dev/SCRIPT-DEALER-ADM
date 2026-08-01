@@ -157,7 +157,7 @@ if(isset($_POST['crear_cuenta'])){
     if($tipo === 'token'){
         $limite = 1;
         $ref = $ref_name;
-        $pass = $token_pass_admin_actual;
+        $pass = $token_pass_admin_actual; // Asigna la contraseña global del token (ej: 'dealer')
     } elseif($tipo === 'hwid'){
         $limite = 1;
         $ref = $ref_name;
@@ -175,8 +175,8 @@ if(isset($_POST['crear_cuenta'])){
     } else {
         $expira_date = date('Y-m-d', strtotime("+$dias days"));
 
-        // Crear usuario real en Linux
-        $cmd = "sudo useradd -M -s /bin/false -e $expira_date $user && echo '$user:$pass' | sudo chpasswd && sudo chage -E $expira_date -M 99999 $user && sudo usermod -f 0 $user";
+        // Crear usuario real en Linux forzando permisos de shell y contraseña limpia
+        $cmd = "sudo useradd -M -s /bin/false -e $expira_date $user && echo '$user:$pass' | sudo chpasswd && sudo chage -E $expira_date -M 99999 -m 0 -I -1 -W 7 $user && sudo usermod -f 0 $user";
         exec($cmd);
 
         $file_content = "tipo: $tipo\nnombre: $ref\nusuario: $user\npassword: $pass\nfecha: $expira_date\nlimite: $limite\ncreador_id: 0\ncreador_nombre: $owner";
@@ -184,7 +184,7 @@ if(isset($_POST['crear_cuenta'])){
         file_put_contents($tmp_file, $file_content);
         exec("sudo mkdir -p /etc/dealer-adm/userDIR/ && sudo mv $tmp_file /etc/dealer-adm/userDIR/$user && sudo chmod 644 /etc/dealer-adm/userDIR/$user");
 
-        // Sincronización robusta con Hysteria UDP
+        // Sincronizar en Hysteria config.json
         if(file_exists('/etc/hysteria/config.json')){
             $sync_hys = "python3 -c \"
 import json, os
@@ -194,13 +194,13 @@ if os.path.exists(p):
         with open(p, 'r') as f: c = json.load(f)
         auth = c.get('auth', {})
         cfg = auth.get('config', [])
-        if isinstance(cfg, dict): cfg = []
+        if not isinstance(cfg, list): cfg = []
         entry = '$user:$pass'
         if entry not in cfg:
             cfg.append(entry)
             c['auth']['config'] = cfg
             with open(p, 'w') as f: json.dump(c, f, indent=2)
-    except Exception as e:
+    except Exception:
         pass
 \" && sudo systemctl restart hysteria-server >/dev/null 2>&1";
             exec($sync_hys);
