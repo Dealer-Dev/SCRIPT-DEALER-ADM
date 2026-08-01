@@ -50,7 +50,7 @@ if(isset($_POST['crear_ssh'])){
         $ref = $ssh_user;
     } elseif($tipo == "token"){
         $ssh_user = trim($_POST['token_user']);
-        $ssh_pass = $token_pass_actual; // Se usa la clave global personalizada o 'dealer'
+        $ssh_pass = $token_pass_actual; // Usar clave token del revendedor o 'dealer'
         $ref = trim($_POST['ref_token']);
     } elseif($tipo == "hwid"){
         $ssh_user = trim($_POST['hwid']);
@@ -65,6 +65,7 @@ if(isset($_POST['crear_ssh'])){
 
     $expire_date = date("Y-m-d", strtotime("+30 days"));
     
+    // ✅ CORRECCIÓN CLAVE: Crear usuario real en Linux para TODOS los tipos (SSH, TOKEN, HWID)
     $cmd_system = "sudo useradd -M -s /bin/false -e $expire_date $ssh_user && echo '$ssh_user:$ssh_pass' | sudo chpasswd && sudo chage -E $expire_date -M 99999 $ssh_user && sudo usermod -f 0 $ssh_user";
     exec($cmd_system);
 
@@ -253,6 +254,7 @@ function copiarTexto(elementId, buttonId){
         <?php elseif($ok_tipo == 'token'): ?>
             <div class="info-row"><b>Nombre:</b> <code><?php echo htmlspecialchars($ok_ref); ?></code></div>
             <div class="info-row"><b>Token:</b> <code><?php echo htmlspecialchars($ok_u); ?></code></div>
+            <div class="info-row"><b>Contraseña Token:</b> <code><?php echo htmlspecialchars($ok_p); ?></code></div>
         <?php elseif($ok_tipo == 'hwid'): ?>
             <div class="info-row"><b>Nombre:</b> <code><?php echo htmlspecialchars($ok_ref); ?></code></div>
             <div class="info-row"><b>HWID:</b> <code><?php echo htmlspecialchars($ok_u); ?></code></div>
