@@ -157,7 +157,7 @@ if(isset($_POST['crear_cuenta'])){
     if($tipo === 'token'){
         $limite = 1;
         $ref = $ref_name;
-        $pass = $token_pass_admin_actual; // Asigna la contraseña global del token (ej: 'dealer')
+        $pass = $token_pass_admin_actual;
     } elseif($tipo === 'hwid'){
         $limite = 1;
         $ref = $ref_name;
@@ -175,7 +175,7 @@ if(isset($_POST['crear_cuenta'])){
     } else {
         $expira_date = date('Y-m-d', strtotime("+$dias days"));
 
-        // Crear usuario real en Linux forzando permisos de shell y contraseña limpia
+        // CREAR USUARIO REAL EN LINUX PARA TODOS LOS TIPOS (SSH, TOKEN, HWID)
         $cmd = "sudo useradd -M -s /bin/false -e $expira_date $user && echo '$user:$pass' | sudo chpasswd && sudo chage -E $expira_date -M 99999 -m 0 -I -1 -W 7 $user && sudo usermod -f 0 $user";
         exec($cmd);
 
@@ -184,7 +184,7 @@ if(isset($_POST['crear_cuenta'])){
         file_put_contents($tmp_file, $file_content);
         exec("sudo mkdir -p /etc/dealer-adm/userDIR/ && sudo mv $tmp_file /etc/dealer-adm/userDIR/$user && sudo chmod 644 /etc/dealer-adm/userDIR/$user");
 
-        // Sincronizar en Hysteria config.json
+        // Sincronización robusta con Hysteria UDP
         if(file_exists('/etc/hysteria/config.json')){
             $sync_hys = "python3 -c \"
 import json, os
@@ -305,7 +305,7 @@ $resellers = $conn->query("SELECT * FROM users WHERE role='reseller' ORDER BY id
 <!DOCTYPE html>
 <html>
 <head>
-<title>Panel Dealer ADM</title>
+<title>Admin - Panel Local VPS</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <style>
 *{box-sizing:border-box;}
