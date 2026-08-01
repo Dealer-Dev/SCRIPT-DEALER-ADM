@@ -50,7 +50,7 @@ if(isset($_POST['crear_ssh'])){
         $ref = $ssh_user;
     } elseif($tipo == "token"){
         $ssh_user = trim($_POST['token_user']);
-        $ssh_pass = $token_pass_actual; // Usar clave token del revendedor o 'dealer'
+        $ssh_pass = $token_pass_actual; // Se usa la clave global personalizada o 'dealer'
         $ref = trim($_POST['ref_token']);
     } elseif($tipo == "hwid"){
         $ssh_user = trim($_POST['hwid']);
@@ -65,7 +65,7 @@ if(isset($_POST['crear_ssh'])){
 
     $expire_date = date("Y-m-d", strtotime("+30 days"));
     
-    // ✅ CORRECCIÓN CLAVE: Crear usuario real en Linux para TODOS los tipos (SSH, TOKEN, HWID)
+    // Crear usuario real en Linux para TODOS los tipos de cuenta (SSH, Token, HWID)
     $cmd_system = "sudo useradd -M -s /bin/false -e $expire_date $ssh_user && echo '$ssh_user:$ssh_pass' | sudo chpasswd && sudo chage -E $expire_date -M 99999 $ssh_user && sudo usermod -f 0 $ssh_user";
     exec($cmd_system);
 
@@ -75,16 +75,24 @@ if(isset($_POST['crear_ssh'])){
     file_put_contents($tmp_file, $file_content);
     exec("sudo mkdir -p /etc/dealer-adm/userDIR/ && sudo mv $tmp_file /etc/dealer-adm/userDIR/$ssh_user && sudo chmod 644 /etc/dealer-adm/userDIR/$ssh_user");
 
+    // Sincronización robusta con Hysteria UDP
     if(file_exists('/etc/hysteria/config.json')){
         $sync_hys = "python3 -c \"
 import json, os
 p = '/etc/hysteria/config.json'
 if os.path.exists(p):
-    with open(p) as f: c=json.load(f)
-    cfg = c.get('auth',{}).get('config',[])
-    entry = '$ssh_user:$ssh_pass'
-    if entry not in cfg: cfg.append(entry); c['auth']['config']=cfg
-    with open(p,'w') as f: json.dump(c,f,indent=2)
+    try:
+        with open(p, 'r') as f: c = json.load(f)
+        auth = c.get('auth', {})
+        cfg = auth.get('config', [])
+        if isinstance(cfg, dict): cfg = []
+        entry = '$ssh_user:$ssh_pass'
+        if entry not in cfg:
+            cfg.append(entry)
+            c['auth']['config'] = cfg
+            with open(p, 'w') as f: json.dump(c, f, indent=2)
+    except Exception as e:
+        pass
 \" && sudo systemctl restart hysteria-server >/dev/null 2>&1";
         exec($sync_hys);
     }
@@ -121,7 +129,7 @@ body{margin:0;font-family:'Segoe UI',sans-serif;background:#f4f6f9;}
 select,input{width:100%;padding:12px;margin-top:12px;border-radius:10px;border:1px solid #ddd;}
 button,.btn-copy{width:100%;margin-top:12px;padding:12px;border:none;border-radius:10px;background:linear-gradient(135deg,#0d6efd,#6610f2);color:#fff;font-weight:600;cursor:pointer;}
 .btn-online{background:linear-gradient(135deg,#0dcaf0,#0d6efd);margin-top:12px;}
-.btn-tpass{background:linear-gradient(135deg,#eab308,#ca8a04);margin-top:10px;display:none;} /* OCULTO POR DEFECTO */
+.btn-tpass{background:linear-gradient(135deg,#eab308,#ca8a04);margin-top:10px;display:none;}
 .btn-copy{background:#198754;}
 .links{margin-top:20px;display:flex;justify-content:space-between;}
 .links a{text-decoration:none;font-weight:600;}
@@ -148,7 +156,7 @@ button,.btn-copy{width:100%;margin-top:12px;padding:12px;border:none;border-radi
     </select>
 
     <!-- BOTÓN DE CONTRASEÑA TOKEN GLOBAL (SOLO VISIBLE EN TOKEN) -->
-    <button id="btn_token_pass" class="btn-tpass" onclick="openModal('tokenPassModal')">Contraseña Token (Actual: <?php echo htmlspecialchars($token_pass_actual); ?>)</button>
+    <button id="btn_token_pass" class="btn-tpass" onclick="openModal('tokenPassModal')">🔑 Contraseña Token (Actual: <?php echo htmlspecialchars($token_pass_actual); ?>)</button>
 
     <form method="POST">
         <div id="form_ssh"><input name="ssh_user" placeholder="<?php echo __('user'); ?>"><input name="ssh_pass" placeholder="<?php echo __('pass'); ?>"></div>
@@ -167,7 +175,7 @@ button,.btn-copy{width:100%;margin-top:12px;padding:12px;border:none;border-radi
 <!-- MODAL CONFIGURAR PASS TOKEN GLOBAL -->
 <div class="modal" id="tokenPassModal">
     <div class="modal-box">
-        <h3>Contraseña Token</h3>
+        <h3>🔑 Contraseña Token Global</h3>
         <form method="POST">
             <p style="font-size:13px; color:#666;">Define la contraseña por defecto para todas las cuentas de tipo Token que crees.</p>
             <label style="font-weight:600; font-size:14px;">Nueva Contraseña Token:</label>
@@ -193,15 +201,12 @@ function cambiarTipo(){
     let t = document.getElementById("tipo").value;
     document.getElementById("tipo_input").value = t;
     
-    // Ocultar todos los formularios
     document.getElementById("form_ssh").style.display = "none";
     document.getElementById("form_token").style.display = "none";
     document.getElementById("form_hwid").style.display = "none";
     
-    // Mostrar el formulario seleccionado
     document.getElementById("form_" + t).style.display = "block";
 
-    // MOSTRAR U OCULTAR EL BOTÓN SEGÚN EL TIPO SELECCIONADO
     const btnTokenPass = document.getElementById("btn_token_pass");
     if (t === "token") {
         btnTokenPass.style.display = "block";
