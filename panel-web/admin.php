@@ -46,22 +46,31 @@ function obtenerLimiteUsuario($usuario) {
     return "1";
 }
 
-// Función auxiliar para obtener permisos de payload de un reseller
+// Función auxiliar para obtener permisos de un reseller
 function obtenerPermisosReseller($reseller_username) {
     $file_path = "/etc/dealer-adm/resellers/" . $reseller_username . ".json";
     if (file_exists($file_path)) {
-        return json_decode(file_get_contents($file_path), true);
+        $data = json_decode(file_get_contents($file_path), true);
+        return [
+            'show_gcp' => $data['show_gcp'] ?? 1,
+            'show_cf' => $data['show_cf'] ?? 1,
+            'custom_days' => $data['custom_days'] ?? 0
+        ];
     }
-    return ['show_gcp' => 1, 'show_cf' => 1];
+    return ['show_gcp' => 1, 'show_cf' => 1, 'custom_days' => 0];
 }
 
-// Función auxiliar para guardar permisos de payload de un reseller
-function guardarPermisosReseller($reseller_username, $show_gcp, $show_cf) {
+// Función auxiliar para guardar permisos de un reseller
+function guardarPermisosReseller($reseller_username, $show_gcp, $show_cf, $custom_days) {
     if (!file_exists('/etc/dealer-adm/resellers')) {
         exec("sudo mkdir -p /etc/dealer-adm/resellers && sudo chmod 777 /etc/dealer-adm/resellers");
     }
     $file_path = "/etc/dealer-adm/resellers/" . $reseller_username . ".json";
-    $data = ['show_gcp' => $show_gcp, 'show_cf' => $show_cf];
+    $data = [
+        'show_gcp' => $show_gcp, 
+        'show_cf' => $show_cf,
+        'custom_days' => $custom_days
+    ];
     file_put_contents($file_path, json_encode($data));
 }
 
@@ -116,20 +125,21 @@ if(isset($_POST['guardar_creditos'])){
     exit();
 }
 
-// CREAR RESELLER CON SWITCHES DE PAYLOAD (MODIFICADO PARA MOSTRAR MODAL)
+// CREAR RESELLER CON SWITCHES DE PAYLOAD Y DÍAS
 if(isset($_POST['crear_reseller'])){
     $user = trim($_POST['username']);
     $pass = trim($_POST['password']);
     $cred = intval($_POST['credits']);
     $show_gcp = isset($_POST['show_gcp']) ? 1 : 0;
     $show_cf  = isset($_POST['show_cf']) ? 1 : 0;
+    $custom_days = isset($_POST['custom_days']) ? 1 : 0;
 
     $exist = $conn->query("SELECT id FROM users WHERE username='$user'");
     if($exist->num_rows > 0){
         $error = "El revendedor ya existe";
     } else {
         $conn->query("INSERT INTO users (username, password, credits, role) VALUES ('$user', '$pass', '$cred', 'reseller')");
-        guardarPermisosReseller($user, $show_gcp, $show_cf);
+        guardarPermisosReseller($user, $show_gcp, $show_cf, $custom_days);
         
         $u_enc = urlencode($user);
         $p_enc = urlencode($pass);
@@ -138,13 +148,14 @@ if(isset($_POST['crear_reseller'])){
     }
 }
 
-// EDITAR SWITCHES DE PAYLOAD DE RESELLER EXISTENTE
+// EDITAR SWITCHES DE PAYLOAD Y DÍAS DE RESELLER EXISTENTE
 if(isset($_POST['editar_permisos_reseller'])){
     $reseller_user = trim($_POST['reseller_user']);
     $show_gcp = isset($_POST['edit_show_gcp']) ? 1 : 0;
     $show_cf  = isset($_POST['edit_show_cf']) ? 1 : 0;
+    $custom_days = isset($_POST['edit_custom_days']) ? 1 : 0;
 
-    guardarPermisosReseller($reseller_user, $show_gcp, $show_cf);
+    guardarPermisosReseller($reseller_user, $show_gcp, $show_cf, $custom_days);
     header("Location: admin.php");
     exit();
 }
@@ -464,7 +475,7 @@ label{font-weight:600;display:block;margin-top:12px;font-size:14px;color:#333;}
                 <th><?php echo __('user'); ?></th>
                 <th><?php echo __('pass'); ?></th>
                 <th>Créditos</th>
-                <th>Permisos Payloads</th>
+                <th>Permisos / Opciones</th>
                 <th><?php echo __('action'); ?></th>
             </tr>
             <?php while($r = $resellers->fetch_assoc()){ 
@@ -477,13 +488,14 @@ label{font-weight:600;display:block;margin-top:12px;font-size:14px;color:#333;}
                 <td><span class="badge"><?php echo $r['credits']; ?></span></td>
                 <td>
                     <small>
-                        GCP: <b><?php echo $perm['show_gcp'] ? '✅ SI' : '❌ NO'; ?></b> | 
-                        CF: <b><?php echo $perm['show_cf'] ? '✅ SI' : '❌ NO'; ?></b>
+                        GCP: <b><?php echo $perm['show_gcp'] ? '✅' : '❌'; ?></b> | 
+                        CF: <b><?php echo $perm['show_cf'] ? '✅' : '❌'; ?></b> | 
+                        Días: <b><?php echo $perm['custom_days'] ? '✅' : '❌'; ?></b>
                     </small>
                 </td>
                 <td>
                     <button class="btn-small btn-credit-act" onclick="abrirGestionCreditos(<?php echo $r['id']; ?>, '<?php echo htmlspecialchars($r['username'], ENT_QUOTES); ?>', <?php echo $r['credits']; ?>)">💳 Créditos</button>
-                    <button class="btn-small btn-edit-perm" onclick="abrirEditarPermisos('<?php echo htmlspecialchars($r['username'], ENT_QUOTES); ?>', <?php echo $perm['show_gcp']; ?>, <?php echo $perm['show_cf']; ?>)">⚙️ Permisos</button>
+                    <button class="btn-small btn-edit-perm" onclick="abrirEditarPermisos('<?php echo htmlspecialchars($r['username'], ENT_QUOTES); ?>', <?php echo $perm['show_gcp']; ?>, <?php echo $perm['show_cf']; ?>, <?php echo $perm['custom_days']; ?>)">⚙️ Permisos</button>
                     <button class="btn-small btn-delete" onclick="confirmDeleteUser(<?php echo $r['id']; ?>)"><?php echo __('delete'); ?></button>
                 </td>
             </tr>
@@ -612,7 +624,7 @@ label{font-weight:600;display:block;margin-top:12px;font-size:14px;color:#333;}
             <input name="password" placeholder="<?php echo __('pass'); ?>" required>
             <input type="number" name="credits" placeholder="<?php echo __('initial_credits'); ?>" value="0" required>
             
-            <label>Permisos de Payloads para este Revendedor:</label>
+            <label>Permisos y Opciones para este Revendedor:</label>
             <div class="switch-box">
                 <input type="checkbox" name="show_gcp" id="create_show_gcp" value="1" checked style="width:auto; margin:0; cursor:pointer;">
                 <label for="create_show_gcp" style="margin:0; cursor:pointer;">Permitir Payload GCP</label>
@@ -620,6 +632,10 @@ label{font-weight:600;display:block;margin-top:12px;font-size:14px;color:#333;}
             <div class="switch-box">
                 <input type="checkbox" name="show_cf" id="create_show_cf" value="1" checked style="width:auto; margin:0; cursor:pointer;">
                 <label for="create_show_cf" style="margin:0; cursor:pointer;">Permitir Payload CloudFront</label>
+            </div>
+            <div class="switch-box">
+                <input type="checkbox" name="custom_days" id="create_custom_days" value="1" style="width:auto; margin:0; cursor:pointer;">
+                <label for="create_custom_days" style="margin:0; cursor:pointer;">Permitir elegir días de duración</label>
             </div>
 
             <button name="crear_reseller" class="modal-btn"><?php echo __('create_account'); ?></button>
@@ -631,7 +647,7 @@ label{font-weight:600;display:block;margin-top:12px;font-size:14px;color:#333;}
 <!-- MODAL EDITAR PERMISOS PAYLOAD DE RESELLER EXISTENTE -->
 <div class="modal" id="editPermisosModal">
     <div class="modal-box">
-        <h3>⚙️ Editar Permisos de Payload</h3>
+        <h3>⚙️ Editar Permisos y Opciones</h3>
         <form method="POST">
             <input type="hidden" name="reseller_user" id="edit_reseller_user">
             <p>Revendedor: <b id="lbl_edit_reseller_user" style="color:#0d6efd;"></b></p>
@@ -643,6 +659,10 @@ label{font-weight:600;display:block;margin-top:12px;font-size:14px;color:#333;}
             <div class="switch-box">
                 <input type="checkbox" name="edit_show_cf" id="edit_show_cf" value="1" style="width:auto; margin:0; cursor:pointer;">
                 <label for="edit_show_cf" style="margin:0; cursor:pointer;">Mostrar Payload CloudFront</label>
+            </div>
+            <div class="switch-box">
+                <input type="checkbox" name="edit_custom_days" id="edit_custom_days" value="1" style="width:auto; margin:0; cursor:pointer;">
+                <label for="edit_custom_days" style="margin:0; cursor:pointer;">Permitir elegir días de duración</label>
             </div>
 
             <button name="editar_permisos_reseller" class="modal-btn">Guardar Permisos</button>
@@ -758,11 +778,12 @@ function abrirGestionCreditos(id, username, creditosActuales) {
     openModal('assignModal');
 }
 
-function abrirEditarPermisos(resellerUser, showGcp, showCf){
+function abrirEditarPermisos(resellerUser, showGcp, showCf, customDays){
     document.getElementById('edit_reseller_user').value = resellerUser;
     document.getElementById('lbl_edit_reseller_user').innerText = resellerUser;
     document.getElementById('edit_show_gcp').checked = (showGcp == 1);
     document.getElementById('edit_show_cf').checked = (showCf == 1);
+    document.getElementById('edit_custom_days').checked = (customDays == 1);
     openModal('editPermisosModal');
 }
 
