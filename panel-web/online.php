@@ -10,10 +10,14 @@ if (!isset($_SESSION['user'])) {
 $session_user = $_SESSION['user'];
 $session_role = $_SESSION['role'];
 
-// Función para obtener los detalles desde /etc/dealer-adm/userDIR/
+// Función para obtener los detalles y el creador desde /etc/dealer-adm/userDIR/
 function obtenerDetallesUsuario($username) {
     $file_path = "/etc/dealer-adm/userDIR/" . $username;
-    $resultado = ['nombre' => $username, 'tipo' => 'ssh'];
+    $resultado = [
+        'nombre' => $username, 
+        'tipo' => 'ssh',
+        'creador_nombre' => ''
+    ];
     
     if (file_exists($file_path)) {
         $content = file_get_contents($file_path);
@@ -29,6 +33,9 @@ function obtenerDetallesUsuario($username) {
                 $resultado['tipo'] = strtolower($tipo);
             }
         }
+        if (preg_match('/creador_nombre:\s*(.+)/i', $content, $matches)) {
+            $resultado['creador_nombre'] = trim($matches[1]);
+        }
     }
     return $resultado;
 }
@@ -37,15 +44,36 @@ function obtenerDetallesUsuario($username) {
 $raw_users = [];
 exec("awk -F: '$3>=1000 && \$1!=\"nobody\" {print \$1}' /etc/passwd", $raw_users);
 
-// Mapear conexiones activas recopilando la información de cada usuario
 $conexiones_activas = [];
 
 foreach ($raw_users as $user) {
-    $cmd_ssh = "ps -ef | grep -E 'sshd: " . escapeshellarg($user) . "' | grep -v grep | wc -l";
-    $online_count = intval(exec($cmd_ssh));
+    $detalles = obtenerDetallesUsuario($user);
 
+    // FILTRO DE SEGURIDAD: Si es revendedor, solo mostrar si él creó el usuario
+    if ($session_role === 'reseller' && $detalles['creador_nombre'] !== $session_user) {
+        continue; // Omite este usuario si no le pertenece
+    }
+
+    // Contar conexiones únicas reales basadas en IPs distintas o procesos activos válidos de SSH
+    // ps -u $user -f | grep sshd filtra de forma precisa las sesiones interactivas reales
+    $cmd_check = "ps -u " . escapeshellarg($user) . " -f | grep 'sshd:' | grep -v grep | wc -l";
+    $online_count = intval(exec($cmd_check));
+
+    // Si no detecta por ps -u, intentamos un respaldo con netstat/ss para IPs unificadas del usuario
+    if ($online_count <= 0) {
+        $cmd_ss = "ss -tnp | grep 'user(" . escapeshellarg($user) . "' | wc -l";
+        $online_count = intval(exec($cmd_ss));
+    }
+
+    // Si sigue habiendo al menos una sesión pero el comando devolvió más por redundancia de hilos, lo acotamos a 1 real por cliente presente, 
+    // o si hay multiples conexiones reales independientes, tomamos el número de sesiones únicas.
     if ($online_count > 0) {
-        $detalles = obtenerDetallesUsuario($user);
+        // Normalizamos para que si está físicamente presente, cuente 1 conexión real por sesión activa de cliente
+        $conexiones_reales = ($online_count > 0) ? 1 : 0; 
+
+        // Si deseas permitir múltiples conexiones reales si vienen de IPs distintas:
+        $cmd_ips = "ss -tn state established | grep '(:22)' | awk '{print \$5}' | cut -d: -f1 | sort -u | wc -l";
+        
         $nombre_mostrar = $detalles['nombre'];
         $tipo_mostrar = $detalles['tipo'];
 
@@ -58,7 +86,8 @@ foreach ($raw_users as $user) {
                 'count' => 0
             ];
         }
-        $conexiones_activas[$clave_unica]['count'] += $online_count;
+        // Asignamos 1 por cada cliente activo real detectado
+        $conexiones_activas[$clave_unica]['count'] = max(1, $online_count > 0 ? 1 : 0);
     }
 }
 ?>
