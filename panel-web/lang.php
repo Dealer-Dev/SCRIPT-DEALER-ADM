@@ -17,7 +17,7 @@ $current_lang = $_SESSION['lang'] ?? 'es';
 $translations = [
     'es' => [
         'login_welcome'    => 'Bienvenido',
-        'login_subtitle'   => 'Gestión local de usuarios SSH, Token y HWID en tu VPS',
+        'login_subtitle'   => 'Gestión local de usuarios SSH, Token y HWID',
         'login_btn'        => 'Iniciar Sesión',
         'user'             => 'Usuario',
         'edit' => 'Editar',
@@ -61,7 +61,7 @@ $translations = [
     ],
     'en' => [
         'login_welcome'    => 'Welcome',
-        'login_subtitle'   => 'Local management of SSH, Token and HWID users on your VPS',
+        'login_subtitle'   => 'Local management of SSH, Token and HWID',
         'login_btn'        => 'Sign In',
         'user'             => 'Username',
         'edit' => 'Edit',
@@ -105,7 +105,7 @@ $translations = [
     ],
     'fr' => [
         'login_welcome'    => 'Bienvenue',
-        'login_subtitle'   => 'Gestion locale des utilisateurs SSH, Token et HWID sur votre VPS',
+        'login_subtitle'   => 'Gestion locale des utilisateurs SSH, Token et HWID',
         'login_btn'        => 'Se Connecter',
         'user'             => 'Utilisateur',
         'edit' => 'Modifier',
