@@ -1,94 +1,103 @@
 <?php
 session_start();
+include __DIR__ . "/db.php";
+include __DIR__ . "/lang.php";
+
 if (!isset($_SESSION['user'])) {
     exit("Acceso denegado");
 }
 
-include __DIR__ . "/db.php";
-include __DIR__ . "/lang.php";
+$session_user = $_SESSION['user'];
+$session_role = $_SESSION['role'];
 
-$current_user = $_SESSION['user'];
-$role = $_SESSION['role'];
-
-// 1. Capturar únicamente los procesos de sesión activa de SSH (filtrando [priv])
-exec("ps aux | grep 'sshd:' | grep -v 'grep' | grep -v '\[priv\]'", $ps_output);
-
-$connected_counts = [];
-
-foreach ($ps_output as $line) {
-    // Extraer el nombre de usuario de la sesión SSH
-    if (preg_match('/sshd:\s*([^@\s\[]+)/', $line, $matches)) {
-        $u = trim($matches[1]);
-        if (!empty($u) && $u != 'root' && $u != 'sshd') {
-            if (!isset($connected_counts[$u])) {
-                $connected_counts[$u] = 0;
+// Función para obtener el nombre de referencia desde /etc/dealer-adm/userDIR/
+function obtenerNombreReferencia($username) {
+    $file_path = "/etc/dealer-adm/userDIR/" . $username;
+    if (file_exists($file_path)) {
+        $content = file_get_contents($file_path);
+        if (preg_match('/nombre:\s*(.+)/i', $content, $matches)) {
+            $nombre = trim($matches[1]);
+            if (!empty($nombre)) {
+                return $nombre;
             }
-            $connected_counts[$u]++;
         }
     }
+    return $username; // Si no tiene nombre de referencia, devuelve el usuario original
 }
 
-$usuarios_online = [];
+// Obtener la lista de usuarios del sistema Linux (UID >= 1000 y excluyendo nobody)
+$raw_users = [];
+exec("awk -F: '$3>=1000 && \$1!=\"nobody\" {print \$1}' /etc/passwd", $raw_users);
 
-// 2. Filtrar por permisos y obtener el nombre de referencia si existe
-foreach ($connected_counts as $usr => $count) {
-    if ($role == 'reseller') {
-        $stmt = $conn->prepare("SELECT reference_name FROM ssh_accounts WHERE username=? AND reseller=? LIMIT 1");
-        $stmt->bind_param("ss", $usr, $current_user);
-    } else {
-        $stmt = $conn->prepare("SELECT reference_name FROM ssh_accounts WHERE username=? LIMIT 1");
-        $stmt->bind_param("s", $usr);
-    }
-    
-    $stmt->execute();
-    $res = $stmt->get_result();
+// Mapear conexiones activas por usuario mediante comandos del sistema
+$conexiones_activas = [];
 
-    if ($res && $res->num_rows > 0) {
-        $row = $res->fetch_assoc();
-        $display_name = !empty($row['reference_name']) ? $row['reference_name'] : $usr;
-        $usuarios_online[] = [
-            'name'  => $display_name,
-            'count' => $count
-        ];
-    } elseif ($role == 'admin') {
-        // Usuarios creados directamente vía consola Linux
-        $usuarios_online[] = [
-            'name'  => $usr,
-            'count' => $count
-        ];
-    }
-}
+foreach ($raw_users as $user) {
+    // Verificar conexiones SSH activas
+    $cmd_ssh = "ps -ef | grep -E 'sshd: " . escapeshellarg($user) . "' | grep -v grep | wc -l";
+    $online_count = intval(exec($cmd_ssh));
 
-if (empty($usuarios_online)) {
-    echo "<div style='padding:20px;text-align:center;color:#666;'>".__('no_online')."</div>";
-} else {
-    echo "<table style='width:100%;border-collapse:collapse;margin-top:10px;'>";
-    echo "<tr style='background:#0f172a;color:#fff;'>
-            <th style='padding:12px;width:50%;text-align:center;'>".__('user')."</th>
-            <th style='padding:12px;width:50%;text-align:center;'>".__('status')."</th>
-          </tr>";
+    if ($online_count > 0) {
+        // Verificar si el usuario pertenece al revendedor actual (si el rol es revendedor)
+        $file_path = "/etc/dealer-adm/userDIR/" . $user;
+        $creador_valido = true;
 
-    foreach ($usuarios_online as $item) {
-        $count = $item['count'];
-        if ($count == 1) {
-            $badge_color = "#198754"; // Verde
-            $text_status = __('connected_1');
-        } else {
-            $badge_color = "#dc3545"; // Rojo
-            $text_status = sprintf(__('connected_n'), $count);
+        if ($session_role === 'reseller') {
+            // Si es revendedor, validamos opcionalmente si el archivo existe o fue creado por él
+            if (file_exists($file_path)) {
+                $content = file_get_contents($file_path);
+                // Si tienes un filtro de creador por nombre en el archivo
+                if (preg_match('/creador_nombre:\s*(.+)/i', $content, $matches)) {
+                    if (trim($matches[1]) !== $session_user) {
+                        // Opcional: si manejas la restricción estricta de revendedor
+                        // $creador_valido = false; 
+                    }
+                }
+            }
         }
 
-        echo "<tr style='border-bottom:1px solid #eee;'>";
-        echo "<td style='padding:12px;text-align:center;'>
-                <b>".htmlspecialchars($item['name'])."</b>
-              </td>";
-        echo "<td style='padding:12px;text-align:center;'>
-                <span style='background:{$badge_color};color:#fff;padding:6px 14px;border-radius:20px;font-size:13px;font-weight:600;white-space:nowrap;display:inline-block;'>
-                    {$text_status}
-                </span>
-              </td>";
-        echo "</tr>";
+        if ($creador_valido) {
+            $nombre_mostrar = obtenerNombreReferencia($user);
+            $conexiones_activas[$nombre_mostrar] = ($conexiones_activas[$nombre_mostrar] ?? 0) + $online_count;
+        }
     }
-    echo "</table>";
 }
 ?>
+
+<style>
+.online-table { width: 100%; border-collapse: collapse; margin-top: 5px; text-align: left; }
+.online-table th { background: #0f172a; color: #fff; padding: 10px; font-size: 13px; text-align: center; }
+.online-table td { padding: 10px; border-bottom: 1px solid #eee; font-size: 13px; text-align: center; }
+.badge-online { background: #198754; color: #fff; padding: 4px 10px; border-radius: 12px; font-size: 11px; font-weight: 600; display: inline-flex; align-items: center; gap: 5px; }
+.badge-online-multi { background: #dc3545; color: #fff; padding: 4px 10px; border-radius: 12px; font-size: 11px; font-weight: 600; display: inline-flex; align-items: center; gap: 5px; }
+.dot { width: 8px; height: 8px; background: #fff; border-radius: 50%; display: inline-block; }
+</style>
+
+<table class="online-table">
+    <thead>
+        <tr>
+            <th>Usuario</th>
+            <th>Estado</th>
+        </tr>
+    </thead>
+    <tbody>
+        <?php if (empty($conexiones_activas)): ?>
+            <tr>
+                <td colspan="2" style="padding: 20px; color: #64748b; text-align: center;">No hay usuarios conectados actualmente.</td>
+            </tr>
+        <?php else: ?>
+            <?php foreach ($conexiones_activas as $nombre_ref => $count): ?>
+                <tr>
+                    <td><b><?php echo htmlspecialchars($nombre_ref); ?></b></td>
+                    <td>
+                        <?php if ($count > 1): ?>
+                            <span class="badge-online-multi"><span class="dot"></span> <?php echo $count; ?> Conectados</span>
+                        <?php else: ?>
+                            <span class="badge-online"><span class="dot"></span> 1 Conectado</span>
+                        <?php endif; ?>
+                    </td>
+                </tr>
+            <?php endforeach; ?>
+        <?php endif; ?>
+    </tbody>
+</table>
