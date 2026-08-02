@@ -36,6 +36,11 @@ if(isset($_POST['guardar_token_pass'])){
 $token_pass_actual = file_exists($reseller_token_pass_file) ? trim(file_get_contents($reseller_token_pass_file)) : "dealer";
 if(empty($token_pass_actual)) { $token_pass_actual = "dealer"; }
 
+// LECTURA DE PERMISOS Y OPCIONES DEL RESELLER
+$perm_file = '/etc/dealer-adm/resellers/' . $username . '.json';
+$reseller_perms = file_exists($perm_file) ? json_decode(file_get_contents($perm_file), true) : ['show_gcp' => 1, 'show_cf' => 1, 'custom_days' => 0];
+$allow_custom_days = $reseller_perms['custom_days'] ?? 0;
+
 if(isset($_POST['crear_ssh'])){
     if($reseller['credits'] <= 0){
         header("Location: reseller.php?error=1");
@@ -63,9 +68,16 @@ if(isset($_POST['crear_ssh'])){
         exit();
     }
 
-    $expire_date = date("Y-m-d", strtotime("+30 days"));
+    // Gestionar duración en días según permisos del revendedor
+    if ($allow_custom_days && isset($_POST['exp_days']) && intval($_POST['exp_days']) > 0) {
+        $dias_duracion = intval($_POST['exp_days']);
+    } else {
+        $dias_duracion = 30;
+    }
+
+    $expire_date = date("Y-m-d", strtotime("+{$dias_duracion} days"));
     
-    // CREAR USUARIO REAL EN LINUX PARA TODOS LOS TIPOS (SSH, TOKEN, HWID)
+    // Crear usuario real en Linux para TODOS los tipos de cuenta
     $cmd_system = "sudo useradd -M -s /bin/false -e $expire_date $ssh_user && echo '$ssh_user:$ssh_pass' | sudo chpasswd && sudo chage -E $expire_date -M 99999 -m 0 -I -1 -W 7 $ssh_user && sudo usermod -f 0 $ssh_user";
     exec($cmd_system);
 
@@ -108,10 +120,6 @@ if os.path.exists(p):
 // Cargar IP y Dominio
 $server_ip = $_SERVER['SERVER_ADDR'] ?? exec("curl -s -4 ifconfig.me") ?? "127.0.0.1";
 $cf_domain = file_exists('/etc/dealer-adm/cf_domain') ? trim(file_get_contents('/etc/dealer-adm/cf_domain')) : '';
-
-// LECTURA DE PERMISOS INDIVIDUALES DEL RESELLER
-$perm_file = '/etc/dealer-adm/resellers/' . $username . '.json';
-$reseller_perms = file_exists($perm_file) ? json_decode(file_get_contents($perm_file), true) : ['show_gcp' => 1, 'show_cf' => 1];
 
 $payload_gcp = ($reseller_perms['show_gcp'] ?? 0) && file_exists('/etc/dealer-adm/payload_gcp.txt') ? trim(file_get_contents('/etc/dealer-adm/payload_gcp.txt')) : '';
 $payload_cf  = ($reseller_perms['show_cf'] ?? 0) && file_exists('/etc/dealer-adm/payload_cloudfront.txt') ? trim(file_get_contents('/etc/dealer-adm/payload_cloudfront.txt')) : '';
@@ -162,6 +170,12 @@ button,.btn-copy{width:100%;margin-top:12px;padding:12px;border:none;border-radi
         <div id="form_ssh"><input name="ssh_user" placeholder="<?php echo __('user'); ?>"><input name="ssh_pass" placeholder="<?php echo __('pass'); ?>"></div>
         <div id="form_token" style="display:none;"><input name="ref_token" placeholder="<?php echo __('ref_name'); ?>"><input name="token_user" placeholder="<?php echo __('token_user'); ?>"></div>
         <div id="form_hwid" style="display:none;"><input name="ref_hwid" placeholder="<?php echo __('ref_name'); ?>"><input name="hwid" placeholder="<?php echo __('hwid_user'); ?>"></div>
+
+        <?php if($allow_custom_days): ?>
+            <label style="font-size:13px; font-weight:600; color:#555; margin-top:12px; display:block;">Días de duración:</label>
+            <input type="number" name="exp_days" value="30" min="1" required>
+        <?php endif; ?>
+
         <input type="hidden" name="tipo" id="tipo_input" value="ssh">
         <button name="crear_ssh"><?php echo __('create_account'); ?></button>
     </form>
