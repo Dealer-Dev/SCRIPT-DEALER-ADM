@@ -116,7 +116,7 @@ if(isset($_POST['guardar_creditos'])){
     exit();
 }
 
-// CREAR RESELLER CON SWITCHES DE PAYLOAD
+// CREAR RESELLER CON SWITCHES DE PAYLOAD (MODIFICADO PARA MOSTRAR MODAL)
 if(isset($_POST['crear_reseller'])){
     $user = trim($_POST['username']);
     $pass = trim($_POST['password']);
@@ -130,7 +130,10 @@ if(isset($_POST['crear_reseller'])){
     } else {
         $conn->query("INSERT INTO users (username, password, credits, role) VALUES ('$user', '$pass', '$cred', 'reseller')");
         guardarPermisosReseller($user, $show_gcp, $show_cf);
-        header("Location: admin.php");
+        
+        $u_enc = urlencode($user);
+        $p_enc = urlencode($pass);
+        header("Location: admin.php?reseller_created=1&u=$u_enc&p=$p_enc&c=$cred");
         exit();
     }
 }
@@ -175,7 +178,6 @@ if(isset($_POST['crear_cuenta'])){
     } else {
         $expira_date = date('Y-m-d', strtotime("+$dias days"));
 
-        // CREAR USUARIO REAL EN LINUX PARA TODOS LOS TIPOS (SSH, TOKEN, HWID)
         $cmd = "sudo useradd -M -s /bin/false -e $expira_date $user && echo '$user:$pass' | sudo chpasswd && sudo chage -E $expira_date -M 99999 -m 0 -I -1 -W 7 $user && sudo usermod -f 0 $user";
         exec($cmd);
 
@@ -184,7 +186,6 @@ if(isset($_POST['crear_cuenta'])){
         file_put_contents($tmp_file, $file_content);
         exec("sudo mkdir -p /etc/dealer-adm/userDIR/ && sudo mv $tmp_file /etc/dealer-adm/userDIR/$user && sudo chmod 644 /etc/dealer-adm/userDIR/$user");
 
-        // Sincronización robusta con Hysteria UDP
         if(file_exists('/etc/hysteria/config.json')){
             $sync_hys = "python3 -c \"
 import json, os
@@ -490,6 +491,31 @@ label{font-weight:600;display:block;margin-top:12px;font-size:14px;color:#333;}
         </table>
     </div>
 </div>
+
+<!-- MODAL REVENDEDOR CREADO -->
+<?php if(isset($_GET['reseller_created'])): ?>
+<?php
+    $res_u = $_GET['u'] ?? '';
+    $res_p = $_GET['p'] ?? '';
+    $res_c = $_GET['c'] ?? '0';
+?>
+<div class="modal" id="resellerResultModal" style="display:flex;">
+    <div class="modal-box" style="text-align:center;">
+        <h3 style="color:#16a34a; margin-top:0;">✅ Revendedor Creado</h3>
+        <p style="font-size:15px; margin-top:10px;">
+            Usuario: <b style="color:#0d6efd;"><?php echo htmlspecialchars($res_u); ?></b><br>
+            Contraseña: <code style="background:#f1f5f9; padding:2px 6px; border-radius:4px;"><?php echo htmlspecialchars($res_p); ?></code>
+        </p>
+        <div style="margin:20px 0; background:#f8fafc; padding:15px; border-radius:12px; border:1px solid #e2e8f0;">
+            <span style="font-size:14px; color:#64748b; font-weight:600;">CRÉDITOS ASIGNADOS:</span><br>
+            <span style="font-size:32px; font-weight:800; color:#16a34a; display:inline-block; margin-top:5px;">
+                <?php echo htmlspecialchars($res_c); ?>
+            </span>
+        </div>
+        <button onclick="window.location.href='admin.php'" class="modal-btn" style="background:#0d6efd;">Aceptar</button>
+    </div>
+</div>
+<?php endif; ?>
 
 <!-- MODAL USUARIO CREADO -->
 <?php if(isset($_GET['ok'])): ?>
