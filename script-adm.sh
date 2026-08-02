@@ -5,7 +5,7 @@
 #   Ubuntu 22/24/25
 # ═══════════════════════════════════════════════════════
 
-SCRIPT_VERSION="1.1"
+SCRIPT_VERSION="1.2"
 R='\033[0;31m'
 G='\033[0;32m'
 Y='\033[1;33m'
@@ -39,6 +39,42 @@ wget -qO /etc/dealer-adm/scripts/zivpn_manager.sh \
 chmod +x /etc/dealer-adm/scripts/zivpn_manager.sh
 
 source /etc/dealer-adm/scripts/zivpn_manager.sh
+# ==========================================
+# CONFIGURAR CHECKUSER Y BANNER PAM OFICIAL
+# ==========================================
+cat > /etc/dealer-adm/checkuser.sh << 'EOF'
+#!/bin/bash
+USR="$PAM_USER"
+FILE=$(grep -l "^usuario: $USR$" /etc/dealer-adm/userDIR/* 2>/dev/null | head -1)
+[ -z "$FILE" ] && exit 0
+
+NOMBRE=$(grep '^nombre:' "$FILE" | cut -d' ' -f2-)
+EXP=$(grep '^fecha:' "$FILE" | awk '{print $2}')
+EXP_SHOW=$(date -d "$EXP" +%d-%m-%Y 2>/dev/null)
+[ -z "$EXP_SHOW" ] && EXP_SHOW="$EXP"
+
+cat > /etc/dealer-adm/banner.txt << BANNER
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<font color="#0095b6">❒════════════════════════❒</font><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<font color="#FF8000"><b>Usuario:</b></font>
+<font color="#FFD700">$NOMBRE</font><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<font color="#ff00ff"><b>Expira:</b></font>
+<font color="#ff0000">$EXP_SHOW</font><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<font color="#0095b6">❒══════</font><font color="#00ff00"> Script Dealer Adm </font><font color="#0095b6">══════❒</font>
+BANNER
+exit 0
+EOF
+
+chmod +x /etc/dealer-adm/checkuser.sh
+touch /etc/dealer-adm/banner.txt
+
+if ! grep -q "Dealer CheckUser" /etc/pam.d/sshd; then
+cat >> /etc/pam.d/sshd << 'EOF'
+
+# Dealer CheckUser
+auth optional pam_exec.so /etc/dealer-adm/checkuser.sh
+auth optional pam_echo.so file=/etc/dealer-adm/banner.txt
+EOF
+fi
 # ==========================================
 # CREAR HERRAMIENTA PUENTE DE SINCRONIZACIÓN HYSTERIA
 # ==========================================
@@ -92,53 +128,6 @@ if ! grep -q "sync_hysteria.sh" /etc/sudoers; then
     echo "www-data ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart hysteria-server" >> /etc/sudoers
 fi
 
-cat > $DIR_SCRIPTS/checkuser.sh << 'EOF'
-#!/bin/bash
-
-USR="$PAM_USER"
-
-FILE=$(grep -l "^usuario: $USR$" /etc/dealer-adm/userDIR/* 2>/dev/null | head -1)
-
-[ -z "$FILE" ] && exit 0
-
-NOMBRE=$(grep '^nombre:' "$FILE" | cut -d' ' -f2-)
-EXP=$(grep '^fecha:' "$FILE" | awk '{print $2}')
-
-EXP_SHOW=$(date -d "$EXP" +%d-%m-%Y 2>/dev/null)
-[ -z "$EXP_SHOW" ] && EXP_SHOW="$EXP"
-
-cat > /etc/dealer-adm/banner.txt << BANNER
-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<font color="#0095b6">❒════════════════════════❒</font><br>
-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<font color="#FF8000"><b>Usuario:</b></font>
-<font color="#FFD700">$NOMBRE</font><br>
-
-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<font color="#ff00ff"><b>Expira:</b></font>
-<font color="#ff0000">$EXP_SHOW</font><br>
-
-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<font color="#0095b6">❒══════</font><font color="#00ff00"> Script Dealer Adm </font><font color="#0095b6">══════❒</font>
-BANNER
-
-exit 0
-EOF
-
-chmod +x $DIR_SCRIPTS/checkuser.sh
-
-touch $DIR_SCRIPTS/banner.txt
-# ==========================================
-# ACTIVAR CHECKUSER EN SSH XD
-# ==========================================
-
-if ! grep -q "Dealer CheckUser" /etc/pam.d/sshd; then
-
-cat >> /etc/pam.d/sshd << 'EOF'
-
-# Dealer CheckUser
-auth optional pam_exec.so /etc/dealer-adm/checkuser.sh
-auth optional pam_echo.so file=/etc/dealer-adm/banner.txt
-
-EOF
-
-fi
 
 # Desactivar restricciones PAM de contraseña
 sed -i 's/pam_unix.so obscure/pam_unix.so/' /etc/pam.d/common-password 2>/dev/null
