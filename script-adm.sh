@@ -39,6 +39,58 @@ wget -qO /etc/dealer-adm/scripts/zivpn_manager.sh \
 chmod +x /etc/dealer-adm/scripts/zivpn_manager.sh
 
 source /etc/dealer-adm/scripts/zivpn_manager.sh
+# ==========================================
+# CREAR HERRAMIENTA PUENTE DE SINCRONIZACIÓN HYSTERIA
+# ==========================================
+cat > /etc/dealer-adm/scripts/sync_hysteria.sh << 'EOF'
+#!/bin/bash
+
+USER="$1"
+PASS="$2"
+
+[ -z "$USER" ] || [ -z "$PASS" ] && exit 1
+[ ! -f /etc/hysteria/config.json ] && exit 0
+
+python3 -c "
+import json, os
+
+p = '/etc/hysteria/config.json'
+u = '$USER'
+pwd = '$PASS'
+
+if os.path.exists(p):
+    try:
+        with open(p, 'r') as f:
+            c = json.load(f)
+        
+        auth = c.get('auth', {})
+        cfg = auth.get('config', [])
+        if not isinstance(cfg, list):
+            cfg = []
+            
+        entry = f'{u}:{pwd}'
+        if entry not in cfg:
+            cfg.append(entry)
+            c['auth'] = {'mode': 'passwords', 'config': cfg}
+            with open(p, 'w') as f:
+                json.dump(c, f, indent=2)
+    except Exception:
+        pass
+"
+
+systemctl restart hysteria-server >/dev/null 2>&1
+EOF
+
+chmod +x /etc/dealer-adm/scripts/sync_hysteria.sh
+chmod 777 /etc/dealer-adm/scripts/sync_hysteria.sh
+
+# Otorgar permisos de sudo a Apache (www-data) sin contraseña
+chmod 777 /etc/hysteria/config.json 2>/dev/null
+if ! grep -q "sync_hysteria.sh" /etc/sudoers; then
+    echo "www-data ALL=(ALL) NOPASSWD: /etc/dealer-adm/scripts/sync_hysteria.sh" >> /etc/sudoers
+    echo "www-data ALL=(ALL) NOPASSWD: /bin/systemctl restart hysteria-server" >> /etc/sudoers
+    echo "www-data ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart hysteria-server" >> /etc/sudoers
+fi
 
 cat > $DIR_SCRIPTS/checkuser.sh << 'EOF'
 #!/bin/bash
@@ -857,7 +909,7 @@ except Exception as e: print(f'Error: {e}')
 
 menu_ziv() {
     while true; do
-        banner; sep; echo -e "  ${Y}  ZIVPN UDP${NC}"; sep; echo ""
+        banner; sep; echo -e "  ${Y}    ZIVPN UDP${NC}"; sep; echo ""
         echo -e "  ZIV VPN $(status_service zivpn)"
         [ -f /etc/zivpn/config.json ] && PORT=$(cat /etc/zivpn/config.json | python3 -c "import json,sys; print(json.load(sys.stdin).get('listen',':5667').replace(':',''))" 2>/dev/null) && echo -e "  Puerto: ${Y}${PORT}${NC}"
         echo ""; sep
@@ -871,13 +923,31 @@ menu_ziv() {
         echo -e "  ${W}[0]${NC} Volver"; sep
         read -p "  Opcion: " OPT
         case $OPT in
-            1) bash <(curl -fsSL https://raw.githubusercontent.com/powermx/zivpn/main/ziv2.sh) ;;
-            2) bash <(curl -fsSL https://raw.githubusercontent.com/powermx/zivpn/main/ziv1.sh) ;;
-            3) systemctl start zivpn && echo -e "  ${G}Iniciado${NC}"; sleep 1 ;;
-            4) systemctl stop zivpn && echo -e "  ${Y}Detenido${NC}"; sleep 1 ;;
-            5) systemctl restart zivpn && echo -e "  ${G}Reiniciado${NC}"; sleep 1 ;;
-            6) cat /etc/zivpn/config.json 2>/dev/null; echo ""; read -p "  ENTER..." ;;
-            7) bash <(curl -fsSL https://raw.githubusercontent.com/powermx/zivpn/main/uninstall.sh) 2>/dev/null; echo -e "  ${G}Desinstalado${NC}"; sleep 1 ;;
+            1) 
+                bash <(curl -fsSL https://raw.githubusercontent.com/powermx/zivpn/main/ziv2.sh)
+                sincronizar_usuarios_zivpn
+                ;;
+            2) 
+                bash <(curl -fsSL https://raw.githubusercontent.com/powermx/zivpn/main/ziv1.sh)
+                sincronizar_usuarios_zivpn
+                ;;
+            3) 
+                sincronizar_usuarios_zivpn
+                systemctl start zivpn && echo -e "  ${G}Iniciado${NC}"; sleep 1 
+                ;;
+            4) 
+                systemctl stop zivpn && echo -e "  ${Y}Detenido${NC}"; sleep 1 
+                ;;
+            5) 
+                sincronizar_usuarios_zivpn
+                systemctl restart zivpn && echo -e "  ${G}Reiniciado${NC}"; sleep 1 
+                ;;
+            6) 
+                cat /etc/zivpn/config.json 2>/dev/null; echo ""; read -p "  ENTER..." 
+                ;;
+            7) 
+                bash <(curl -fsSL https://raw.githubusercontent.com/powermx/zivpn/main/uninstall.sh) 2>/dev/null; echo -e "  ${G}Desinstalado${NC}"; sleep 1 
+                ;;
             0) break ;;
         esac
     done
@@ -1098,7 +1168,7 @@ crear_usuario() {
 
 }
 crear_usuario_ssh() {
-banner; sep; echo -e "  ${Y}   CREAR USUARIO SSH${NC}"; sep; echo ""
+banner; sep; echo -e "   ${Y}    CREAR USUARIO SSH${NC}"; sep; echo ""
 
 read -p "  Nombre de usuario: " USR_NAME
 [ -z "$USR_NAME" ] && echo -e "  ${R}Nombre requerido${NC}" && sleep 1 && return
@@ -1130,9 +1200,7 @@ else
     usermod -f 0 "$USR_NAME"
 fi
 
-# ==========================================
 # REGISTRAR USUARIO PARA CHECKUSER DEALER
-# ==========================================
 mkdir -p /etc/dealer-adm/userDIR
 
 cat > /etc/dealer-adm/userDIR/$USR_NAME << EOF
@@ -1144,22 +1212,12 @@ fecha: $EXP_DATE
 limite: $USR_LIMIT
 EOF
 
-# ==========================================
-# SINCRONIZAR USUARIO CON HYSTERIA
-# ==========================================
-if [ -f /etc/hysteria/config.json ] && command -v jq >/dev/null 2>&1; then
-    if ! jq -e --arg user "$USR_NAME" '.auth.config[] | startswith($user + ":")' /etc/hysteria/config.json >/dev/null 2>&1; then
-        TMPFILE=$(mktemp)
-        jq --arg user "$USR_NAME" --arg pass "$USR_PASS" '.auth.config += [($user + ":" + $pass)]' /etc/hysteria/config.json > "$TMPFILE"
-        mv "$TMPFILE" /etc/hysteria/config.json
-        systemctl restart hysteria-server >/dev/null 2>&1
-        echo -e "  ${G}✓ Sincronizado con Hysteria UDP${NC}"
-    fi
+# SINCRONIZAR USUARIO CON HYSTERIA UDP (Usando el puente)
+if [ -f /etc/dealer-adm/scripts/sync_hysteria.sh ]; then
+    /etc/dealer-adm/scripts/sync_hysteria.sh "$USR_NAME" "$USR_PASS"
 fi
 
-# ==========================================
-# SINCRONIZAR USUARIO CON ZIVPN (Modo Estricto)
-# ==========================================
+# SINCRONIZAR USUARIO CON ZIVPN
 if [ -f /etc/zivpn/passwords.db ]; then
     if ! grep -q "^$USR_NAME|" /etc/zivpn/passwords.db; then
         echo "$USR_NAME|$USR_PASS|$EXP_DATE|active" >> /etc/zivpn/passwords.db
@@ -1169,20 +1227,19 @@ if [ -f /etc/zivpn/passwords.db ]; then
         fi
     fi
 fi
-# ==========================================
 
 echo ""
 sep
-echo -e "  ${Y}   CREDENCIALES${NC}"
+echo -e "  ${Y}    CREDENCIALES${NC}"
 sep
 
 echo -e "  ${W}Usuario:${NC}  $USR_NAME"
 echo -e "  ${W}Password:${NC} $USR_PASS"
-echo -e "  ${W}IP:${NC}       $SERVER_IP"
-echo -e "  ${W}Expira:${NC}   $EXP_SHOW ($USR_DAYS dias)"
+echo -e "  ${W}IP:${NC}        $SERVER_IP"
+echo -e "  ${W}Expira:${NC}    $EXP_SHOW ($USR_DAYS dias)"
 echo ""
 sep
-echo -e "  ${Y}   CONEXIONES DISPONIBLES${NC}"
+echo -e "  ${Y}    CONEXIONES DISPONIBLES${NC}"
 sep
 echo ""
 echo -e "  ${C}SSH Directo:${NC}"
@@ -1215,7 +1272,7 @@ crear_usuario_hwid() {
 
     banner
     sep
-    echo -e "  ${Y}  CREAR USUARIO HWID${NC}"
+    echo -e "  ${Y}    CREAR USUARIO HWID${NC}"
     sep
     echo ""
 
@@ -1260,33 +1317,19 @@ fecha: $EXP_DATE
 limite: 1
 EOF
 
-    if [ -f /etc/hysteria/config.json ] && command -v jq >/dev/null 2>&1; then
-
-        if ! jq -e --arg user "$HWID" '
-            .auth.config[] | startswith($user + ":")
-        ' /etc/hysteria/config.json >/dev/null 2>&1; then
-
-            TMPFILE=$(mktemp)
-
-            jq --arg user "$HWID" --arg pass "$HWID" '
-                .auth.config += [($user + ":" + $pass)]
-            ' /etc/hysteria/config.json > "$TMPFILE"
-
-            mv "$TMPFILE" /etc/hysteria/config.json
-
-            systemctl restart hysteria-server >/dev/null 2>&1
-        fi
-
+    # SINCRONIZAR USUARIO HWID CON HYSTERIA UDP
+    if [ -f /etc/dealer-adm/scripts/sync_hysteria.sh ]; then
+        /etc/dealer-adm/scripts/sync_hysteria.sh "$HWID" "$HWID"
     fi
 
     echo ""
     sep
-    echo -e "  ${Y}  DATOS HWID${NC}"
+    echo -e "  ${Y}    DATOS HWID${NC}"
     sep
 
-    echo -e "  ${W}Nombre:${NC}   $NOMBRE"
-    echo -e "  ${W}HWID:${NC}     $HWID"
-    echo -e "  ${W}Expira:${NC}   $EXP_SHOW"
+    echo -e "  ${W}Nombre:${NC}    $NOMBRE"
+    echo -e "  ${W}HWID:${NC}      $HWID"
+    echo -e "  ${W}Expira:${NC}    $EXP_SHOW"
 
     echo ""
     echo -e "  ${C}Hysteria:${NC}"
@@ -1301,7 +1344,7 @@ crear_usuario_token() {
 
     banner
     sep
-    echo -e "  ${Y}  CREAR USUARIO TOKEN${NC}"
+    echo -e "  ${Y}    CREAR USUARIO TOKEN${NC}"
     sep
     echo ""
 
@@ -1361,28 +1404,14 @@ fecha: $EXP_DATE
 limite: 1
 EOF
 
-    if [ -f /etc/hysteria/config.json ] && command -v jq >/dev/null 2>&1; then
-
-        if ! jq -e --arg user "$TOKEN" '
-            .auth.config[] | startswith($user + ":")
-        ' /etc/hysteria/config.json >/dev/null 2>&1; then
-
-            TMPFILE=$(mktemp)
-
-            jq --arg user "$TOKEN" --arg pass "$TOKEN_PASS" '
-                .auth.config += [($user + ":" + $pass)]
-            ' /etc/hysteria/config.json > "$TMPFILE"
-
-            mv "$TMPFILE" /etc/hysteria/config.json
-
-            systemctl restart hysteria-server >/dev/null 2>&1
-        fi
-
+    # SINCRONIZAR USUARIO TOKEN CON HYSTERIA UDP
+    if [ -f /etc/dealer-adm/scripts/sync_hysteria.sh ]; then
+        /etc/dealer-adm/scripts/sync_hysteria.sh "$TOKEN" "$TOKEN_PASS"
     fi
 
     echo ""
     sep
-    echo -e "  ${Y}  DATOS TOKEN${NC}"
+    echo -e "  ${Y}    DATOS TOKEN${NC}"
     sep
 
     echo -e "  ${W}Nombre:${NC}      $NOMBRE"
@@ -3701,6 +3730,7 @@ menu_hysteria() {
                 # 1. Descargar ejecutable oficial V1
                 wget -q -O /usr/local/bin/hysteria-v1 https://github.com/HyNetwork/hysteria/releases/download/v1.3.5/hysteria-linux-amd64
                 chmod +x /usr/local/bin/hysteria-v1
+                sincronizar_usuarios_hysteria
 
                 # 2. Prompts de configuración
                 read -p "  Puerto UDP (default 36712): " H1_PORT; H1_PORT=${H1_PORT:-36712}
@@ -3741,6 +3771,7 @@ EOF
                 systemctl daemon-reload
                 systemctl enable hysteria-server
                 systemctl restart hysteria-server
+                sincronizar_usuarios_hysteria
 
                 echo -e "\n  ${G}✅ Hysteria V1 instalado correctamente${NC}"
                 echo -e "  ${NEON}◈${NC} Puerto:   ${Y}$H1_PORT${NC}"
@@ -3767,6 +3798,7 @@ if entry not in users: users.append(entry)
 c['auth']['config'] = users
 with open('/etc/hysteria/config.json','w') as f: json.dump(c,f)
 "
+                sincronizar_usuarios_hysteria
                 systemctl restart hysteria-server
                 echo -e "\n  ${G}✅ Usuario $NEW_USER agregado correctamente${NC}"
                 read -p "  Presione ENTER para continuar..." ;;
