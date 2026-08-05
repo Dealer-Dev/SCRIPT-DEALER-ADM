@@ -5,7 +5,7 @@
 #   Ubuntu 22/24/25
 # ═══════════════════════════════════════════════════════
 
-SCRIPT_VERSION="1.3"
+SCRIPT_VERSION="1.4"
 R='\033[0;31m'
 G='\033[0;32m'
 Y='\033[1;33m'
@@ -1263,7 +1263,7 @@ crear_usuario_hwid() {
     read -p "  Nombre: " NOMBRE
     [ -z "$NOMBRE" ] && return
 
-    read -p "  HWID (64 caracteres): " HWID
+    read -p "  HWID : " HWID
     [ -z "$HWID" ] && return
 
     read -p "  Dias de validez (default 30): " USR_DAYS
@@ -1277,8 +1277,10 @@ crear_usuario_hwid() {
     echo ""
     echo -e "  ${C}Creando usuario HWID...${NC}"
 
-    # Generar un nombre de usuario corto y seguro para el kernel de Linux (máx 15 caracteres)
-    LINUX_USER="hwid_"$(echo -n "$HWID" | md5sum | cut -c1-10)
+    # TRUCO: Para superar el límite de 32 caracteres de Linux permitiendo que el usuario 
+    # ingrese su HWID de 64 caracteres completo como nombre de usuario, creamos un usuario 
+    # de Linux basado en los primeros 31 caracteres del HWID.
+    LINUX_USER=$(echo "$HWID" | cut -c1-31)
 
     if id "$LINUX_USER" &>/dev/null; then
         usermod -e "$EXP_DATE" "$LINUX_USER"
@@ -1290,7 +1292,7 @@ crear_usuario_hwid() {
         usermod -f 0 "$LINUX_USER"
     fi
 
-    # Registrar utilizando el HWID completo de 64 caracteres como nombre del archivo y clave
+    # Registrar el archivo usando el HWID completo como nombre de archivo para control
     mkdir -p /etc/dealer-adm/userDIR
     cat > /etc/dealer-adm/userDIR/$HWID << EOF
 tipo: hwid
@@ -1301,11 +1303,6 @@ linux_user: $LINUX_USER
 fecha: $EXP_DATE
 limite: 1
 EOF
-
-    # Sincronizar con Hysteria si está activo
-    if [ -f /etc/dealer-adm/scripts/sync_hysteria.sh ]; then
-        /etc/dealer-adm/scripts/sync_hysteria.sh "$HWID" "$HWID"
-    fi
 
     echo ""
     sep
