@@ -5,7 +5,7 @@
 #   Ubuntu 22/24/25
 # ═══════════════════════════════════════════════════════
 
-SCRIPT_VERSION="1.2"
+SCRIPT_VERSION="1.3"
 R='\033[0;31m'
 G='\033[0;32m'
 Y='\033[1;33m'
@@ -1258,17 +1258,12 @@ sep
 read -p "  ENTER..."
 }
 crear_usuario_hwid() {
-
-    banner
-    sep
-    echo -e "  ${Y}    CREAR USUARIO HWID${NC}"
-    sep
-    echo ""
+    banner; sep; echo -e "   ${Y}    CREAR USUARIO HWID${NC}"; sep; echo ""
 
     read -p "  Nombre: " NOMBRE
     [ -z "$NOMBRE" ] && return
 
-    read -p "  HWID: " HWID
+    read -p "  HWID (64 caracteres): " HWID
     [ -z "$HWID" ] && return
 
     read -p "  Dias de validez (default 30): " USR_DAYS
@@ -1282,31 +1277,32 @@ crear_usuario_hwid() {
     echo ""
     echo -e "  ${C}Creando usuario HWID...${NC}"
 
-    if id "$HWID" &>/dev/null; then
+    # Generar un nombre de usuario corto y seguro para el kernel de Linux (máx 15 caracteres)
+    LINUX_USER="hwid_"$(echo -n "$HWID" | md5sum | cut -c1-10)
 
-        usermod -e "$EXP_DATE" "$HWID"
-        echo "$HWID:$HWID" | chpasswd
-
+    if id "$LINUX_USER" &>/dev/null; then
+        usermod -e "$EXP_DATE" "$LINUX_USER"
+        echo "$LINUX_USER:$HWID" | chpasswd
     else
-
-        useradd -M -s /bin/false -e "$EXP_DATE" "$HWID"
-        echo "$HWID:$HWID" | chpasswd
-
-        chage -E "$EXP_DATE" -M 99999 "$HWID"
-        usermod -f 0 "$HWID"
-
+        useradd -M -s /bin/false -e "$EXP_DATE" "$LINUX_USER"
+        echo "$LINUX_USER:$HWID" | chpasswd
+        chage -E "$EXP_DATE" -M 99999 "$LINUX_USER"
+        usermod -f 0 "$LINUX_USER"
     fi
 
+    # Registrar utilizando el HWID completo de 64 caracteres como nombre del archivo y clave
+    mkdir -p /etc/dealer-adm/userDIR
     cat > /etc/dealer-adm/userDIR/$HWID << EOF
 tipo: hwid
 nombre: $NOMBRE
 usuario: $HWID
 password: $HWID
+linux_user: $LINUX_USER
 fecha: $EXP_DATE
 limite: 1
 EOF
 
-    # SINCRONIZAR USUARIO HWID CON HYSTERIA UDP
+    # Sincronizar con Hysteria si está activo
     if [ -f /etc/dealer-adm/scripts/sync_hysteria.sh ]; then
         /etc/dealer-adm/scripts/sync_hysteria.sh "$HWID" "$HWID"
     fi
@@ -1319,15 +1315,9 @@ EOF
     echo -e "  ${W}Nombre:${NC}    $NOMBRE"
     echo -e "  ${W}HWID:${NC}      $HWID"
     echo -e "  ${W}Expira:${NC}    $EXP_SHOW"
-
-    echo ""
-    echo -e "  ${C}Hysteria:${NC}"
-    echo -e "  ${W}$SERVER_IP@$HWID:$HWID${NC}"
-
     echo ""
     sep
     read -p "  ENTER..."
-
 }
 crear_usuario_token() {
 
