@@ -5,7 +5,7 @@
 #   Ubuntu 22/24/25
 # ═══════════════════════════════════════════════════════
 
-SCRIPT_VERSION="1.5"
+SCRIPT_VERSION="1.6"
 R='\033[0;31m'
 G='\033[0;32m'
 Y='\033[1;33m'
@@ -156,12 +156,39 @@ if command -v ufw > /dev/null 2>&1 && ufw status | grep -q "Status: active"; the
 fi
 
 # ==========================================
-# APLICAR MAPA DE RED UDP AUTOMÁTICO
+# CONFIGURACIÓN GLOBAL DE RED UDP
 # ==========================================
+configurar_red_udp_global() {
+    if ! command -v netfilter-persistent &>/dev/null; then
+        echo "iptables-persistent iptables-persistent/autosave_v4 boolean true" | debconf-set-selections 2>/dev/null
+        echo "iptables-persistent iptables-persistent/autosave_v6 boolean true" | debconf-set-selections 2>/dev/null
+        DEBIAN_FRONTEND=noninteractive apt install -y -qq iptables-persistent netfilter-persistent >/dev/null 2>&1
+    fi
+
+    iptables -t nat -F PREROUTING 2>/dev/null
+    iptables -t nat -A PREROUTING -p udp --dport 6000:19999 -j REDIRECT --to-port 5667 2>/dev/null
+
+    if command -v netfilter-persistent &>/dev/null; then
+        netfilter-persistent save >/dev/null 2>&1
+    elif [ -d /etc/iptables ]; then
+        iptables-save > /etc/iptables/rules.v4 2>/dev/null
+    fi
+
+    if command -v ufw &>/dev/null && ufw status | grep -q "Status: active"; then
+        ufw allow 5667/udp >/dev/null 2>&1
+        ufw allow 6000:19999/udp >/dev/null 2>&1
+        ufw allow 36712/udp >/dev/null 2>&1
+        ufw allow 8443/udp >/dev/null 2>&1
+        ufw allow 5300/udp >/dev/null 2>&1
+        ufw reload >/dev/null 2>&1
+    fi
+}
+
+# Aplicar mapa de red UDP automático
 configurar_red_udp_global
 
 # ══════════════════════════════════════════
-# VERIFICACION DE LICENCIA
+# VERIFICACION DE LICENCIA DEALER
 # ══════════════════════════════════════════
 if [ ! -f /etc/dealer-adm/.licensed ]; then
 
@@ -199,18 +226,18 @@ if [ ! -f /etc/dealer-adm/.licensed ]; then
         echo "$INPUT_KEY" > /etc/dealer-adm/.licensed
         echo "$OWNER" > /etc/dealer-adm/reseller
 
-        echo -e "  \033[0;32m Key válida\033[0m"
+        echo -e "  \033[0;32m Key válida ✅\033[0m"
         echo -e "\033[1;92m◆━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━◆\033[0m"
         sleep 2
     else
         if echo "$RESPONSE" | grep -q '"expired"'; then
             MSG="⏰ Key expirada ⏰"
         elif echo "$RESPONSE" | grep -q '"used"'; then
-            MSG="Key ya usada"
+            MSG="⚠️ Key ya usada ⚠️"
         elif echo "$RESPONSE" | grep -q '"not_found"'; then
-            MSG=" La key no existe "
+            MSG="❌ La key no existe ❌"
         else
-            MSG=" Error de validación "
+            MSG="❌ Error de validación ❌"
         fi
         echo -e "  \033[0;31m$MSG\033[0m"
         echo -e "\033[1;92m◆━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━◆\033[0m"
@@ -747,36 +774,6 @@ EOF
     read -p "  ENTER..."
 }
 
-# ══════════════════════════════════════════
-#   CONFIGURACIÓN GLOBAL DE RED UDP
-# ══════════════════════════════════════════
-configurar_red_udp_global() {
-    if ! command -v netfilter-persistent &>/dev/null; then
-        echo -e "  ${C}Garantizando persistencia de iptables...${NC}"
-        echo "iptables-persistent iptables-persistent/autosave_v4 boolean true" | debconf-set-selections 2>/dev/null
-        echo "iptables-persistent iptables-persistent/autosave_v6 boolean true" | debconf-set-selections 2>/dev/null
-        DEBIAN_FRONTEND=noninteractive apt install -y -qq iptables-persistent netfilter-persistent >/dev/null 2>&1
-    fi
-
-    iptables -t nat -F PREROUTING 2>/dev/null
-    iptables -t nat -A PREROUTING -p udp --dport 6000:19999 -j REDIRECT --to-port 5667 2>/dev/null
-
-    if command -v netfilter-persistent &>/dev/null; then
-        netfilter-persistent save >/dev/null 2>&1
-    elif [ -d /etc/iptables ]; then
-        iptables-save > /etc/iptables/rules.v4 2>/dev/null
-    fi
-
-    if command -v ufw &>/dev/null && ufw status | grep -q "Status: active"; then
-        ufw allow 5667/udp >/dev/null 2>&1
-        ufw allow 6000:19999/udp >/dev/null 2>&1
-        ufw allow 36712/udp >/dev/null 2>&1
-        ufw allow 8443/udp >/dev/null 2>&1
-        ufw allow 5300/udp >/dev/null 2>&1
-        ufw reload >/dev/null 2>&1
-    fi
-}
-
 menu_ws() {
     while true; do
         banner; sep; echo -e "  ${Y}  WEBSOCKET PYTHON${NC}"; sep; echo ""
@@ -1010,11 +1007,11 @@ except: pass
 " 2>/dev/null
         fi
         echo ""; sep
-        printf " ${Y}❬1❭   Instalar V2Ray      ❬2❭  Agregar inbound${NC}\n"
-        printf " ${Y}❬3❭   Eliminar inbound    ❬4❭  Iniciar${NC}\n"
-        printf " ${Y}❬5❭   Detener             ❬6❭  Reiniciar${NC}\n"
-        printf " ${Y}❬7❭   Crear usuario       ❬8❭  Ver usuarios${NC}\n"
-        printf " ${R}❬9❭   Desinstalar V2Ray${NC}\n"
+        printf " ${Y}❬1❭ ⚡ Instalar V2Ray      ❬2❭ ➕ Agregar inbound${NC}\n"
+        printf " ${Y}❬3❭ 🗑  Eliminar inbound    ❬4❭ ▶  Iniciar${NC}\n"
+        printf " ${Y}❬5❭ ⏹  Detener             ❬6❭ 🔄 Reiniciar${NC}\n"
+        printf " ${Y}❬7❭ 👤 Crear usuario       ❬8❭ 📋 Ver usuarios${NC}\n"
+        printf " ${R}❬9❭ 🗑  Desinstalar V2Ray${NC}\n"
         sep
         printf " ${R}❬0❭ Volver${NC}\n"; sep; echo ""
         read -p " Opcion: " OPT
@@ -1132,7 +1129,7 @@ vmess = {"v":"2","ps":name,"add":domain,"port":out_port,"id":uid,"aid":"0","net"
 link = "vmess://" + base64.b64encode(json.dumps(vmess).encode()).decode()
 print("")
 print("\033[1;96m◆━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━◆\033[0m")
-print("  \033[1;32m CUENTA VMESS CREADA\033[0m")
+print("  \033[1;32m✅ CUENTA VMESS CREADA\033[0m")
 print("\033[1;96m◆━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━◆\033[0m")
 print(f"  \033[1;96m◈\033[0m \033[2;37mPerfil :\033[0m  \033[1;97m{name}\033[0m")
 print(f"  \033[1;96m◈\033[0m \033[2;37mHost   :\033[0m  \033[1;97m{domain}\033[0m")
@@ -1140,7 +1137,7 @@ print(f"  \033[1;96m◈\033[0m \033[2;37mPuerto :\033[0m  \033[1;33m{out_port}\0
 print(f"  \033[1;96m◈\033[0m \033[2;37mRed    :\033[0m  \033[1;96m{net}\033[0m")
 print(f"  \033[1;96m◈\033[0m \033[2;37mExpira :\033[0m  \033[1;33m$EXP_SHOW\033[0m")
 print("\033[1;96m◆━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━◆\033[0m")
-print("  \033[1;96m VMESS LINK:\033[0m")
+print("  \033[1;96m🔑 VMESS LINK:\033[0m")
 print("")
 print("\033[1;97m" + link + "\033[0m")
 print("")
@@ -2422,9 +2419,9 @@ estado_panel_web() {
     echo ""; sep
     if ss -tlnp 2>/dev/null | grep -q ":81 "; then
         SERVER_IP=$(curl -s -4 ifconfig.me 2>/dev/null || hostname -I | awk '{print $1}')
-        echo -e "  ${G} Panel Web en línea en:${NC} http://$SERVER_IP:81/login.php"
+        echo -e "  ${G}✅ Panel Web en línea en:${NC} http://$SERVER_IP:81/login.php"
     else
-        echo -e "  ${R} El Panel Web parece no estar escuchando en el puerto 81.${NC}"
+        echo -e "  ${R}❌ El Panel Web parece no estar escuchando en el puerto 81.${NC}"
     fi
     echo ""; read -p "  Presiona ENTER para continuar..."
 }
@@ -2466,7 +2463,7 @@ credenciales_panel_web() {
     echo -e "  ${Y}  URL Y CREDENCIALES DEL PANEL WEB${NC}"; sep; echo ""
     
     if [ ! -f /var/www/html/db.php ]; then
-        echo -e "  ${R} No se encontró la configuración de la base de datos (/var/www/html/db.php).${NC}"
+        echo -e "  ${R}❌ No se encontró la configuración de la base de datos (/var/www/html/db.php).${NC}"
         sleep 2 && return
     fi
     
@@ -2477,12 +2474,12 @@ credenciales_panel_web() {
         ADM_USER=$(echo "$ADMIN_DATA" | awk '{print $1}')
         ADM_PASS=$(echo "$ADMIN_DATA" | awk '{print $2}')
         
-        echo -e "  ${W} URL de Acceso:${NC} http://$SERVER_IP:81/login.php"
-        echo -e "  ${W} Usuario Admin:${NC} \033[1;33m$ADM_USER\033[0m"
-        echo -e "  ${W} Contraseña:   ${NC} \033[1;32m$ADM_PASS\033[0m"
+        echo -e "  ${W}🌐 URL de Acceso:${NC} http://$SERVER_IP:81/login.php"
+        echo -e "  ${W}👤 Usuario Admin:${NC} \033[1;33m$ADM_USER\033[0m"
+        echo -e "  ${W}🔑 Contraseña:   ${NC} \033[1;32m$ADM_PASS\033[0m"
     else
-        echo -e "  ${W} URL de Acceso:${NC} http://$SERVER_IP:81/login.php"
-        echo -e "  ${R} No se pudo consultar el usuario Admin en la base de datos.${NC}"
+        echo -e "  ${W}🌐 URL de Acceso:${NC} http://$SERVER_IP:81/login.php"
+        echo -e "  ${R}⚠️ No se pudo consultar el usuario Admin en la base de datos.${NC}"
     fi
     
     echo ""; sep
@@ -2518,7 +2515,7 @@ desinstalar_panel_web() {
     systemctl restart apache2 2>/dev/null
     
     echo ""; sep
-    echo -e "  ${G} Panel Web desinstalado correctamente.${NC}"
+    echo -e "  ${G}✅ Panel Web desinstalado correctamente.${NC}"
     echo ""; read -p "  Presiona ENTER para continuar..."
 }
 
@@ -2527,7 +2524,7 @@ cambiar_creds_panel_web() {
     echo -e "  ${Y}  CAMBIAR CREDENCIALES ADMIN DEL PANEL WEB${NC}"; sep; echo ""
 
     if [ ! -f /var/www/html/db.php ]; then
-        echo -e "  ${R} No se encontró la configuración de la base de datos (/var/www/html/db.php).${NC}"
+        echo -e "  ${R}❌ No se encontró la configuración de la base de datos (/var/www/html/db.php).${NC}"
         sleep 2 && return
     fi
 
@@ -2541,7 +2538,7 @@ cambiar_creds_panel_web() {
     ' 2>/dev/null)
 
     if [ -z "$ADMIN_INFO" ]; then
-        echo -e "  ${R} No se encontró ninguna cuenta de Administrador en la base de datos.${NC}"
+        echo -e "  ${R}❌ No se encontró ninguna cuenta de Administrador en la base de datos.${NC}"
         sleep 2 && return
     fi
 
@@ -2552,13 +2549,13 @@ cambiar_creds_panel_web() {
 
     read -p "  Nuevo usuario Admin: " NEW_ADM_USER
     if [ -z "$NEW_ADM_USER" ]; then
-        echo -e "  ${R} El usuario no puede estar vacío.${NC}"
+        echo -e "  ${R}❌ El usuario no puede estar vacío.${NC}"
         sleep 2 && return
     fi
 
     read -p "  Nueva contraseña Admin: " NEW_ADM_PASS
     if [ -z "$NEW_ADM_PASS" ]; then
-        echo -e "  ${R} La contraseña no puede estar vacía.${NC}"
+        echo -e "  ${R}❌ La contraseña no puede estar vacía.${NC}"
         sleep 2 && return
     fi
 
@@ -2586,16 +2583,16 @@ cambiar_creds_panel_web() {
 
     if [ "$RESULT" = "OK" ]; then
         echo ""; sep
-        echo -e "  ${G} Credenciales actualizadas correctamente.${NC}"
-        echo -e "  ${W} Usuario:${NC}    \033[1;33m$NEW_ADM_USER\033[0m"
-        echo -e "  ${W} Contraseña:${NC} \033[1;32m$NEW_ADM_PASS\033[0m"
+        echo -e "  ${G}✅ Credenciales actualizadas correctamente.${NC}"
+        echo -e "  ${W}👤 Usuario:${NC}    \033[1;33m$NEW_ADM_USER\033[0m"
+        echo -e "  ${W}🔑 Contraseña:${NC} \033[1;32m$NEW_ADM_PASS\033[0m"
     elif [ "$RESULT" = "EXISTS" ]; then
         echo ""; sep
-        echo -e "  ${R} El usuario '$NEW_ADM_USER' ya está registrado por otra cuenta.${NC}"
+        echo -e "  ${R}❌ El usuario '$NEW_ADM_USER' ya está registrado por otra cuenta.${NC}"
         echo -e "  ${Y}Por favor prueba con otro nombre.${NC}"
     else
         echo ""; sep
-        echo -e "  ${R} Error al actualizar la base de datos.${NC}"
+        echo -e "  ${R}❌ Error al actualizar la base de datos.${NC}"
         [ -n "$RESULT" ] && echo -e "  ${Y}Detalle: $RESULT${NC}"
     fi
 
@@ -2686,7 +2683,7 @@ echo -e "  \${YELLOW}MEMORIA RAM LIBRE\${NC}        : \${WHITE}\$RAM_FREE\${NC}"
 echo -e "  \${YELLOW}CREADOR DEL SCRIPT\${NC}       : \${GREEN}@DealerServices235 ❴LTM❵\${NC}"
 echo -e "  \${GREEN}BIENVENIDO DE NUEVO!\${NC}"
 echo -e "\${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\${NC}"
-echo -e "  Teclee \${YELLOW}menu\${NC} para ver el MENU"
+echo -e "  Teclee \${YELLOW}menu\${NC} para ver el MENU LTM"
 echo -e "\${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\${NC}"
 echo ""
 MOTDEOF
@@ -2761,40 +2758,40 @@ menu_atacantes() {
     if command -v fail2ban-client > /dev/null 2>&1; then
         BANNED=$(fail2ban-client status sshd 2>/dev/null | grep "Banned IP" | cut -d: -f2 | tr ' ' '\n' | grep -v '^$')
         if [ -n "$BANNED" ]; then
-            echo -e "  ${R} IPs bloqueadas por Fail2ban:${NC}"
+            echo -e "  ${R}🚨 IPs bloqueadas por Fail2ban:${NC}"
             echo "$BANNED" | while read ip; do
                 [ -n "$ip" ] && echo -e "  ${NEON}◈${NC} ${R}$ip${NC}"
             done
         else
-            echo -e "  ${G} Sin IPs bloqueadas en Fail2ban${NC}"
+            echo -e "  ${G}✅ Sin IPs bloqueadas en Fail2ban${NC}"
         fi
     fi
     echo ""
     
-    echo -e "  ${Y} Conexiones activas por IP:${NC}"
+    echo -e "  ${Y}🔍 Conexiones activas por IP:${NC}"
     CONNS=$(ss -tn state established | awk 'NR>1{print $5}' | cut -d: -f1 | sort | uniq -c | sort -rn | head -10)
     if [ -n "$CONNS" ]; then
         echo "$CONNS" | while read count ip; do
             [ -z "$ip" ] && continue
             if [ "$count" -gt 10 ]; then
-                echo -e "  ${R}◈ $ip — $count conexiones ${NC}"
+                echo -e "  ${R}◈ $ip — $count conexiones ⚠️${NC}"
             else
                 echo -e "  ${NEON}◈${NC} $ip — ${Y}$count${NC} conexiones"
             fi
         done
     else
-        echo -e "  ${G} Sin conexiones sospechosas${NC}"
+        echo -e "  ${G}✅ Sin conexiones sospechosas${NC}"
     fi
     echo ""
     
-    echo -e "  ${Y} Paquetes bloqueados recientes:${NC}"
+    echo -e "  ${Y}🛡️ Paquetes bloqueados recientes:${NC}"
     DROPS=$(dmesg 2>/dev/null | grep "IN=.*OUT=" | tail -5 | grep -oP 'SRC=\K[0-9.]+' | sort | uniq -c | sort -rn)
     if [ -n "$DROPS" ]; then
         echo "$DROPS" | while read count ip; do
             echo -e "  ${NEON}◈${NC} ${R}$ip${NC} — $count paquetes bloqueados"
         done
     else
-        echo -e "  ${G} Sin ataques detectados${NC}"
+        echo -e "  ${G}✅ Sin ataques detectados${NC}"
     fi
     echo ""; sep
     read -p "  ENTER..."
@@ -3174,515 +3171,6 @@ usuarios_v2ray_online_count() {
     echo ""; sep; read -p "  ENTER para continuar..."
 }
 
-menu_limpieza() {
-    while true; do
-        banner; sep
-        echo -e "  ${NEON}◆ LIMPIEZA Y AUTO-REINICIO${NC}"; sep; echo ""
-        CRON_ST=$(crontab -l 2>/dev/null | grep -c "reboot\|ltm_reboot" || echo 0)
-        [ "$CRON_ST" -gt 0 ] && echo -e "  ${NEON}◈${NC} ${W}Auto-reinicio:${NC} ${NEON}◆ ACTIVO${NC}" || echo -e "  ${NEON}◈${NC} ${W}Auto-reinicio:${NC} ${R}◇ INACTIVO${NC}"
-        RAM_FREE=$(free -h | awk '/^Mem:/{print $4}')
-        RAM_USED=$(free -h | awk '/^Mem:/{print $3}')
-        echo -e "  ${NEON}◈${NC} ${W}RAM Libre:${NC} ${Y}${RAM_FREE}${NC} | ${W}Usada:${NC} ${Y}${RAM_USED}${NC}"
-        echo ""; sep
-        printf " ${Y}❬1❭ Limpiar cache RAM ahora${NC}\n"
-        printf " ${Y}❬2❭ Limpiar archivos temporales${NC}\n"
-        printf " ${Y}❬3❭ Configurar auto-reinicio${NC}\n"
-        printf " ${Y}❬4❭ Ver cron de reinicio${NC}\n"
-        printf " ${R}❬5❭ Desactivar auto-reinicio${NC}\n"
-        printf " ${Y}❬6❭ Reiniciar ahora${NC}\n"
-        sep; printf " ${R}❬0❭ Volver${NC}\n"; sep; echo ""
-        read -p " Opcion: " OPT
-        case $OPT in
-            1)
-                echo -e "\n  ${C}Limpiando cache RAM...${NC}"
-                sync
-                echo 3 > /proc/sys/vm/drop_caches
-                RAM_FREE_NEW=$(free -h | awk '/^Mem:/{print $4}')
-                echo -e "  ${G}✓ Cache limpiada${NC}"
-                echo -e "  ${NEON}◈${NC} ${W}RAM Libre ahora:${NC} ${Y}${RAM_FREE_NEW}${NC}"
-                sleep 2 ;;
-            2)
-                echo -e "\n  ${C}Limpiando archivos temporales...${NC}"
-                apt autoremove -y > /dev/null 2>&1
-                apt clean > /dev/null 2>&1
-                rm -rf /tmp/*.sh /tmp/*.py /tmp/*.txt 2>/dev/null
-                journalctl --vacuum-time=3d > /dev/null 2>&1
-                echo -e "  ${G}✓ Temporales eliminados${NC}"
-                echo -e "  ${G}✓ Cache apt limpiada${NC}"
-                echo -e "  ${G}✓ Logs antiguos eliminados${NC}"
-                sleep 2 ;;
-            3)
-                banner; sep
-                echo -e "  ${Y}  CONFIGURAR AUTO-REINICIO${NC}"; sep; echo ""
-                read -p "  Intervalo en horas (ej: 1, 6, 12, 24): " REBOOT_HOURS
-                [ -z "$REBOOT_HOURS" ] && echo -e "  ${R}Cancelado${NC}" && sleep 1 && continue
-                cat > /usr/local/bin/ltm-reboot.sh << REBOOTEOF
-#!/bin/bash
-sync
-echo 3 > /proc/sys/vm/drop_caches
-/sbin/reboot
-REBOOTEOF
-                chmod +x /usr/local/bin/ltm-reboot.sh
-                (crontab -l 2>/dev/null | grep -v "ltm_reboot\|ltm-reboot"; echo "0 */$REBOOT_HOURS * * * /usr/local/bin/ltm-reboot.sh # ltm_reboot") | crontab -
-                echo -e "  ${G}OK Auto-reinicio cada ${Y}${REBOOT_HOURS}h${G} configurado${NC}"
-                sleep 2 ;;
-            4)
-                echo ""; echo -e "  ${W}Cron actual:${NC}"; echo ""
-                crontab -l 2>/dev/null | grep "ltm_reboot\|ltm-reboot" || echo "  Sin auto-reinicio configurado"
-                echo ""; read -p "  ENTER..." ;;
-            5)
-                (crontab -l 2>/dev/null | grep -v "ltm_reboot\|ltm-reboot") | crontab -
-                echo -e "  ${G}Auto-reinicio desactivado${NC}"; sleep 2 ;;
-            6)
-                read -p "  Confirmar reinicio (si/no): " CONFIRM
-                [ "$CONFIRM" = "si" ] && {
-                    echo -e "  ${Y}Reiniciando en 3 segundos...${NC}"
-                    sleep 3
-                    /sbin/reboot; } ;;
-            0) break ;;
-        esac
-    done
-}
-
-menu_shadowsocks() {
-    while true; do
-        banner; sep
-        echo -e "  ${NEON}◆ SHADOWSOCKS${NC}"; sep; echo ""
-        SS_ST=$(systemctl is-active shadowsocks-server 2>/dev/null)
-        [ "$SS_ST" = "active" ] && echo -e "  ${NEON}◈${NC} ${W}Shadowsocks${NC} ${NEON}◆ ON${NC}" || echo -e "  ${NEON}◈${NC} ${W}Shadowsocks${NC} ${R}◇ OFF${NC}"
-        if [ -f /etc/shadowsocks/config.json ]; then
-            SS_PORT=$(python3 -c "import json; c=json.load(open('/etc/shadowsocks/config.json')); print(c.get('server_port','8388'))" 2>/dev/null)
-            SS_METHOD=$(python3 -c "import json; c=json.load(open('/etc/shadowsocks/config.json')); print(c.get('method','aes-256-gcm'))" 2>/dev/null)
-            echo -e "  ${NEON}◈${NC} ${W}Puerto:${NC} ${Y}${SS_PORT}${NC}"
-            echo -e "  ${NEON}◈${NC} ${W}Metodo:${NC} ${Y}${SS_METHOD}${NC}"
-        fi
-        echo ""; sep
-        printf " ${Y}❬1❭ Instalar Shadowsocks${NC}\n"
-        printf " ${Y}❬2❭ Iniciar    ❬3❭ Detener    ❬4❭ Reiniciar${NC}\n"
-        printf " ${Y}❬5❭ Agregar usuario${NC}\n"
-        printf " ${Y}❬6❭ Ver usuarios${NC}\n"
-        printf " ${Y}❬7❭ Ver config${NC}\n"
-        printf " ${R}❬8❭ Desinstalar${NC}\n"
-        sep; printf " ${R}❬0❭ Volver${NC}\n"; sep; echo ""
-        read -p " Opcion: " OPT
-        case $OPT in
-            1)
-                echo -e "\n  ${C}Instalando Shadowsocks...${NC}"
-                apt install -y shadowsocks-libev > /dev/null 2>&1
-                mkdir -p /etc/shadowsocks
-                read -p "  Puerto (default 8388): " SS_PORT; SS_PORT=${SS_PORT:-8388}
-                read -p "  Password: " SS_PASS; SS_PASS=${SS_PASS:-"ltmssh2026"}
-                echo -e "  Metodo: ${Y}❬1❭${NC} aes-256-gcm ${Y}❬2❭${NC} chacha20-ietf-poly1305 ${Y}❬3❭${NC} aes-128-gcm"
-                read -p "  Opcion: " SS_METHOD_OPT
-                case $SS_METHOD_OPT in
-                    1) SS_METHOD="aes-256-gcm" ;;
-                    2) SS_METHOD="chacha20-ietf-poly1305" ;;
-                    3) SS_METHOD="aes-128-gcm" ;;
-                    *) SS_METHOD="aes-256-gcm" ;;
-                esac
-                cat > /etc/shadowsocks/config.json << EOF
-{
-    "server": "0.0.0.0",
-    "server_port": $SS_PORT,
-    "password": "$SS_PASS",
-    "method": "$SS_METHOD",
-    "timeout": 300,
-    "mode": "tcp_and_udp",
-    "fast_open": true
-}
-EOF
-                cat > /etc/systemd/system/shadowsocks-server.service << EOF2
-[Unit]
-Description=Shadowsocks Server
-After=network.target
-[Service]
-Type=simple
-ExecStart=/usr/bin/ss-server -c /etc/shadowsocks/config.json
-Restart=always
-RestartSec=3
-[Install]
-WantedBy=multi-user.target
-EOF2
-                systemctl daemon-reload
-                systemctl enable shadowsocks-server
-                pkill -f ss-server 2>/dev/null; sleep 1
-                systemctl start shadowsocks-server
-                iptables -I INPUT -p tcp --dport $SS_PORT -j ACCEPT 2>/dev/null
-                iptables -I INPUT -p udp --dport $SS_PORT -j ACCEPT 2>/dev/null
-                SS_IP=$(hostname -I | awk '{print $1}')
-                echo ""
-                echo -e "${NEON}◆━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━◆${NC}"
-                echo -e "  ${G} SHADOWSOCKS INSTALADO${NC}"
-                echo -e "${NEON}◆━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━◆${NC}"
-                echo -e "  ${NEON}◈${NC} ${W}IP:${NC}       ${Y}$SS_IP${NC}"
-                echo -e "  ${NEON}◈${NC} ${W}Puerto:${NC}   ${Y}$SS_PORT${NC}"
-                echo -e "  ${NEON}◈${NC} ${W}Password:${NC} ${Y}$SS_PASS${NC}"
-                echo -e "  ${NEON}◈${NC} ${W}Metodo:${NC}   ${Y}$SS_METHOD${NC}"
-                echo -e "${NEON}◆━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━◆${NC}"
-                read -p "  ENTER..." ;;
-            2) systemctl start shadowsocks-server && echo -e "  ${G}Iniciado${NC}"; sleep 1 ;;
-            3) systemctl stop shadowsocks-server && echo -e "  ${Y}Detenido${NC}"; sleep 1 ;;
-            4) systemctl restart shadowsocks-server && echo -e "  ${G}Reiniciado${NC}"; sleep 1 ;;
-            5)
-                banner; sep; echo -e "  ${Y}AGREGAR USUARIO${NC}"; sep; echo ""
-                echo -e "  ${Y}Shadowsocks basico usa una sola password${NC}"
-                echo -e "  ${Y}Para multi-usuario necesitas shadowsocks-manager${NC}\n"
-                read -p "  Nueva password: " SS_NEW_PASS
-                python3 -c "
-import json
-with open('/etc/shadowsocks/config.json') as f: c=json.load(f)
-c['password'] = '$SS_NEW_PASS'
-with open('/etc/shadowsocks/config.json','w') as f: json.dump(c,f,indent=2)
-print('OK')
-"
-                systemctl restart shadowsocks-server
-                echo -e "  ${G}Password actualizada: ${Y}$SS_NEW_PASS${NC}"
-                read -p "  ENTER..." ;;
-            6)
-                echo ""; echo -e "  ${W}Configuracion actual:${NC}\n"
-                python3 -c "
-import json
-with open('/etc/shadowsocks/config.json') as f: c=json.load(f)
-print(f'  Puerto:   {c.get(\"server_port\")}')
-print(f'  Password: {c.get(\"password\")}')
-print(f'  Metodo:   {c.get(\"method\")}')
-" 2>/dev/null || echo "  No instalado"
-                echo ""; read -p "  ENTER..." ;;
-            7) cat /etc/shadowsocks/config.json 2>/dev/null || echo "No instalado"; echo ""; read -p "  ENTER..." ;;
-            8)
-                read -p "  Confirmar (si/no): " CONFIRM
-                [ "$CONFIRM" = "si" ] && {
-                    systemctl stop shadowsocks-server 2>/dev/null
-                    systemctl disable shadowsocks-server 2>/dev/null
-                    apt remove -y shadowsocks-libev > /dev/null 2>&1
-                    rm -f /etc/systemd/system/shadowsocks-server.service
-                    rm -rf /etc/shadowsocks
-                    systemctl daemon-reload
-                    echo -e "  ${G}Desinstalado${NC}"; sleep 2; } ;;
-            0) break ;;
-        esac
-    done
-}
-
-menu_udp_hysteria_mod() {
-    while true; do
-        banner; sep
-        echo -e "  ${NEON}◆ UDP HYSTERIA MOD${NC}"; sep; echo ""
-        HM_ST=$(systemctl is-active hysteria-server 2>/dev/null)
-        [ "$HM_ST" = "active" ] && echo -e "  ${NEON}◈${NC} ${W}UDP Hysteria Mod${NC} ${NEON}◆ ON${NC}" || echo -e "  ${NEON}◈${NC} ${W}UDP Hysteria Mod${NC} ${R}◇ OFF${NC}"
-        HM_IP=$(hostname -I | awk '{print $1}')
-        echo -e "  ${NEON}◈${NC} ${W}IP:${NC}   ${Y}${HM_IP}${NC}"
-        HM_OBFS_NOW=$(python3 -c "import json; c=json.load(open('/etc/hysteria/config.json')); print(c.get('obfs','DealerServicesUDP'))" 2>/dev/null || echo "DealerServicesUDP")
-        echo -e "  ${NEON}◈${NC} ${W}Obfs:${NC} ${Y}${HM_OBFS_NOW}${NC}"
-        echo ""; sep
-        printf " ${Y}❬1❭ Instalar    ❬2❭ Iniciar    ❬3❭ Detener${NC}\n"
-        printf " ${Y}❬4❭ Reiniciar   ❬5❭ Agregar usuario${NC}\n"
-        printf " ${Y}❬6❭ Ver usuarios    ❬7❭ Cambiar obfs${NC}\n"
-        printf " ${R}❬8❭ Desinstalar${NC}\n"
-        sep; printf " ${R}❬0❭ Volver${NC}\n"; sep; echo ""
-        read -p " Opcion: " OPT
-        case $OPT in
-            1)
-                echo -e "\n  ${C}Instalando UDP Hysteria Mod...${NC}"
-                curl -sL https://raw.githubusercontent.com/JotchuaDevz/JT-UDP-DEV/refs/heads/main/install_udp.sh -o /tmp/ltmudp_install.sh
-                sed -i 's/DOMAIN="requestlab-x.space"/DOMAIN="www.dealer-servic.es"/' /tmp/ltmudp_install.sh
-                sed -i 's/OBFS="jt"/OBFS="DealerServicesUDP"/' /tmp/ltmudp_install.sh
-                sed -i 's/PASSWORD="jt"/PASSWORD="ltmudp"/' /tmp/ltmudp_install.sh
-                bash /tmp/ltmudp_install.sh > /tmp/ltmudp_out.txt 2>&1
-                grep -v "JT-UDP\|Felicitaciones\|gestor\|udp'\|Ahora puedes\|Script del gestor\|Creando enlace\|Descargando script" /tmp/ltmudp_out.txt | sed 's/JT-UDP/LTMUDPv1/g'
-                echo -e "  ${G}OK Instalado${NC}"
-                read -p "  ENTER..." ;;
-            2) systemctl start hysteria-server && echo -e "  ${G}Iniciado${NC}"; sleep 1 ;;
-            3) systemctl stop hysteria-server && echo -e "  ${Y}Detenido${NC}"; sleep 1 ;;
-            4) systemctl restart hysteria-server && echo -e "  ${G}Reiniciado${NC}"; sleep 1 ;;
-            5)
-                banner; sep; echo -e "  ${Y}AGREGAR USUARIO${NC}"; sep; echo ""
-                read -p "  Usuario: " HM_USER
-                read -p "  Password: " HM_PASS
-                read -p "  Dias (default 30): " HM_DAYS; HM_DAYS=${HM_DAYS:-30}
-                HM_EXP=$(date -d "+${HM_DAYS} days" +%d/%m/%Y)
-                python3 -c "
-import json
-with open('/etc/hysteria/config.json') as f: c=json.load(f)
-users = c.get('auth',{}).get('config',[])
-entry = '$HM_USER:$HM_PASS'
-if entry not in users: users.append(entry)
-c['auth']['config'] = users
-with open('/etc/hysteria/config.json','w') as f: json.dump(c,f,indent=2)
-print('OK')
-"
-                systemctl restart hysteria-server
-                HM_IP=$(hostname -I | awk '{print $1}')
-                echo ""
-                echo -e "${NEON}◆━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━◆${NC}"
-                echo -e "  ${G} USUARIO CREADO${NC}"
-                echo -e "${NEON}◆━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━◆${NC}"
-                echo -e "  ${NEON}◈${NC} ${W}Usuario:${NC}  ${Y}$HM_USER${NC}"
-                echo -e "  ${NEON}◈${NC} ${W}Password:${NC} ${Y}$HM_PASS${NC}"
-                echo -e "  ${NEON}◈${NC} ${W}IP:${NC}        ${Y}$HM_IP${NC}"
-                echo -e "  ${NEON}◈${NC} ${W}Puerto:${NC}    ${Y}36712${NC}"
-                HM_OBFS_NOW=$(python3 -c "import json; c=json.load(open('/etc/hysteria/config.json')); print(c.get('obfs','DealerServicesUDP'))" 2>/dev/null || echo "DealerServicesUDP")
-                echo -e "  ${NEON}◈${NC} ${W}Obfs:${NC}      ${Y}${HM_OBFS_NOW}${NC}"
-                echo -e "  ${NEON}◈${NC} ${W}Expira:${NC}    ${Y}$HM_EXP${NC}"
-                echo -e "${NEON}◆━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━◆${NC}"
-                read -p "  ENTER..." ;;
-            6)
-                echo ""; echo -e "  ${W}Usuarios:${NC}\n"
-                echo -e "  ${NEON}◈${NC} ${DIM}Usuario : Password${NC}\n"
-                python3 -c "
-import json
-with open('/etc/hysteria/config.json') as f: c=json.load(f)
-users = c.get('auth',{}).get('config',[])
-for u in users: print('  ' + u)
-" 2>/dev/null || echo "  No instalado"
-                echo ""; read -p "  ENTER..." ;;
-            7)
-                banner; sep; echo -e "  ${Y}CAMBIAR OBFS${NC}"; sep; echo ""
-                CURRENT_OBFS=$(grep -o '"obfs":"[^"]*"' /etc/hysteria/config.json 2>/dev/null | cut -d'"' -f4 || echo "DealerServicesUDP")
-                echo -e "  ${NEON}◈${NC} ${W}Obfs actual:${NC} ${Y}$CURRENT_OBFS${NC}\n"
-                read -p "  Nuevo obfs: " NEW_OBFS
-                [ -z "$NEW_OBFS" ] && echo -e "  ${R}Cancelado${NC}" && sleep 1 && continue
-                python3 -c "
-import json
-with open('/etc/hysteria/config.json') as f: c=json.load(f)
-c['obfs'] = '$NEW_OBFS'
-with open('/etc/hysteria/config.json','w') as f: json.dump(c,f,indent=2)
-print('OK')
-" 2>/dev/null
-                systemctl restart hysteria-server
-                echo -e "  ${G}Obfs cambiado a: ${Y}$NEW_OBFS${NC}"; sleep 2 ;;
-            8)
-                read -p "  Confirmar (si/no): " CONFIRM
-                [ "$CONFIRM" = "si" ] && {
-                    systemctl stop hysteria-server 2>/dev/null
-                    systemctl disable hysteria-server 2>/dev/null
-                    rm -f /etc/systemd/system/hysteria-server.service
-                    rm -f /usr/local/bin/hysteria
-                    rm -rf /etc/hysteria
-                    systemctl daemon-reload
-                    echo -e "  ${G}Desinstalado${NC}"; sleep 2; } ;;
-            0) break ;;
-        esac
-    done
-}
-
-# ══════════════════════════════════════════
-#   MÓDULO HYSTERIA UDP V1 / V2
-# ══════════════════════════════════════════
-
-menu_hysteria() {
-    while true; do
-        banner; sep
-        echo -e "  ${NEON}◆ HYSTERIA UDP${NC}"; sep; echo ""
-        H1_ST=$(systemctl is-active hysteria-server 2>/dev/null)
-        H2_ST=$(systemctl is-active hysteria2-server 2>/dev/null)
-        [ "$H1_ST" = "active" ] && echo -e "  ${NEON}◈${NC} ${W}Hysteria V1${NC} ${NEON}◆ ON${NC}" || echo -e "  ${NEON}◈${NC} ${W}Hysteria V1${NC} ${R}◇ OFF${NC}"
-        [ "$H2_ST" = "active" ] && echo -e "  ${NEON}◈${NC} ${W}Hysteria V2${NC} ${NEON}◆ ON${NC}" || echo -e "  ${NEON}◈${NC} ${W}Hysteria V2${NC} ${R}◇ OFF${NC}"
-        echo ""; sep
-        printf " ${Y}❬1❭ Instalar Hysteria V1    ❬2❭ Instalar Hysteria V2${NC}\n"
-        printf " ${Y}❬3❭ Iniciar V1               ❬4❭ Iniciar V2${NC}\n"
-        printf " ${Y}❬5❭ Detener V1               ❬6❭ Detener V2${NC}\n"
-        printf " ${Y}❬7❭ Ver config V1            ❬8❭ Ver config V2${NC}\n"
-        printf " ${R}❬9❭ Desinstalar V1           ❬10❭ Desinstalar V2${NC}\n"
-        sep
-        printf " ${R}❬0❭ Volver${NC}\n"; sep; echo ""
-        read -p " Opcion: " OPT
-        case $OPT in
-            1)
-                echo -e "\n  ${C}Instalando Hysteria V1...${NC}"
-                apt install -y wget > /dev/null 2>&1
-                wget -q -O /usr/local/bin/hysteria-v1 https://github.com/HyNetwork/hysteria/releases/download/v1.3.5/hysteria-linux-amd64
-                chmod +x /usr/local/bin/hysteria-v1
-                read -p "  Puerto UDP (default 36712): " H1_PORT; H1_PORT=${H1_PORT:-36712}
-                read -p "  Password Admin: " H1_PASS; H1_PASS=${H1_PASS:-"ltmssh2026"}
-                read -p "  Dominio (deja vacio para self-signed): " H1_DOMAIN
-                mkdir -p /etc/hysteria
-                if [ -n "$H1_DOMAIN" ]; then
-                    apt install -y certbot > /dev/null 2>&1
-                    certbot certonly --standalone -d $H1_DOMAIN --non-interactive --agree-tos -m admin@${H1_DOMAIN#*.} 2>/dev/null
-                    CERT_FILE="/etc/letsencrypt/live/$H1_DOMAIN/fullchain.pem"
-                    KEY_FILE="/etc/letsencrypt/live/$H1_DOMAIN/privkey.pem"
-                else
-                    openssl req -x509 -nodes -newkey ec:<(openssl ecparam -name prime256v1) \
-                        -keyout /etc/hysteria/server.key -out /etc/hysteria/server.crt \
-                        -subj "/CN=hysteria" -days 36500 2>/dev/null
-                    CERT_FILE="/etc/hysteria/server.crt"
-                    KEY_FILE="/etc/hysteria/server.key"
-                fi
-                
-                cat > /etc/hysteria/config.json << EOF
-{
-  "listen": ":$H1_PORT",
-  "cert": "$CERT_FILE",
-  "key": "$KEY_FILE",
-  "auth": {
-    "mode": "passwords",
-    "config": [
-      "admin:$H1_PASS"
-    ]
-  },
-  "obfs": "ltmssh",
-  "up_mbps": 100,
-  "down_mbps": 100
-}
-EOF
-                cat > /etc/systemd/system/hysteria-server.service << EOF
-[Unit]
-Description=Hysteria V1 Server
-After=network.target
-[Service]
-Type=simple
-ExecStart=/usr/local/bin/hysteria-v1 server --config /etc/hysteria/config.json
-Restart=always
-RestartSec=3
-[Install]
-WantedBy=multi-user.target
-EOF
-                systemctl daemon-reload
-                systemctl enable hysteria-server
-                systemctl start hysteria-server
-                iptables -I INPUT -p udp --dport $H1_PORT -j ACCEPT 2>/dev/null
-                sincronizar_usuarios_hysteria
-
-                echo -e "  ${G}OK Hysteria V1 instalado correctamente${NC}"
-                echo -e "  ${NEON}◈${NC} Puerto: ${Y}$H1_PORT${NC}"
-                echo -e "  ${NEON}◈${NC} Password Admin: ${Y}$H1_PASS${NC}"
-                read -p "  ENTER..." ;;
-            2)
-                echo -e "\n  ${C}Instalando Hysteria V2...${NC}"
-                apt install -y wget > /dev/null 2>&1
-                wget -q -O /usr/local/bin/hysteria2 https://github.com/apernet/hysteria/releases/latest/download/hysteria-linux-amd64
-                chmod +x /usr/local/bin/hysteria2
-                read -p "  Puerto UDP (default 8443): " H2_PORT; H2_PORT=${H2_PORT:-8443}
-                read -p "  Password: " H2_PASS; H2_PASS=${H2_PASS:-"ltmssh2026"}
-                read -p "  Dominio (deja vacio para self-signed): " H2_DOMAIN
-                mkdir -p /etc/hysteria2
-                if [ -n "$H2_DOMAIN" ]; then
-                    apt install -y certbot > /dev/null 2>&1
-                    certbot certonly --standalone -d $H2_DOMAIN --non-interactive --agree-tos -m admin@${H2_DOMAIN#*.} 2>/dev/null
-                    CERT2_FILE="/etc/letsencrypt/live/$H2_DOMAIN/fullchain.pem"
-                    KEY2_FILE="/etc/letsencrypt/live/$H2_DOMAIN/privkey.pem"
-                else
-                    openssl req -x509 -nodes -newkey ec:<(openssl ecparam -name prime256v1) \
-                        -keyout /etc/hysteria2/server.key -out /etc/hysteria2/server.crt \
-                        -subj "/CN=hysteria2" -days 36500 2>/dev/null
-                    CERT2_FILE="/etc/hysteria2/server.crt"
-                    KEY2_FILE="/etc/hysteria2/server.key"
-                fi
-                cat > /etc/hysteria2/config.yaml << EOF
-listen: :$H2_PORT
-tls:
-  cert: $CERT2_FILE
-  key: $KEY2_FILE
-auth:
-  type: password
-  password: $H2_PASS
-masquerade:
-  type: proxy
-  proxy:
-    url: https://news.ycombinator.com/
-    rewriteHost: true
-EOF
-                cat > /etc/systemd/system/hysteria2-server.service << EOF
-[Unit]
-Description=Hysteria V2 Server
-After=network.target
-[Service]
-Type=simple
-ExecStart=/usr/local/bin/hysteria2 server --config /etc/hysteria2/config.yaml
-Restart=always
-RestartSec=3
-[Install]
-WantedBy=multi-user.target
-EOF
-                systemctl daemon-reload
-                systemctl enable hysteria2-server
-                systemctl start hysteria2-server
-                iptables -I INPUT -p udp --dport $H2_PORT -j ACCEPT 2>/dev/null
-
-                echo -e "  ${G}OK Hysteria V2 instalado${NC}"
-                echo -e "  ${NEON}◈${NC} Puerto: ${Y}$H2_PORT${NC}"
-                echo -e "  ${NEON}◈${NC} Password: ${Y}$H2_PASS${NC}"
-                read -p "  ENTER..." ;;
-            3) systemctl start hysteria-server && echo -e "  ${G}Hysteria V1 iniciado${NC}"; sleep 1 ;;
-            4) systemctl start hysteria2-server && echo -e "  ${G}Hysteria V2 iniciado${NC}"; sleep 1 ;;
-            5) systemctl stop hysteria-server && echo -e "  ${Y}Hysteria V1 detenido${NC}"; sleep 1 ;;
-            6) systemctl stop hysteria2-server && echo -e "  ${Y}Hysteria V2 detenido${NC}"; sleep 1 ;;
-            7) cat /etc/hysteria/config.json 2>/dev/null || echo "No instalado"; echo ""; read -p "  ENTER..." ;;
-            8) cat /etc/hysteria2/config.yaml 2>/dev/null || echo "No instalado"; echo ""; read -p "  ENTER..." ;;
-            9)
-                systemctl stop hysteria-server; systemctl disable hysteria-server
-                rm -f /usr/local/bin/hysteria-v1 /etc/systemd/system/hysteria-server.service
-                rm -rf /etc/hysteria; systemctl daemon-reload
-                echo -e "  ${G}Hysteria V1 desinstalado${NC}"; sleep 2 ;;
-            10)
-                systemctl stop hysteria2-server; systemctl disable hysteria2-server
-                rm -f /usr/local/bin/hysteria2 /etc/systemd/system/hysteria2-server.service
-                rm -rf /etc/hysteria2; systemctl daemon-reload
-                echo -e "  ${G}Hysteria V2 desinstalado${NC}"; sleep 2 ;;
-            0) break ;;
-        esac
-    done
-}
-
-sincronizar_usuarios_hysteria() {
-    [ ! -f /etc/hysteria/config.json ] && return
-    echo -e "  ${C}Sincronizando usuarios de userDIR con Hysteria...${NC}"
-
-    python3 -c "
-import json, os
-
-config_path = '/etc/hysteria/config.json'
-user_dir = '/etc/dealer-adm/userDIR'
-
-if os.path.exists(config_path) and os.path.exists(user_dir):
-    try:
-        with open(config_path, 'r') as f:
-            config = json.load(f)
-
-        auth_config = config.get('auth', {}).get('config', [])
-        if isinstance(auth_config, dict):
-            auth_config = [auth_config.get('password')] if 'password' in auth_config else []
-        elif not isinstance(auth_config, list):
-            auth_config = []
-
-        existing = set(str(x) for x in auth_config if x)
-        count = 0
-
-        for filename in os.listdir(user_dir):
-            filepath = os.path.join(user_dir, filename)
-            if os.path.isfile(filepath):
-                user, password = None, None
-                with open(filepath, 'r') as uf:
-                    for line in uf:
-                        line = line.strip()
-                        if line.startswith('usuario:'):
-                            user = line.split(':', 1)[1].strip()
-                        elif line.startswith('password:'):
-                            password = line.split(':', 1)[1].strip()
-
-                if user and password:
-                    entry = f'{user}:{password}'
-                    if entry not in existing:
-                        existing.add(entry)
-                        count += 1
-
-        config['auth'] = {
-            'mode': 'passwords',
-            'config': list(existing)
-        }
-
-        with open(config_path, 'w') as f:
-            json.dump(config, f, indent=2)
-
-        print(f'  \033[0;32m✓ {count} usuario(s) migrado(s) a Hysteria\033[0m')
-
-    except Exception as e:
-        print(f'  \033[0;31mError durante sincronización: {e}\033[0m')
-"
-    systemctl restart hysteria-server >/dev/null 2>&1
-}
-
 # ══════════════════════════════════════════
 #   MÓDULO TELEGRAM BOT
 # ══════════════════════════════════════════
@@ -3855,8 +3343,17 @@ menu_principal() {
         # Estado BHTTP
         if [ -s "$CONFIG_BHTTP_DB" ]; then
             BHTTP_PORTS=$(awk -F'|' '{print $1}' "$CONFIG_BHTTP_DB" | paste -sd "," -)
-            if systemctl is-active --quiet "bhttp-$(awk -F'|' 'NR==1{print $1}' "$CONFIG_BHTTP_DB")" 2>/dev/null; then
-                [ -z "$C1" ] && C1="${NEON}◈${NC} ${W}BHTTP:${BHTTP_PORTS}${NC} ${NEON}◆ ON${NC}" || { [ -z "$C2" ] && C2="${NEON}◈${NC} ${W}BHTTP:${BHTTP_PORTS}${NC} ${NEON}◆ ON${NC}" || { echo -e " $C1    $C2"; C1="${NEON}◈${NC} ${W}BHTTP:${BHTTP_PORTS}${NC} ${NEON}◆ ON${NC}"; C2=""; }; }; }
+            FIRST_BHTTP=$(awk -F'|' 'NR==1{print $1}' "$CONFIG_BHTTP_DB")
+            if systemctl is-active --quiet "bhttp-$FIRST_BHTTP" 2>/dev/null; then
+                if [ -z "$C1" ]; then
+                    C1="${NEON}◈${NC} ${W}BHTTP:${BHTTP_PORTS}${NC} ${NEON}◆ ON${NC}"
+                elif [ -z "$C2" ]; then
+                    C2="${NEON}◈${NC} ${W}BHTTP:${BHTTP_PORTS}${NC} ${NEON}◆ ON${NC}"
+                else
+                    echo -e " $C1    $C2"
+                    C1="${NEON}◈${NC} ${W}BHTTP:${BHTTP_PORTS}${NC} ${NEON}◆ ON${NC}"
+                    C2=""
+                fi
             fi
         fi
 
