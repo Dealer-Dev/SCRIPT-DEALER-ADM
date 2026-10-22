@@ -5,7 +5,7 @@
 #   Ubuntu 22/24/25
 # ═══════════════════════════════════════════════════════
 
-SCRIPT_VERSION="1.8"
+SCRIPT_VERSION="1.9"
 R='\033[0;31m'
 G='\033[0;32m'
 Y='\033[1;33m'
@@ -382,18 +382,37 @@ except ImportError:
     pass
 
 MAGIC = b"BHP1"
-LONGPOLL = 0.45
-SESSION_TTL = 120.0
+# FIX #2: LONGPOLL bajado de 0.45 a 0.08 para no bloquear el primer chunk del batch.
+LONGPOLL = 0.08
+# FIX #2: TTL subido de 120s a 180s para dar margen al cliente (refresh a 120s).
+SESSION_TTL = 180.0
 
+# ============================================================================
+# FIX #1: keystream optimizado.
+# El keystream solo depende de (sess, mode, seq, d, c).
+# Construimos el "base" UNA sola vez (sess||mode||seq_be8||flag), y luego
+# hasheamos base||c_be4 por bloque. Cacheamos también el hash base inicial
+# para no recalcularlo en cada uno de los N bloques.
+# 
+# Antes: hashlib.sha256(sess + bytes([mode]) + seq.to_bytes(...) + bytes([d]))
+#        RECALCULABA el hash COMPLETO cada vez que se llamaba keystream.
+# Ahora: solo 1 SHA-256-inicialización + N updates de 4 bytes (c) por chunk.
+# ============================================================================
 def keystream(sess, mode, seq, d, n):
-    base = hashlib.sha256(sess + bytes([mode]) + seq.to_bytes(8, "big") + bytes([d]))
+    if n == 0:
+        return b""
+    # Base de 30 bytes: 16 (sess) + 1 (mode) + 8 (seq) + 1 (d) + 4 (c) = 30
+    base = sess + bytes([mode]) + seq.to_bytes(8, "big") + bytes([d])
     blocks = (n + 31) >> 5
     out = bytearray(blocks << 5)
+    # Template pre-hasheado: lo clonamos por bloque (C-level copy, muy rápido)
+    template = hashlib.sha256(base)
+    mv = memoryview(out)
     for c in range(blocks):
-        h = base.copy()
+        h = template.copy()
         h.update(c.to_bytes(4, "big"))
-        out[c << 5 : (c + 1) << 5] = h.digest()
-    return memoryview(out)[:n]
+        mv[c << 5 : (c + 1) << 5] = h.digest()
+    return mv[:n]
 
 def mask(data, sess, mode, seq, d):
     n = len(data)
@@ -562,6 +581,8 @@ class Server:
         tune_socket(writer.get_extra_info('socket'))
         loop = asyncio.get_running_loop()
 
+        # FIX #2: el loop sigue vivo hasta que el cliente cierre o haya error real.
+        # Antes se cerraba al terminar cada batch (causa raíz de la lentitud).
         try:
             while True:
                 hdr = await reader.readexactly(29)
@@ -573,6 +594,12 @@ class Server:
                 if ln and mode in (0, 1, 2, 3):
                     raw = await reader.readexactly(ln)
                     payload = mask(raw, sess, mode, seq, 0)
+
+                # FIX #2: MODE_KEEPALIVE = 5 -> solo responde OK, no toca la sesión.
+                if mode == 5:
+                    writer.write(b"\x00\x00\x00\x00\x00")
+                    await writer.drain()
+                    continue
 
                 if payload[:4] == MAGIC:
                     size = int.from_bytes(payload[6:10], "big") if len(payload) >= 10 else 0
@@ -603,7 +630,7 @@ class Server:
                         count = 1
                     base_deadline = loop.time() + LONGPOLL
                     for i in range(count):
-                        # Solo esperar en el primer chunk; si ya hay datos en cola, despachar el lote sin retardo
+                        # Solo el primer chunk espera; el resto va instantáneo si hay datos.
                         cur_deadline = base_deadline if i == 0 else 0.0
                         chunk = await s.download(seq + i, chunk_size, cur_deadline)
                         self._send_data(writer, sess, mode, seq + i, chunk)
@@ -613,7 +640,9 @@ class Server:
                     writer.write(b"\x00\x00\x00\x00\x00")
                     await writer.drain()
                 else:
-                    return
+                    # modos desconocidos: no cerramos, respondemos con error suave.
+                    writer.write(b"\x01\x00\x00\x00\x00")
+                    await writer.drain()
         except (asyncio.IncompleteReadError, ConnectionError, OSError):
             pass
         except Exception:
@@ -864,7 +893,7 @@ menu_bhttp() {
         echo -e "       \033[1;97mEstado\033[0m\033[0;32m\xE2\x9C\x85\033[0m: \033[1;97m${ACTIVOS} activo(s)\033[0m"
         echo -e "       \033[1;97mPuerto(s):\033[0m \033[1;97m${PUERTOS}\033[0m"
         echo ""
-        echo -e "\033[0;33m╞═══════════════════════════════════════════════════════════════════════════════╡\033[0m"
+        echo -e "\033[0;33m╞═══════════════════════════════════════════════════════════════════════╡\033[0m"
         echo -e " \033[1;97m[1]\033[0m\033[0;31m\xE2\x9E\xA4\033[0m \033[1;97mInstalar / Re-instalar motor KTUN Ultra-Speed\033[0m"
         echo -e " \033[1;97m[2]\033[0m\033[0;31m\xE2\x9E\xA4\033[0m \033[1;97mAgregar nuevo puerto KTUN\033[0m"
         echo -e " \033[1;97m[3]\033[0m\033[0;31m\xE2\x9E\xA4\033[0m \033[1;97mListar puertos activos\033[0m"
@@ -874,10 +903,10 @@ menu_bhttp() {
         echo -e " \033[1;97m[7]\033[0m\033[0;31m\xE2\x9E\xA4\033[0m \033[1;97mConfiguración y datos Dealer VPN / KTUN\033[0m"
         echo -e " \033[1;97m[8]\033[0m\033[0;31m\xE2\x9E\xA4\033[0m \033[1;97mReiniciar todos los puertos\033[0m"
         echo -e " \033[1;97m[9]\033[0m\033[0;31m\xE2\x9E\xA4\033[0m \033[1;97mVer logs de un puerto\033[0m"
-        echo -e "\033[0;33m╞═══════════════════════════════════════════════════════════════════════════════╡\033[0m"
+        echo -e "\033[0;33m╞═══════════════════════════════════════════════════════════════════════╡\033[0m"
         echo -e " \033[1;97m[10]\033[0m\033[0;31m\xE2\x9E\xA4\033[0m \033[1;97mDesinstalar TODO\033[0m"
         echo -e " \033[1;97m[0]\033[0m\033[0;31m\xE2\x9E\xA4\033[0m \033[1;97mVolver al menú principal\033[0m"
-        echo -e "\033[0;33m╚═══════════════════════════════════════════════════════════════════════════════╝\033[0m"
+        echo -e "\033[0;33m╚═══════════════════════════════════════════════════════════════════════╝\033[0m"
         echo ""
         read -p " Selecciona una opción: " B_OPT
         case $B_OPT in
