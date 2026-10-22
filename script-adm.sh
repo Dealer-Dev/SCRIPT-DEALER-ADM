@@ -5,7 +5,7 @@
 #   Ubuntu 22/24/25
 # ═══════════════════════════════════════════════════════
 
-SCRIPT_VERSION="1.3"
+SCRIPT_VERSION="1.5"
 R='\033[0;31m'
 G='\033[0;32m'
 Y='\033[1;33m'
@@ -389,19 +389,13 @@ SESSION_TTL = 180.0
 
 # ============================================================================
 # FIX #1: keystream optimizado.
-# El keystream solo depende de (sess, mode, seq, d, c).
-# Construimos el "base" UNA sola vez (sess||mode||seq_be8||flag), y luego
-# hasheamos base||c_be4 por bloque. Cacheamos también el hash base inicial
-# para no recalcularlo en cada uno de los N bloques.
 # ============================================================================
 def keystream(sess, mode, seq, d, n):
     if n == 0:
         return b""
-    # Base de 30 bytes: 16 (sess) + 1 (mode) + 8 (seq) + 1 (d) + 4 (c) = 30
     base = sess + bytes([mode]) + seq.to_bytes(8, "big") + bytes([d])
     blocks = (n + 31) >> 5
     out = bytearray(blocks << 5)
-    # Template pre-hasheado: lo clonamos por bloque (C-level copy, muy rápido)
     template = hashlib.sha256(base)
     mv = memoryview(out)
     for c in range(blocks):
@@ -562,7 +556,6 @@ class Server:
         async with self.slock:
             s = self.sessions.get(sess)
             if s is None or s.closed:
-                # Limpiar solo sesiones expiradas sin desconectar a otros usuarios activos
                 expired = [sid for sid, old in self.sessions.items() if old.closed or (now - old.last_active) > SESSION_TTL]
                 for sid in expired:
                     old = self.sessions.pop(sid, None)
@@ -573,7 +566,7 @@ class Server:
                 self.sessions[sess] = s
             return s
 
-        async def handle(self, reader, writer):
+    async def handle(self, reader, writer):
         tune_socket(writer.get_extra_info('socket'))
         loop = asyncio.get_running_loop()
 
