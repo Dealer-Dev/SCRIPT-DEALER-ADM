@@ -5,7 +5,7 @@
 #   Ubuntu 22/24/25
 # ═══════════════════════════════════════════════════════
 
-SCRIPT_VERSION="1.9"
+SCRIPT_VERSION="1.2"
 R='\033[0;31m'
 G='\033[0;32m'
 Y='\033[1;33m'
@@ -393,10 +393,6 @@ SESSION_TTL = 180.0
 # Construimos el "base" UNA sola vez (sess||mode||seq_be8||flag), y luego
 # hasheamos base||c_be4 por bloque. Cacheamos también el hash base inicial
 # para no recalcularlo en cada uno de los N bloques.
-# 
-# Antes: hashlib.sha256(sess + bytes([mode]) + seq.to_bytes(...) + bytes([d]))
-#        RECALCULABA el hash COMPLETO cada vez que se llamaba keystream.
-# Ahora: solo 1 SHA-256-inicialización + N updates de 4 bytes (c) por chunk.
 # ============================================================================
 def keystream(sess, mode, seq, d, n):
     if n == 0:
@@ -581,8 +577,6 @@ class Server:
         tune_socket(writer.get_extra_info('socket'))
         loop = asyncio.get_running_loop()
 
-        # FIX #2: el loop sigue vivo hasta que el cliente cierre o haya error real.
-        # Antes se cerraba al terminar cada batch (causa raíz de la lentitud).
         try:
             while True:
                 hdr = await reader.readexactly(29)
@@ -595,11 +589,13 @@ class Server:
                     raw = await reader.readexactly(ln)
                     payload = mask(raw, sess, mode, seq, 0)
 
-                # FIX #2: MODE_KEEPALIVE = 5 -> solo responde OK, no toca la sesión.
+                # FIX #2: MODE_KEEPALIVE = 5 -> responde OK y CIERRA el socket (es efímero).
                 if mode == 5:
                     writer.write(b"\x00\x00\x00\x00\x00")
                     await writer.drain()
-                    continue
+                    writer.close()
+                    await writer.wait_closed()
+                    return
 
                 if payload[:4] == MAGIC:
                     size = int.from_bytes(payload[6:10], "big") if len(payload) >= 10 else 0
@@ -607,7 +603,9 @@ class Server:
                     body = mask(probe_reply(pmode, size), sess, mode, seq, 1)
                     writer.write(b"\x00" + len(body).to_bytes(4, "big") + body)
                     await writer.drain()
-                    continue
+                    writer.close()
+                    await writer.wait_closed()
+                    return
 
                 s = await self.get_session(sess)
                 if mode == 1:
