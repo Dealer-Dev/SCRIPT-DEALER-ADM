@@ -5,7 +5,7 @@
 #   Ubuntu 22/24/25
 # ═══════════════════════════════════════════════════════
 
-SCRIPT_VERSION="1.6"
+SCRIPT_VERSION="1.7"
 R='\033[0;31m'
 G='\033[0;32m'
 Y='\033[1;33m'
@@ -323,7 +323,7 @@ status_port() {
 }
 
 # ══════════════════════════════════════════
-#   MÓDULO BHTTPTUNNEL (PANEL DE GESTIÓN)
+#   MÓDULO BHTTPTUNNEL (PANEL DE GESTIÓN AVANZADO)
 # ══════════════════════════════════════════
 
 bhttp_optimizar_kernel() {
@@ -332,68 +332,275 @@ bhttp_optimizar_kernel() {
     cat > /etc/sysctl.d/99-bhttp.conf << 'EOF'
 net.core.default_qdisc = fq
 net.ipv4.tcp_congestion_control = bbr
-net.core.rmem_max = 16777216
-net.core.wmem_max = 16777216
-net.ipv4.tcp_rmem = 4096 1048576 16777216
-net.ipv4.tcp_wmem = 4096 1048576 16777216
-fs.file-max = 1000000
+net.core.rmem_max = 67108864
+net.core.wmem_max = 67108864
+net.ipv4.tcp_rmem = 4096 87380 33554432
+net.ipv4.tcp_wmem = 4096 65536 33554432
+net.core.somaxconn = 65535
+net.core.netdev_max_backlog = 16384
+net.ipv4.tcp_max_syn_backlog = 16384
+net.ipv4.tcp_slow_start_after_idle = 0
+fs.file-max = 1048576
 EOF
     sysctl --system >/dev/null 2>&1
 }
 
 bhttp_instalar_binario() {
     clear
-    echo -e "${Y}Instalando / Actualizando binario BHTTP...${NC}"
+    echo -e "${Y}Instalando / Actualizando motor BHTTP de alto rendimiento...${NC}"
     bhttp_optimizar_kernel
 
-    wget -q -O "$BHTTP_BIN" "https://raw.githubusercontent.com/Dealer-Dev/SCRIPT-DEALER-ADM/main/bin/bhttp-server" 2>/dev/null
-    if [ ! -s "$BHTTP_BIN" ]; then
-        cat > "$BHTTP_BIN" << 'PYEOF'
+    # Descargar directamente el script optimizado desde tu repositorio de GitHub o crearlo localmente
+    cat > "$BHTTP_BIN" << 'PYEOF'
 #!/usr/bin/env python3
-import asyncio, sys
+import argparse, asyncio, hashlib, struct, sys, socket
 
-LISTEN_PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 80
-TARGET_PORT = int(sys.argv[2]) if len(sys.argv) > 2 else 22
+MAGIC = b"BHP1"
+LONGPOLL = 0.5
 
-async def handle_client(reader, writer):
-    try:
-        remote_reader, remote_writer = await asyncio.open_connection('127.0.0.1', TARGET_PORT)
-        async def forward(src, dst):
+def keystream(sess, mode, seq, d, n):
+    base = hashlib.sha256(sess + bytes([mode]) + seq.to_bytes(8, "big") + bytes([d]))
+    out = bytearray()
+    c = 0
+    while len(out) < n:
+        h = base.copy()
+        h.update(c.to_bytes(4, "big"))
+        out += h.digest()
+        c += 1
+    return bytes(out[:n])
+
+def mask(data, sess, mode, seq, d):
+    return bytes(a ^ b for a, b in zip(data, keystream(sess, mode, seq, d, len(data))))
+
+def probe_reply(mode, size):
+    n = size if (mode == 2 and size >= 10) else 10
+    out = bytearray(MAGIC + bytes([1, mode]) + size.to_bytes(4, "big"))
+    for i in range(10, n):
+        out.append((i * 31) & 255)
+    return bytes(out)
+
+class Session:
+    def __init__(self, sess, backend):
+        self.sess = sess
+        self.backend = backend
+        self.cond = asyncio.Condition()
+        self.up_next = 0
+        self.up_pending = {}
+        self.down_raw = bytearray()
+        self.down_chunks = {}
+        self.down_assign = 0
+        self.eof = False
+        self.closed = False
+        self.br = None
+        self.bw = None
+
+    async def connect(self):
+        host, port = self.backend
+        self.br, self.bw = await asyncio.open_connection(host, port)
+        try:
+            raw_sock = self.bw.get_extra_info('socket')
+            if raw_sock:
+                raw_sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        except Exception:
+            pass
+        asyncio.create_task(self._reader())
+
+    async def _reader(self):
+        try:
+            while True:
+                data = await self.br.read(262144)
+                if not data:
+                    break
+                async with self.cond:
+                    self.down_raw += data
+                    self.cond.notify_all()
+        except Exception:
+            pass
+        finally:
+            async with self.cond:
+                self.eof = True
+                self.cond.notify_all()
+
+    async def upload(self, seq, data):
+        async with self.cond:
+            if data:
+                self.up_pending[seq] = data
+            while self.up_next in self.up_pending:
+                chunk = self.up_pending.pop(self.up_next)
+                try:
+                    self.bw.write(chunk)
+                    await self.bw.drain()
+                except Exception:
+                    self.closed = True
+                self.up_next += 1
+
+    async def download(self, seq, maxlen, deadline):
+        if maxlen <= 0:
+            maxlen = 32768
+        loop = asyncio.get_running_loop()
+        async with self.cond:
+            while True:
+                if seq < self.down_assign:
+                    return self.down_chunks.get(seq, b"")
+                if seq == self.down_assign:
+                    if self.down_raw:
+                        take = bytes(self.down_raw[:maxlen])
+                        del self.down_raw[:maxlen]
+                        self.down_chunks[self.down_assign] = take
+                        self.down_assign += 1
+                        self.cond.notify_all()
+                        return take
+                    if self.eof:
+                        self.down_assign += 1
+                        self.cond.notify_all()
+                        return b""
+                    if not self.eof and loop.time() < deadline:
+                        try:
+                            await asyncio.wait_for(self.cond.wait(), timeout=max(0.002, deadline - loop.time()))
+                        except asyncio.TimeoutError:
+                            pass
+                        continue
+                while self.down_assign <= seq:
+                    self.down_assign += 1
+                self.cond.notify_all()
+                return b""
+
+    async def ack(self, seq):
+        async with self.cond:
+            for k in [k for k in self.down_chunks if k <= seq]:
+                del self.down_chunks[k]
+
+    async def close(self):
+        async with self.cond:
+            self.closed = True
+            self.cond.notify_all()
+        try:
+            self.bw.close()
+        except Exception:
+            pass
+
+class Server:
+    def __init__(self, host, port, backend):
+        self.host = host
+        self.port = port
+        self.backend = backend
+        self.sessions = {}
+        self.slock = asyncio.Lock()
+
+    async def get_session(self, sess):
+        async with self.slock:
+            s = self.sessions.get(sess)
+            if s is None or s.closed:
+                for old_sid, old in list(self.sessions.items()):
+                    if old_sid != sess:
+                        await old.close()
+                        del self.sessions[old_sid]
+                s = Session(sess, self.backend)
+                await s.connect()
+                self.sessions[sess] = s
+            return s
+
+    async def handle(self, reader, writer):
+        try:
+            raw_sock = writer.get_extra_info('socket')
+            if raw_sock:
+                raw_sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        except Exception:
+            pass
+
+        try:
+            while True:
+                hdr = await reader.readexactly(29)
+                mode = hdr[0]
+                sess = hdr[1:17]
+                seq = int.from_bytes(hdr[17:25], "big")
+                ln = int.from_bytes(hdr[25:29], "big")
+                payload = b""
+                if ln and mode in (0, 1, 2, 3):
+                    raw = await reader.readexactly(ln)
+                    payload = mask(raw, sess, mode, seq, 0)
+
+                if payload[:4] == MAGIC:
+                    size = int.from_bytes(payload[6:10], "big") if len(payload) >= 10 else 0
+                    pmode = payload[5] if len(payload) >= 6 else mode
+                    body = mask(probe_reply(pmode, size), sess, mode, seq, 1)
+                    writer.write(bytes([0]) + len(body).to_bytes(4, "big") + body)
+                    await writer.drain()
+                    continue
+
+                s = await self.get_session(sess)
+                if mode == 1:
+                    await s.upload(seq, payload)
+                    writer.write(bytes([0]) + (0).to_bytes(4, "big"))
+                    await writer.drain()
+                elif mode == 2:
+                    chunk = await s.download(seq, ln if ln > 0 else 32768, asyncio.get_running_loop().time() + LONGPOLL)
+                    self._send_data(writer, sess, mode, seq, chunk)
+                    await writer.drain()
+                elif mode == 3:
+                    if len(payload) >= 6:
+                        chunk_size = int.from_bytes(payload[0:4], "big")
+                        count = payload[5]
+                    else:
+                        chunk_size, count = 32768, 1
+                    if chunk_size <= 0:
+                        chunk_size = 32768
+                    if count <= 0:
+                        count = 1
+                    deadline = asyncio.get_running_loop().time() + LONGPOLL
+                    for i in range(count):
+                        chunk = await s.download(seq + i, chunk_size, deadline)
+                        self._send_data(writer, sess, mode, seq + i, chunk)
+                    await writer.drain()
+                elif mode == 4:
+                    await s.ack(seq)
+                    writer.write(bytes([0]) + (0).to_bytes(4, "big"))
+                    await writer.drain()
+                else:
+                    return
+        except (asyncio.IncompleteReadError, ConnectionError, OSError):
+            pass
+        except Exception:
+            pass
+        finally:
             try:
-                while True:
-                    data = await src.read(65536)
-                    if not data: break
-                    dst.write(data)
-                    await dst.drain()
-            except Exception: pass
-            finally:
-                try: dst.close()
-                except Exception: pass
+                writer.close()
+            except Exception:
+                pass
 
-        await asyncio.gather(forward(reader, remote_writer), forward(remote_reader, writer))
-    except Exception: pass
-    finally:
-        try: writer.close()
-        except Exception: pass
+    def _send_data(self, writer, sess, mode, seq, data):
+        real = len(data)
+        masked = mask(data, sess, mode, seq, 1) if data else b""
+        body = real.to_bytes(4, "big") + masked
+        writer.write(bytes([2]) + len(body).to_bytes(4, "big") + body)
 
-async def main():
-    server = await asyncio.start_server(handle_client, '0.0.0.0', LISTEN_PORT)
-    async with server:
-        await server.serve_forever()
+    async def serve(self):
+        srv = await asyncio.start_server(self.handle, self.host, self.port, backlog=2048)
+        async with srv:
+            await srv.serve_forever()
 
-if __name__ == '__main__':
-    asyncio.run(main())
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--host", default="0.0.0.0")
+    ap.add_argument("--port", type=int, required=True)
+    ap.add_argument("--backend-host", default="127.0.0.1")
+    ap.add_argument("--backend-port", type=int, default=22)
+    a = ap.parse_args()
+    asyncio.run(Server(a.host, a.port, (a.backend_host, a.backend_port)).serve())
+
+if __name__ == "__main__":
+    main()
 PYEOF
-    fi
+
     chmod +x "$BHTTP_BIN"
-    echo -e "\n${G}Binario BHTTP instalado correctamente en $BHTTP_BIN${NC}"
+    echo -e "\n${G}Motor KTUN avanzado instalado correctamente en $BHTTP_BIN${NC}"
     sleep 2
 }
 
 bhttp_agregar_puerto() {
     clear
-    echo -e "${Y}Agregar nuevo puerto BHTTP${NC}\n"
-    read -p "  Puerto de escucha BHTTP (ej: 80, 8081, 90): " LISTEN_PORT
+    echo -e "${Y}Agregar nuevo puerto KTUN (Multipuerto)${NC}\n"
+    read -p "  Puerto de escucha KTUN (ej: 90, 80): " LISTEN_PORT
     [ -z "$LISTEN_PORT" ] && return
 
     if grep -q "^$LISTEN_PORT|" "$CONFIG_BHTTP_DB" 2>/dev/null; then
@@ -401,7 +608,7 @@ bhttp_agregar_puerto() {
         sleep 2 && return
     fi
 
-    echo -e "\n${C}Selecciona el destino de la redirección:${NC}"
+    echo -e "\n${C}Selecciona el destino de la redirección backend:${NC}"
     echo -e "  [1] OpenSSH Directo (Puerto 22)"
     echo -e "  [2] Dropbear SSH (Puerto 444)"
     echo -e "  [3] Personalizado (Ingresar puerto manualmente)"
@@ -415,18 +622,19 @@ bhttp_agregar_puerto() {
     esac
     [ -z "$TARGET_PORT" ] && TARGET_PORT=22
 
+    # Generar servicio systemd usando el script avanzado con argumentos --port y --backend-port
     cat > "$DIR_SERVICES/bhttp-${LISTEN_PORT}.service" << EOF
 [Unit]
-Description=BHTTP Tunnel Port ${LISTEN_PORT} -> ${TARGET_PORT}
+Description=BHTTP Advanced Tunnel Port ${LISTEN_PORT} -> ${TARGET_PORT}
 After=network.target
 
 [Service]
 Type=simple
 User=root
-ExecStart=$BHTTP_BIN ${LISTEN_PORT} ${TARGET_PORT}
+ExecStart=/usr/bin/python3 $BHTTP_BIN --host 0.0.0.0 --port ${LISTEN_PORT} --backend-host 127.0.0.1 --backend-port ${TARGET_PORT}
 Restart=always
-RestartSec=3
-LimitNOFILE=1000000
+RestartSec=2
+LimitNOFILE=1048576
 
 [Install]
 WantedBy=multi-user.target
@@ -441,15 +649,15 @@ EOF
 
     echo "$LISTEN_PORT|$TARGET_PORT" >> "$CONFIG_BHTTP_DB"
 
-    echo -e "\n${G}Puerto $LISTEN_PORT activo redirigiendo a 127.0.0.1:$TARGET_PORT${NC}"
+    echo -e "\n${G}Puerto KTUN $LISTEN_PORT activo y redirigiendo a 127.0.0.1:$TARGET_PORT${NC}"
     sleep 2
 }
 
 bhttp_listar_puertos() {
     clear
-    echo -e "${Y}Puertos BHTTP Configurados:${NC}\n"
+    echo -e "${Y}Puertos KTUN Configurados:${NC}\n"
     if [ ! -s "$CONFIG_BHTTP_DB" ]; then
-        echo -e "  ${R}No hay puertos configurados.${NC}"
+        echo -e "  ${R}No hay puertos BHTTP configurados.${NC}"
     else
         while IFS='|' read -r L_PORT T_PORT; do
             [ -z "$L_PORT" ] && continue
@@ -458,7 +666,7 @@ bhttp_listar_puertos() {
             else
                 STATUS="${R}[INACTIVO]${NC}"
             fi
-            echo -e "  Puerto BHTTP: ${W}$L_PORT${NC} -> Redirige a: ${C}$T_PORT${NC} $STATUS"
+            echo -e "  Puerto KTUN: ${W}$L_PORT${NC} -> Backend SSH: ${C}$T_PORT${NC} $STATUS"
         done < "$CONFIG_BHTTP_DB"
     fi
     echo ""
@@ -471,7 +679,7 @@ bhttp_reiniciar_puerto() {
     [ -z "$P" ] && return
     if [ -f "$DIR_SERVICES/bhttp-$P.service" ]; then
         systemctl restart "bhttp-$P"
-        echo -e "${G}Puerto $P reiniciado.${NC}"
+        echo -e "${G}Puerto KTUN $P reiniciado con éxito.${NC}"
     else
         echo -e "${R}El servicio bhttp-$P no existe.${NC}"
     fi
@@ -480,7 +688,7 @@ bhttp_reiniciar_puerto() {
 
 bhttp_eliminar_puerto() {
     clear
-    read -p "Ingresa el puerto BHTTP a eliminar: " P
+    read -p "Ingresa el puerto a eliminar: " P
     [ -z "$P" ] && return
     systemctl stop "bhttp-$P" 2>/dev/null
     systemctl disable "bhttp-$P" 2>/dev/null
@@ -489,7 +697,7 @@ bhttp_eliminar_puerto() {
 
     grep -v "^$P|" "$CONFIG_BHTTP_DB" > "$CONFIG_BHTTP_DB.tmp" 2>/dev/null && mv "$CONFIG_BHTTP_DB.tmp" "$CONFIG_BHTTP_DB"
 
-    echo -e "${G}Puerto $P detenido y eliminado.${NC}"
+    echo -e "${G}Puerto KTUN $P detenido y eliminado correctamente.${NC}"
     sleep 2
 }
 
@@ -498,7 +706,7 @@ bhttp_detener_todos() {
     while IFS='|' read -r L_PORT _; do
         [ -n "$L_PORT" ] && systemctl stop "bhttp-$L_PORT" 2>/dev/null
     done < "$CONFIG_BHTTP_DB"
-    echo -e "${Y}Todos los servicios BHTTP han sido detenidos.${NC}"
+    echo -e "${Y}Todos los servicios KTUN han sido detenidos.${NC}"
     sleep 2
 }
 
@@ -506,11 +714,11 @@ bhttp_datos_http_custom() {
     clear
     SRV_IP=$(curl -s -4 ifconfig.me 2>/dev/null || hostname -I | awk '{print $1}')
     PORTS=$(awk -F'|' '{print $1}' "$CONFIG_BHTTP_DB" | paste -sd "," -)
-    echo -e "${Y}DATOS DE CONEXIÓN BHTTP (KTUN / HTTP CUSTOM)${NC}\n"
+    echo -e "${Y}DATOS DE CONEXIÓN (KTUN / DEALER VPN)${NC}\n"
     echo -e "  ${W}IP del Servidor:${NC} ${G}$SRV_IP${NC}"
-    echo -e "  ${W}Puertos BHTTP:${NC}   ${C}${PORTS:-Ninguno}${NC}"
-    echo -e "  ${W}Protocolo:${NC}       BHTTP (BHP1 Framing)"
-    echo -e "  ${W}Usuarios:${NC}        Cualquier usuario SSH de tu script (userDIR)"
+    echo -e "  ${W}Puertos Activos:${NC} ${C}${PORTS:-Ninguno}${NC}"
+    echo -e "  ${W}Protocolo:${NC}       KTUN (BHP1 Framing con Chunks Optimizados)"
+    echo -e "  ${W}Autenticación:${NC}   Cualquier usuario SSH activo en tu script"
     echo ""
     read -p "  Presiona ENTER para continuar..."
 }
@@ -520,13 +728,13 @@ bhttp_reiniciar_todos() {
     while IFS='|' read -r L_PORT _; do
         [ -n "$L_PORT" ] && systemctl restart "bhttp-$L_PORT" 2>/dev/null
     done < "$CONFIG_BHTTP_DB"
-    echo -e "${G}Todos los servicios BHTTP han sido reiniciados.${NC}"
+    echo -e "${G}Todos los servicios KTUN han sido reiniciados.${NC}"
     sleep 2
 }
 
 bhttp_ver_logs() {
     clear
-    read -p "Ingresa el puerto BHTTP para ver logs: " P
+    read -p "Ingresa el puerto KTUN para ver logs: " P
     [ -z "$P" ] && return
     journalctl -u "bhttp-$P" -n 40 --no-pager
     echo ""
@@ -535,7 +743,7 @@ bhttp_ver_logs() {
 
 bhttp_desinstalar_todo() {
     clear
-    read -p "¿Estás seguro de desinstalar todo BHTTP? (si/no): " CONFIRM
+    read -p "¿Estás seguro de desinstalar todo KTUN? (si/no): " CONFIRM
     [ "$CONFIRM" != "si" ] && return
 
     while IFS='|' read -r L_PORT _; do
@@ -549,7 +757,7 @@ bhttp_desinstalar_todo() {
     systemctl daemon-reload
     rm -rf "$DIR_BHTTP"
     rm -f "$BHTTP_BIN"
-    echo -e "${G}BHTTPTUNNEL desinstalado por completo.${NC}"
+    echo -e "${G}KTUN desinstalado por completo.${NC}"
     sleep 2
 }
 
@@ -573,26 +781,26 @@ menu_bhttp() {
         fi
         [ -z "$PUERTOS" ] && PUERTOS="Ninguno"
 
-        echo -e "\033[0;33m╔═══════════════════════════════════════════════════════════════════════════════╗\033[0m"
-        echo -e "\033[0;33m║\033[0m            \033[43;30m BHTTPTUNNEL • PANEL DE GESTIÓN \033[0m                                   \033[0;33m║\033[0m"
-        echo -e "\033[0;33m╚═══════════════════════════════════════════════════════════════════════════════╝\033[0m"
+        echo -e "\033[0;33m╔═══════════════════════════════════════════════════════════╗\033[0m"
+        echo -e "\033[0;33m║\033[0m \033[43;30m KTUNTUNNEL • GESTIÓN AVANZADA \033[0m \033[0;33m║\033[0m"
+        echo -e "\033[0;33m╚═══════════════════════════════════════════════════════════╝\033[0m"
         echo ""
-        echo -e "       \033[1;97mEstado\033[0m\033[0;32m\xE2\x9C\x85\033[0m: \033[1;97m${ACTIVOS} activo(s)\033[0m"
-        echo -e "       \033[1;97mPuerto(s):\033[0m \033[1;97m${PUERTOS}\033[0m"
+        echo -e "        \033[1;97mEstado\033[0m\033[0;32m✅\033[0m: \033[1;97m${ACTIVOS} activo(s)\033[0m"
+        echo -e "        \033[1;97mPuerto(s):\033[0m \033[1;97m${PUERTOS}\033[0m"
         echo ""
         echo -e "\033[0;33m╞═══════════════════════════════════════════════════════════════════════════════╡\033[0m"
-        echo -e " \033[1;97m[1]\033[0m\033[0;31m\xE2\x9E\xA4\033[0m \033[1;97mInstalar / Re-instalar binario\033[0m"
-        echo -e " \033[1;97m[2]\033[0m\033[0;31m\xE2\x9E\xA4\033[0m \033[1;97mAgregar nuevo puerto BHTTP\033[0m"
-        echo -e " \033[1;97m[3]\033[0m\033[0;31m\xE2\x9E\xA4\033[0m \033[1;97mListar puertos activos\033[0m"
-        echo -e " \033[1;97m[4]\033[0m\033[0;31m\xE2\x9E\xA4\033[0m \033[1;97mReiniciar puerto específico\033[0m"
-        echo -e " \033[1;97m[5]\033[0m\033[0;31m\xE2\x9E\xA4\033[0m \033[1;97mDetener y eliminar un puerto\033[0m"
-        echo -e " \033[1;97m[6]\033[0m\033[0;31m\xE2\x9E\xA4\033[0m \033[1;97mDetener TODOS los puertos\033[0m"
-        echo -e " \033[1;97m[7]\033[0m\033[0;31m\xE2\x9E\xA4\033[0m \033[1;97mConfiguración y datos HTTP Custom\033[0m"
-        echo -e " \033[1;97m[8]\033[0m\033[0;31m\xE2\x9E\xA4\033[0m \033[1;97mReiniciar todos los puertos\033[0m"
-        echo -e " \033[1;97m[9]\033[0m\033[0;31m\xE2\x9E\xA4\033[0m \033[1;97mVer logs de un puerto\033[0m"
+        echo -e " \033[1;97m[1]\033[0m\033[0;31m▶\033[0m \033[1;97mInstalar / Re-instalar motor KTUN avanzado\033[0m"
+        echo -e " \033[1;97m[2]\033[0m\033[0;31m▶\033[0m \033[1;97mAgregar nuevo puerto KTUN\033[0m"
+        echo -e " \033[1;97m[3]\033[0m\033[0;31m▶\033[0m \033[1;97mListar puertos activos\033[0m"
+        echo -e " \033[1;97m[4]\033[0m\033[0;31m▶\033[0m \033[1;97mReiniciar puerto específico\033[0m"
+        echo -e " \033[1;97m[5]\033[0m\033[0;31m▶\033[0m \033[1;97mDetener y eliminar un puerto\033[0m"
+        echo -e " \033[1;97m[6]\033[0m\033[0;31m▶\033[0m \033[1;97mDetener TODOS los puertos\033[0m"
+        echo -e " \033[1;97m[7]\033[0m\033[0;31m▶\033[0m \033[1;97mConfiguración y datos Dealer VPN / KTUN\033[0m"
+        echo -e " \033[1;97m[8]\033[0m\033[0;31m▶\033[0m \033[1;97mReiniciar todos los puertos\033[0m"
+        echo -e " \033[1;97m[9]\033[0m\033[0;31m▶\033[0m \033[1;97mVer logs de un puerto\033[0m"
         echo -e "\033[0;33m╞═══════════════════════════════════════════════════════════════════════════════╡\033[0m"
-        echo -e " \033[1;97m[10]\033[0m\033[0;31m\xE2\x9E\xA4\033[0m \033[1;97mDesinstalar TODO\033[0m"
-        echo -e " \033[1;97m[0]\033[0m\033[0;31m\xE2\x9E\xA4\033[0m \033[1;97mVolver al menú principal\033[0m"
+        echo -e " \033[1;97m[10]\033[0m\033[0;31m▶\033[0m \033[1;97mDesinstalar TODO\033[0m"
+        echo -e " \033[1;97m[0]\033[0m\033[0;31m▶\033[0m \033[1;97mVolver al menú principal\033[0m"
         echo -e "\033[0;33m╚═══════════════════════════════════════════════════════════════════════════════╝\033[0m"
         echo ""
         read -p " Selecciona una opción: " B_OPT
@@ -612,7 +820,6 @@ menu_bhttp() {
         esac
     done
 }
-
 # ══════════════════════════════════════════
 #   WEBSOCKET PYTHON
 # ══════════════════════════════════════════
