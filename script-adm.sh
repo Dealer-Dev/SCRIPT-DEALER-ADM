@@ -5,7 +5,7 @@
 #   Ubuntu 22/24/25
 # ═══════════════════════════════════════════════════════
 
-SCRIPT_VERSION="1.2"
+SCRIPT_VERSION="1.3"
 R='\033[0;31m'
 G='\033[0;32m'
 Y='\033[1;33m'
@@ -573,7 +573,7 @@ class Server:
                 self.sessions[sess] = s
             return s
 
-    async def handle(self, reader, writer):
+        async def handle(self, reader, writer):
         tune_socket(writer.get_extra_info('socket'))
         loop = asyncio.get_running_loop()
 
@@ -589,14 +589,14 @@ class Server:
                     raw = await reader.readexactly(ln)
                     payload = mask(raw, sess, mode, seq, 0)
 
-                # FIX #2: MODE_KEEPALIVE = 5 -> responde OK y CIERRA el socket (es efímero).
+                # FIX: MODE_KEEPALIVE = 5 -> responde OK y CIERRA (es efímero)
                 if mode == 5:
                     writer.write(b"\x00\x00\x00\x00\x00")
                     await writer.drain()
                     writer.close()
-                    await writer.wait_closed()
                     return
 
+                # FIX: Si es un PROBE, responde y CIERRA (es efímero)
                 if payload[:4] == MAGIC:
                     size = int.from_bytes(payload[6:10], "big") if len(payload) >= 10 else 0
                     pmode = payload[5] if len(payload) >= 6 else mode
@@ -604,7 +604,6 @@ class Server:
                     writer.write(b"\x00" + len(body).to_bytes(4, "big") + body)
                     await writer.drain()
                     writer.close()
-                    await writer.wait_closed()
                     return
 
                 s = await self.get_session(sess)
@@ -628,7 +627,6 @@ class Server:
                         count = 1
                     base_deadline = loop.time() + LONGPOLL
                     for i in range(count):
-                        # Solo el primer chunk espera; el resto va instantáneo si hay datos.
                         cur_deadline = base_deadline if i == 0 else 0.0
                         chunk = await s.download(seq + i, chunk_size, cur_deadline)
                         self._send_data(writer, sess, mode, seq + i, chunk)
@@ -638,7 +636,6 @@ class Server:
                     writer.write(b"\x00\x00\x00\x00\x00")
                     await writer.drain()
                 else:
-                    # modos desconocidos: no cerramos, respondemos con error suave.
                     writer.write(b"\x01\x00\x00\x00\x00")
                     await writer.drain()
         except (asyncio.IncompleteReadError, ConnectionError, OSError):
