@@ -5,7 +5,7 @@
 #   Ubuntu 22/24/25
 # ═══════════════════════════════════════════════════════
 
-SCRIPT_VERSION="1.6"
+SCRIPT_VERSION="1.2"
 R='\033[0;31m'
 G='\033[0;32m'
 Y='\033[1;33m'
@@ -372,7 +372,7 @@ bhttp_instalar_binario() {
     python3 -c "import cryptography" 2>/dev/null || pip3 install cryptography --break-system-packages >/dev/null 2>&1 || true
 
     if ! python3 -c "import cryptography" 2>/dev/null; then
-        echo -e "${R}AVISO: no se pudo instalar 'cryptography'. Las apps nuevas (AES) no funcionarán; las viejas sí.${NC}"
+        echo -e "${R}AVISO: no se pudo instalar 'cryptography'. Las apps nuevas (v2) no funcionarán; las viejas (v1) sí.${NC}"
         sleep 3
     fi
 
@@ -381,14 +381,12 @@ bhttp_instalar_binario() {
 import argparse, asyncio, hashlib, socket, time
 from functools import lru_cache
 
-# Motor de alta velocidad uvloop (en C) si está disponible
 try:
     import uvloop
     asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
 except ImportError:
     pass
 
-# AES-CTR acelerado por hardware (protocolo v2)
 try:
     from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
     HAVE_AES = True
@@ -400,7 +398,7 @@ SECRET = b"CAMBIA_ESTE_SECRETO_KTUN"
 
 MAGIC = b"BHP1"
 LONGPOLL = 0.45
-SESSION_TTL = 300.0          # solo para sesiones realmente abandonadas
+SESSION_TTL = 300.0
 MAX_FRAME = 4194304
 FLAG_V2 = 0x80
 
@@ -458,7 +456,6 @@ def tune_socket(sock):
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 1048576)
         if hasattr(socket, "TCP_QUICKACK"):
             sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_QUICKACK, 1)
-        # Detecta clientes móviles que desaparecieron (conexiones persistentes)
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
         if hasattr(socket, "TCP_KEEPIDLE"):
             sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPIDLE, 30)
@@ -512,7 +509,6 @@ class Session:
         self.last_active = time.monotonic()
         wrote = False
         async with self.cond:
-            # Ignorar reintentos de secuencias ya escritas (no acumular memoria)
             if data and seq >= self.up_next:
                 self.up_pending[seq] = data
             while self.up_next in self.up_pending:
@@ -529,6 +525,7 @@ class Session:
             except Exception:
                 self.closed = True
 
+    # ---- v1 (legado): el cliente predice la secuencia; se mantiene intacta ----
     async def download(self, seq, maxlen, deadline):
         self.last_active = time.monotonic()
         if maxlen <= 0:
@@ -561,6 +558,43 @@ class Session:
                     self.down_assign += 1
                 self.cond.notify_all()
                 return b""
+
+    # ---- v2: el SERVIDOR asigna la secuencia real al momento de tomar el dato;
+    # asignación y lectura ocurren en el mismo paso atómico, así que nunca hay
+    # dos peticiones compitiendo por la misma posición ni saltos de secuencia
+    # con pérdida de round-trips. ----
+    async def take_next(self, maxlen, deadline):
+        self.last_active = time.monotonic()
+        if maxlen <= 0:
+            maxlen = 32768
+        loop = asyncio.get_running_loop()
+        async with self.cond:
+            while True:
+                if self.down_raw:
+                    seq = self.down_assign
+                    take = bytes(self.down_raw[:maxlen])
+                    del self.down_raw[:maxlen]
+                    self.down_chunks[seq] = take
+                    self.down_assign += 1
+                    self.cond.notify_all()
+                    return seq, take
+                if self.eof:
+                    seq = self.down_assign
+                    self.down_chunks[seq] = b""
+                    self.down_assign += 1
+                    self.cond.notify_all()
+                    return seq, b""
+                now = loop.time()
+                if now < deadline:
+                    try:
+                        await asyncio.wait_for(self.cond.wait(), timeout=deadline - now)
+                    except asyncio.TimeoutError:
+                        pass
+                    continue
+                seq = self.down_assign
+                self.down_assign += 1
+                self.cond.notify_all()
+                return seq, b""
 
     async def ack(self, seq):
         self.last_active = time.monotonic()
@@ -662,7 +696,7 @@ class Server:
                 elif mode == 3:
                     if len(payload) >= 6:
                         chunk_size = int.from_bytes(payload[0:4], "big")
-                        count = payload[5]
+                        count = int.from_bytes(payload[4:6], "big")
                     else:
                         chunk_size, count = 32768, 1
                     if chunk_size <= 0:
@@ -670,11 +704,19 @@ class Server:
                     if count <= 0:
                         count = 1
                     base_deadline = loop.time() + LONGPOLL
-                    for i in range(count):
-                        # Solo esperar en el primer chunk; si ya hay datos, despachar el lote sin retardo
-                        cur_deadline = base_deadline if i == 0 else 0.0
-                        chunk = await s.download(seq + i, chunk_size, cur_deadline)
-                        self._send_data(writer, sess, mode, seq + i, chunk, v2)
+
+                    if v2:
+                        # Secuencia asignada por el servidor: sin carrera posible.
+                        for i in range(count):
+                            cur_deadline = base_deadline if i == 0 else 0.0
+                            real_seq, chunk = await s.take_next(chunk_size, cur_deadline)
+                            self._send_batch_chunk(writer, sess, mode, real_seq, chunk)
+                    else:
+                        # Legado v1: semántica antigua intacta (clientes viejos en el campo).
+                        for i in range(count):
+                            cur_deadline = base_deadline if i == 0 else 0.0
+                            chunk = await s.download(seq + i, chunk_size, cur_deadline)
+                            self._send_data(writer, sess, mode, seq + i, chunk, v2)
                     await writer.drain()
                 elif mode == 4:
                     await s.ack(seq)
@@ -693,10 +735,20 @@ class Server:
                 pass
 
     def _send_data(self, writer, sess, mode, seq, data, v2):
+        """Formato antiguo (v1 y mode==2): sin secuencia embebida."""
         real = len(data)
         masked = crypt(v2, data, sess, mode, seq, 1) if real else b""
         body_len = real + 4
         writer.write(b"\x02" + body_len.to_bytes(4, "big") + real.to_bytes(4, "big") + masked)
+
+    def _send_batch_chunk(self, writer, sess, mode, real_seq, data):
+        """Formato v2 de MODE_BATCH: antepone la secuencia real (8 bytes, claro)
+        para que el cliente sepa a qué posición pertenece cada chunk."""
+        real = len(data)
+        masked = crypt(True, data, sess, mode, real_seq, 1) if real else b""
+        body_len = 8 + 4 + real
+        writer.write(b"\x02" + body_len.to_bytes(4, "big")
+                     + real_seq.to_bytes(8, "big") + real.to_bytes(4, "big") + masked)
 
     async def serve(self):
         srv = await asyncio.start_server(self.handle, self.host, self.port, backlog=4096)
@@ -719,80 +771,15 @@ PYEOF
 
     chmod +x "$BHTTP_BIN"
 
-    # Reiniciar puertos ya configurados para que tomen el nuevo motor
     if [ -s "$CONFIG_BHTTP_DB" ]; then
         while IFS='|' read -r L_PORT _; do
             [ -n "$L_PORT" ] && systemctl restart "bhttp-$L_PORT" 2>/dev/null
         done < "$CONFIG_BHTTP_DB"
     fi
 
-    echo -e "\n${G}Motor KTUN Ultra-Speed (uvloop + AES-CTR + BBR) instalado en $BHTTP_BIN${NC}"
+    echo -e "\n${G}Motor KTUN Ultra-Speed (uvloop + AES-CTR + secuencia por servidor + BBR) instalado en $BHTTP_BIN${NC}"
     echo -e "${Y}Recuerda: SECRET en $BHTTP_BIN debe ser igual a PROTO_SECRET de la app.${NC}"
     sleep 3
-}
-
-bhttp_agregar_puerto() {
-    clear
-    echo -e "${Y}Agregar nuevo puerto KTUN (Multipuerto)${NC}\n"
-    
-    # Si el binario aún no ha sido creado, instalarlo automáticamente primero
-    if [ ! -f "$BHTTP_BIN" ]; then
-        bhttp_instalar_binario
-        clear
-        echo -e "${Y}Agregar nuevo puerto KTUN (Multipuerto)${NC}\n"
-    fi
-
-    read -p "  Puerto de escucha KTUN (ej: 90, 80, 8080): " LISTEN_PORT
-    [ -z "$LISTEN_PORT" ] && return
-
-    if grep -q "^$LISTEN_PORT|" "$CONFIG_BHTTP_DB" 2>/dev/null; then
-        echo -e "\n${R}El puerto $LISTEN_PORT ya está registrado.${NC}"
-        sleep 2 && return
-    fi
-
-    echo -e "\n${C}Selecciona el destino de la redirección backend:${NC}"
-    echo -e "  [1] OpenSSH Directo (Puerto 22)"
-    echo -e "  [2] Dropbear SSH (Puerto 444)"
-    echo -e "  [3] Personalizado (Ingresar puerto manualmente)"
-    read -p "  Opción [1-3]: " DEST_OPT
-
-    case $DEST_OPT in
-        1) TARGET_PORT=22 ;;
-        2) TARGET_PORT=444 ;;
-        3) read -p "  Ingresa el puerto local destino: " TARGET_PORT ;;
-        *) TARGET_PORT=22 ;;
-    esac
-    [ -z "$TARGET_PORT" ] && TARGET_PORT=22
-
-    cat > "$DIR_SERVICES/bhttp-${LISTEN_PORT}.service" << EOF
-[Unit]
-Description=BHTTP Ultra-Speed Tunnel Port ${LISTEN_PORT} -> ${TARGET_PORT}
-After=network.target
-
-[Service]
-Type=simple
-User=root
-ExecStart=/usr/bin/python3 -O $BHTTP_BIN --host 0.0.0.0 --port ${LISTEN_PORT} --backend-host 127.0.0.1 --backend-port ${TARGET_PORT}
-Restart=always
-RestartSec=2
-LimitNOFILE=1048576
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-    systemctl daemon-reload
-    systemctl enable "bhttp-${LISTEN_PORT}" >/dev/null 2>&1
-    systemctl restart "bhttp-${LISTEN_PORT}"
-
-    iptables -I INPUT -p tcp --dport "$LISTEN_PORT" -j ACCEPT 2>/dev/null
-    command -v ufw >/dev/null 2>&1 && ufw allow "$LISTEN_PORT"/tcp >/dev/null 2>&1
-
-    mkdir -p "$DIR_BHTTP"
-    echo "$LISTEN_PORT|$TARGET_PORT" >> "$CONFIG_BHTTP_DB"
-
-    echo -e "\n${G}Puerto KTUN $LISTEN_PORT activo y redirigiendo a 127.0.0.1:$TARGET_PORT${NC}"
-    sleep 2
 }
 
 bhttp_listar_puertos() {
