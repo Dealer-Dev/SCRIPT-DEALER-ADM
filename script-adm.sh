@@ -5,7 +5,7 @@
 #   Ubuntu 22/24/25
 # ═══════════════════════════════════════════════════════
 
-SCRIPT_VERSION="1.2"
+SCRIPT_VERSION="1.3"
 R='\033[0;31m'
 G='\033[0;32m'
 Y='\033[1;33m'
@@ -322,13 +322,20 @@ status_port() {
     ss -${2:-t}lnp 2>/dev/null | grep -q ":${1} " && echo -e "${NEON}◆ ON ${NC}" || echo -e "${R}◇ OFF${NC}"
 }
 
-# ══════════════════════════════════════════
-#   MÓDULO BHTTPTUNNEL (ULTRA-SPEED: UVLOOP + INT-XOR + BBR)
-# ══════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════════
+#   MÓDULO BHTTPTUNNEL (DEALER VPN / KTUN - ULTRA SPEED OPTIMIZADO)
+# ══════════════════════════════════════════════════════════════════════
 
 bhttp_optimizar_kernel() {
+    # 1. Asegurar módulo BBR y cola FQ en arranque
     modprobe tcp_bbr 2>/dev/null
-    grep -q "tcp_bbr" /etc/modules-load.d/modules.conf 2>/dev/null || echo "tcp_bbr" >> /etc/modules-load.d/modules.conf 2>/dev/null
+    mkdir -p /etc/modules-load.d
+    grep -q "^tcp_bbr" /etc/modules-load.d/bbr.conf 2>/dev/null || echo "tcp_bbr" > /etc/modules-load.d/bbr.conf 2>/dev/null
+
+    # 2. Restaurar MTU nativa de loopback para comunicación interna sin fragmentación
+    ip link set dev lo mtu 65536 2>/dev/null || true
+
+    # 3. Pila de red del Kernel optimizada para alta velocidad y latencia transfronteriza
     cat > /etc/sysctl.d/99-bhttp.conf << 'EOF'
 net.core.default_qdisc = fq
 net.ipv4.tcp_congestion_control = bbr
@@ -336,45 +343,48 @@ net.core.rmem_max = 67108864
 net.core.wmem_max = 67108864
 net.core.rmem_default = 16777216
 net.core.wmem_default = 16777216
-net.ipv4.tcp_rmem = 4096 262144 67108864
-net.ipv4.tcp_wmem = 4096 262144 67108864
+net.ipv4.tcp_rmem = 4096 87380 67108864
+net.ipv4.tcp_wmem = 4096 65536 67108864
 net.core.somaxconn = 65535
-net.core.netdev_max_backlog = 32768
-net.ipv4.tcp_max_syn_backlog = 32768
+net.core.netdev_max_backlog = 65535
+net.ipv4.tcp_max_syn_backlog = 65535
 net.ipv4.tcp_slow_start_after_idle = 0
-net.ipv4.tcp_notsent_lowat = 16384
+net.ipv4.tcp_notsent_lowat = 131072
 net.ipv4.tcp_mtu_probing = 1
 net.ipv4.tcp_tw_reuse = 1
 net.ipv4.tcp_fin_timeout = 15
-fs.file-max = 1048576
+fs.file-max = 2097152
 EOF
     sysctl --system >/dev/null 2>&1
 
-    # Evitar fragmentación de paquetes en redes móviles (VIVA/Entel/Tigo)
+    # 4. Evitar fragmentación móvil en reenvío externo (sin tocar 127.0.0.1)
     iptables -C FORWARD -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null || \
     iptables -A FORWARD -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null
 
-    # Acelerar respuesta SSH desactivando resolución DNS inversa
+    # 5. Optimizar OpenSSH para ráfagas multicanal (Dealer VPN) y evitar demoras
     if [ -f /etc/ssh/sshd_config ]; then
         sed -i 's/#UseDNS yes/UseDNS no/' /etc/ssh/sshd_config 2>/dev/null
+        sed -i 's/^UseDNS yes/UseDNS no/' /etc/ssh/sshd_config 2>/dev/null
         grep -q "^UseDNS no" /etc/ssh/sshd_config || echo "UseDNS no" >> /etc/ssh/sshd_config
+        
+        # Permitir handshakes SSH concurrentes sin colapsar slots preauth
+        grep -q "^MaxStartups" /etc/ssh/sshd_config && sed -i 's/^MaxStartups.*/MaxStartups 100:30:200/' /etc/ssh/sshd_config || echo "MaxStartups 100:30:200" >> /etc/ssh/sshd_config
+        grep -q "^ClientAliveInterval" /etc/ssh/sshd_config || echo "ClientAliveInterval 30" >> /etc/ssh/sshd_config
+        grep -q "^ClientAliveCountMax" /etc/ssh/sshd_config || echo "ClientAliveCountMax 3" >> /etc/ssh/sshd_config
+        
+        systemctl reload ssh 2>/dev/null || systemctl reload sshd 2>/dev/null || true
     fi
 }
 
 bhttp_instalar_binario() {
     clear
-    echo -e "${Y}Instalando acelerador (uvloop + AES) y motor BHTTP Ultra-Speed...${NC}"
+    echo -e "${Y}Instalando acelerador (uvloop + motor KTUN Dealer Ultra-Speed)...${NC}"
     bhttp_optimizar_kernel
 
     apt-get update -y >/dev/null 2>&1
     apt-get install -y python3-uvloop python3-cryptography >/dev/null 2>&1 || true
     python3 -c "import uvloop" 2>/dev/null || pip3 install uvloop --break-system-packages >/dev/null 2>&1 || true
     python3 -c "import cryptography" 2>/dev/null || pip3 install cryptography --break-system-packages >/dev/null 2>&1 || true
-
-    if ! python3 -c "import cryptography" 2>/dev/null; then
-        echo -e "${R}AVISO: no se pudo instalar 'cryptography'. Las apps nuevas (v2) no funcionarán; las viejas (v1) sí.${NC}"
-        sleep 3
-    fi
 
     cat > "$BHTTP_BIN" << 'PYEOF'
 #!/usr/bin/env python3
@@ -393,7 +403,7 @@ try:
 except ImportError:
     HAVE_AES = False
 
-# DEBE ser idéntico a PROTO_SECRET en IgnixBhttpBridge.java
+# Secreto sincronizado con PROTO_SECRET
 SECRET = b"CAMBIA_ESTE_SECRETO_KTUN"
 
 MAGIC = b"BHP1"
@@ -402,7 +412,7 @@ SESSION_TTL = 300.0
 MAX_FRAME = 4194304
 FLAG_V2 = 0x80
 
-# ---------------- cifrado ----------------
+# ---------------- Cifrado ----------------
 
 def keystream(sess, mode, seq, d, n):
     base = hashlib.sha256(sess + bytes([mode]) + seq.to_bytes(8, "big") + bytes([d]))
@@ -437,7 +447,7 @@ def mask_v2(data, sess, mode, seq, d):
 def crypt(v2, data, sess, mode, seq, d):
     return mask_v2(data, sess, mode, seq, d) if v2 else mask_v1(data, sess, mode, seq, d)
 
-# ---------------- utilidades ----------------
+# ---------------- Utilidades de Socket ----------------
 
 def probe_reply(mode, size):
     n = size if (mode == 2 and size >= 10) else 10
@@ -452,8 +462,8 @@ def tune_socket(sock):
         return
     try:
         sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-        sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 1048576)
-        sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 1048576)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 2097152)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 2097152)
         if hasattr(socket, "TCP_QUICKACK"):
             sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_QUICKACK, 1)
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
@@ -464,7 +474,7 @@ def tune_socket(sock):
     except Exception:
         pass
 
-# ---------------- sesión ----------------
+# ---------------- Sesión ----------------
 
 class Session:
     def __init__(self, sess, backend):
@@ -525,7 +535,6 @@ class Session:
             except Exception:
                 self.closed = True
 
-    # ---- v1 (legado): el cliente predice la secuencia; se mantiene intacta ----
     async def download(self, seq, maxlen, deadline):
         self.last_active = time.monotonic()
         if maxlen <= 0:
@@ -559,10 +568,6 @@ class Session:
                 self.cond.notify_all()
                 return b""
 
-    # ---- v2: el SERVIDOR asigna la secuencia real al momento de tomar el dato;
-    # asignación y lectura ocurren en el mismo paso atómico, así que nunca hay
-    # dos peticiones compitiendo por la misma posición ni saltos de secuencia
-    # con pérdida de round-trips. ----
     async def take_next(self, maxlen, deadline):
         self.last_active = time.monotonic()
         if maxlen <= 0:
@@ -612,7 +617,7 @@ class Session:
         except Exception:
             pass
 
-# ---------------- servidor ----------------
+# ---------------- Servidor ----------------
 
 class Server:
     def __init__(self, host, port, backend):
@@ -706,13 +711,11 @@ class Server:
                     base_deadline = loop.time() + LONGPOLL
 
                     if v2:
-                        # Secuencia asignada por el servidor: sin carrera posible.
                         for i in range(count):
                             cur_deadline = base_deadline if i == 0 else 0.0
                             real_seq, chunk = await s.take_next(chunk_size, cur_deadline)
                             self._send_batch_chunk(writer, sess, mode, real_seq, chunk)
                     else:
-                        # Legado v1: semántica antigua intacta (clientes viejos en el campo).
                         for i in range(count):
                             cur_deadline = base_deadline if i == 0 else 0.0
                             chunk = await s.download(seq + i, chunk_size, cur_deadline)
@@ -735,15 +738,12 @@ class Server:
                 pass
 
     def _send_data(self, writer, sess, mode, seq, data, v2):
-        """Formato antiguo (v1 y mode==2): sin secuencia embebida."""
         real = len(data)
         masked = crypt(v2, data, sess, mode, seq, 1) if real else b""
         body_len = real + 4
         writer.write(b"\x02" + body_len.to_bytes(4, "big") + real.to_bytes(4, "big") + masked)
 
     def _send_batch_chunk(self, writer, sess, mode, real_seq, data):
-        """Formato v2 de MODE_BATCH: antepone la secuencia real (8 bytes, claro)
-        para que el cliente sepa a qué posición pertenece cada chunk."""
         real = len(data)
         masked = crypt(True, data, sess, mode, real_seq, 1) if real else b""
         body_len = 8 + 4 + real
@@ -751,7 +751,7 @@ class Server:
                      + real_seq.to_bytes(8, "big") + real.to_bytes(4, "big") + masked)
 
     async def serve(self):
-        srv = await asyncio.start_server(self.handle, self.host, self.port, backlog=4096)
+        srv = await asyncio.start_server(self.handle, self.host, self.port, backlog=65535)
         asyncio.create_task(self.reaper())
         async with srv:
             await srv.serve_forever()
@@ -777,16 +777,53 @@ PYEOF
         done < "$CONFIG_BHTTP_DB"
     fi
 
-    echo -e "\n${G}Motor KTUN Ultra-Speed (uvloop + AES-CTR + secuencia por servidor + BBR) instalado en $BHTTP_BIN${NC}"
-    echo -e "${Y}Recuerda: SECRET en $BHTTP_BIN debe ser igual a PROTO_SECRET de la app.${NC}"
-    sleep 3
+    echo -e "\n${G}Motor KTUN (Ultra-Speed + BBR + FQ) instalado en $BHTTP_BIN${NC}"
+    sleep 2
+}
+
+bhttp_agregar_puerto() {
+    clear
+    echo -e "${Y}AGREGAR PUERTO KTUN ${NC}\n"
+    read -p "Ingresa el puerto local BHTTP (ej. 90, 80): " L_PORT
+    [ -z "$L_PORT" ] && return
+    read -p "Ingresa el puerto SSH backend [22]: " T_PORT
+    T_PORT=${T_PORT:-22}
+
+    cat > "$DIR_SERVICES/bhttp-$L_PORT.service" << EOF
+[Unit]
+Description=BHTTP Ultra-Speed Tunnel Port $L_PORT -> $T_PORT
+After=network.target
+
+[Service]
+Type=simple
+User=root
+LimitNOFILE=1048576
+LimitNPROC=65535
+ExecStart=/usr/bin/python3 -O $BHTTP_BIN --host 0.0.0.0 --port $L_PORT --backend-host 127.0.0.1 --backend-port $T_PORT
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+    systemctl daemon-reload
+    systemctl enable "bhttp-$L_PORT" >/dev/null 2>&1
+    systemctl restart "bhttp-$L_PORT"
+
+    grep -v "^$L_PORT|" "$CONFIG_BHTTP_DB" 2>/dev/null > "$CONFIG_BHTTP_DB.tmp" || true
+    mv "$CONFIG_BHTTP_DB.tmp" "$CONFIG_BHTTP_DB" 2>/dev/null || true
+    echo "$L_PORT|$T_PORT" >> "$CONFIG_BHTTP_DB"
+
+    echo -e "\n${G}Puerto BHTTP $L_PORT activo apuntando a SSH $T_PORT.${NC}"
+    sleep 2
 }
 
 bhttp_listar_puertos() {
     clear
-    echo -e "${Y}Puertos KTUN Configurados:${NC}\n"
+    echo -e "${Y}Puertos BHTTP Configurados:${NC}\n"
     if [ ! -s "$CONFIG_BHTTP_DB" ]; then
-        echo -e "  ${R}No hay puertos KTUN configurados.${NC}"
+        echo -e "  ${R}No hay puertos configurados.${NC}"
     else
         while IFS='|' read -r L_PORT T_PORT; do
             [ -z "$L_PORT" ] && continue
@@ -795,7 +832,7 @@ bhttp_listar_puertos() {
             else
                 STATUS="${R}[INACTIVO]${NC}"
             fi
-            echo -e "  Puerto KTUN: ${W}$L_PORT${NC} -> Backend SSH: ${C}$T_PORT${NC} $STATUS"
+            echo -e "  Puerto BHTTP: ${W}$L_PORT${NC} -> Backend SSH: ${C}$T_PORT${NC} $STATUS"
         done < "$CONFIG_BHTTP_DB"
     fi
     echo ""
@@ -808,7 +845,7 @@ bhttp_reiniciar_puerto() {
     [ -z "$P" ] && return
     if [ -f "$DIR_SERVICES/bhttp-$P.service" ]; then
         systemctl restart "bhttp-$P"
-        echo -e "${G}Puerto KTUN $P reiniciado con éxito.${NC}"
+        echo -e "${G}Puerto BHTTP $P reiniciado con éxito.${NC}"
     else
         echo -e "${R}El servicio bhttp-$P no existe.${NC}"
     fi
@@ -826,7 +863,7 @@ bhttp_eliminar_puerto() {
 
     grep -v "^$P|" "$CONFIG_BHTTP_DB" > "$CONFIG_BHTTP_DB.tmp" 2>/dev/null && mv "$CONFIG_BHTTP_DB.tmp" "$CONFIG_BHTTP_DB"
 
-    echo -e "${G}Puerto KTUN $P detenido y eliminado correctamente.${NC}"
+    echo -e "${G}Puerto BHTTP $P detenido y eliminado correctamente.${NC}"
     sleep 2
 }
 
@@ -835,7 +872,7 @@ bhttp_detener_todos() {
     while IFS='|' read -r L_PORT _; do
         [ -n "$L_PORT" ] && systemctl stop "bhttp-$L_PORT" 2>/dev/null
     done < "$CONFIG_BHTTP_DB"
-    echo -e "${Y}Todos los servicios KTUN han sido detenidos.${NC}"
+    echo -e "${Y}Todos los servicios BHTTP han sido detenidos.${NC}"
     sleep 2
 }
 
@@ -843,11 +880,11 @@ bhttp_datos_http_custom() {
     clear
     SRV_IP=$(curl -s -4 ifconfig.me 2>/dev/null || hostname -I | awk '{print $1}')
     PORTS=$(awk -F'|' '{print $1}' "$CONFIG_BHTTP_DB" 2>/dev/null | paste -sd "," -)
-    echo -e "${Y}DATOS DE CONEXIÓN (KTUN / DEALER VPN)${NC}\n"
+    echo -e "${Y}DATOS DE CONEXIÓN (DEALER VPN)${NC}\n"
     echo -e "  ${W}IP del Servidor:${NC} ${G}$SRV_IP${NC}"
     echo -e "  ${W}Puertos Activos:${NC} ${C}${PORTS:-Ninguno}${NC}"
-    echo -e "  ${W}Protocolo:${NC}       KTUN (BHP1 Framing con Chunks 32KB + uvloop)"
-    echo -e "  ${W}Autenticación:${NC}   Cualquier usuario SSH activo en tu script"
+    echo -e "  ${W}Protocolo:${NC}       BHTTP (BHP1 Framing con optimización BBR + FQ)"
+    echo -e "  ${W}Autenticación:${NC}   Cualquier usuario SSH activo"
     echo ""
     read -p "  Presiona ENTER para continuar..."
 }
@@ -857,13 +894,13 @@ bhttp_reiniciar_todos() {
     while IFS='|' read -r L_PORT _; do
         [ -n "$L_PORT" ] && systemctl restart "bhttp-$L_PORT" 2>/dev/null
     done < "$CONFIG_BHTTP_DB"
-    echo -e "${G}Todos los servicios KTUN han sido reiniciados.${NC}"
+    echo -e "${G}Todos los servicios BHTTP han sido reiniciados.${NC}"
     sleep 2
 }
 
 bhttp_ver_logs() {
     clear
-    read -p "Ingresa el puerto KTUN para ver logs: " P
+    read -p "Ingresa el puerto BHTTP para ver logs: " P
     [ -z "$P" ] && return
     journalctl -u "bhttp-$P" -n 40 --no-pager
     echo ""
@@ -872,7 +909,7 @@ bhttp_ver_logs() {
 
 bhttp_desinstalar_todo() {
     clear
-    read -p "¿Estás seguro de desinstalar todo KTUN? (si/no): " CONFIRM
+    read -p "¿Estás seguro de desinstalar todo BHTTP? (si/no): " CONFIRM
     [ "$CONFIRM" != "si" ] && return
 
     if [ -f "$CONFIG_BHTTP_DB" ]; then
@@ -890,7 +927,7 @@ bhttp_desinstalar_todo() {
     rm -f "$BHTTP_BIN"
     mkdir -p "$DIR_BHTTP"
     touch "$CONFIG_BHTTP_DB"
-    echo -e "${G}BHTTPTUNNEL desinstalado por completo.${NC}"
+    echo -e "${G}BHTTP desinstalado por completo.${NC}"
     sleep 2
 }
 
@@ -915,20 +952,20 @@ menu_bhttp() {
         [ -z "$PUERTOS" ] && PUERTOS="Ninguno"
 
         echo -e "\033[0;33m╔═══════════════════════════════════════════════════════════════════════╗\033[0m"
-        echo -e "\033[0;33m║\033[0m            \033[43;30m KTUN TUNNEL • GESTIÓN ULTRA-SPEED  \033[0m               \033[0;33m║\033[0m"
+        echo -e "\033[0;33m║\033[0m             \033[43;30m PANEL DE GESTIÓN KTUN ULTRA-SPEED \033[0m               \033[0;33m║\033[0m"
         echo -e "\033[0;33m╚═══════════════════════════════════════════════════════════════════════╝\033[0m"
         echo ""
         echo -e "       \033[1;97mEstado\033[0m\033[0;32m\xE2\x9C\x85\033[0m: \033[1;97m${ACTIVOS} activo(s)\033[0m"
         echo -e "       \033[1;97mPuerto(s):\033[0m \033[1;97m${PUERTOS}\033[0m"
         echo ""
         echo -e "\033[0;33m╞═══════════════════════════════════════════════════════════════════════╡\033[0m"
-        echo -e " \033[1;97m[1]\033[0m\033[0;31m\xE2\x9E\xA4\033[0m \033[1;97mInstalar / Re-instalar motor KTUN Ultra-Speed\033[0m"
-        echo -e " \033[1;97m[2]\033[0m\033[0;31m\xE2\x9E\xA4\033[0m \033[1;97mAgregar nuevo puerto KTUN\033[0m"
+        echo -e " \033[1;97m[1]\033[0m\033[0;31m\xE2\x9E\xA4\033[0m \033[1;97mInstalar / Re-instalar motor BHTTP Ultra-Speed\033[0m"
+        echo -e " \033[1;97m[2]\033[0m\033[0;31m\xE2\x9E\xA4\033[0m \033[1;97mAgregar nuevo puerto BHTTP\033[0m"
         echo -e " \033[1;97m[3]\033[0m\033[0;31m\xE2\x9E\xA4\033[0m \033[1;97mListar puertos activos\033[0m"
         echo -e " \033[1;97m[4]\033[0m\033[0;31m\xE2\x9E\xA4\033[0m \033[1;97mReiniciar puerto específico\033[0m"
         echo -e " \033[1;97m[5]\033[0m\033[0;31m\xE2\x9E\xA4\033[0m \033[1;97mDetener y eliminar un puerto\033[0m"
         echo -e " \033[1;97m[6]\033[0m\033[0;31m\xE2\x9E\xA4\033[0m \033[1;97mDetener TODOS los puertos\033[0m"
-        echo -e " \033[1;97m[7]\033[0m\033[0;31m\xE2\x9E\xA4\033[0m \033[1;97mConfiguración y datos Dealer VPN / KTUN\033[0m"
+        echo -e " \033[1;97m[7]\033[0m\033[0;31m\xE2\x9E\xA4\033[0m \033[1;97mConfiguración y datos Dealer VPN\033[0m"
         echo -e " \033[1;97m[8]\033[0m\033[0;31m\xE2\x9E\xA4\033[0m \033[1;97mReiniciar todos los puertos\033[0m"
         echo -e " \033[1;97m[9]\033[0m\033[0;31m\xE2\x9E\xA4\033[0m \033[1;97mVer logs de un puerto\033[0m"
         echo -e "\033[0;33m╞═══════════════════════════════════════════════════════════════════════╡\033[0m"
