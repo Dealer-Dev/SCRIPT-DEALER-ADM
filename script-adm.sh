@@ -5,7 +5,7 @@
 #   Ubuntu 22/24/25
 # ═══════════════════════════════════════════════════════
 
-SCRIPT_VERSION="1.5"
+SCRIPT_VERSION="1.2"
 R='\033[0;31m'
 G='\033[0;32m'
 Y='\033[1;33m'
@@ -320,6 +320,34 @@ status_service() {
 
 status_port() {
     ss -${2:-t}lnp 2>/dev/null | grep -q ":${1} " && echo -e "${NEON}◆ ON ${NC}" || echo -e "${R}◇ OFF${NC}"
+}
+
+# ══════════════════════════════════════════════════════════════════════
+#   FUNCIÓN AUTO MENÚ
+# ══════════════════════════════════════════════════════════════════════
+toggle_automenu() {
+    if [ -f /etc/dealer-adm/automenu ]; then
+        rm -f /etc/dealer-adm/automenu
+        rm -f /etc/profile.d/dealer-automenu.sh
+        sed -i '/dealer-automenu/d' /root/.bashrc 2>/dev/null
+        echo -e "\n  ${R}Auto Menú desactivado [OFF]${NC}"
+    else
+        mkdir -p /etc/dealer-adm
+        touch /etc/dealer-adm/automenu
+        cat > /etc/profile.d/dealer-automenu.sh << 'EOF'
+#!/bin/bash
+if [ -f /etc/dealer-adm/automenu ] && [ -t 1 ] && [ -z "$DEALER_MENU_ACTIVE" ]; then
+    export DEALER_MENU_ACTIVE=1
+    [ -f /usr/local/bin/menu ] && /usr/local/bin/menu
+fi
+EOF
+        chmod +x /etc/profile.d/dealer-automenu.sh
+        if ! grep -q "dealer-automenu" /root/.bashrc 2>/dev/null; then
+            echo '[ -f /etc/profile.d/dealer-automenu.sh ] && . /etc/profile.d/dealer-automenu.sh # dealer-automenu' >> /root/.bashrc
+        fi
+        echo -e "\n  ${G}Auto Menú activado [ON]${NC}"
+    fi
+    sleep 1.5
 }
 
 # ══════════════════════════════════════════════════════════════════════
@@ -743,8 +771,8 @@ bhttp_datos_http_custom() {
     echo -e "${Y}DATOS DE CONEXIÓN (DEALER VPN)${NC}\n"
     echo -e "  ${W}IP del Servidor:${NC} ${G}$SRV_IP${NC}"
     echo -e "  ${W}Puertos Activos:${NC} ${C}${PORTS:-Ninguno}${NC}"
-    echo -e "  ${W}Protocolo:${NC}       BHTTP (BHP1 Framing Dealer-Dev)"
-    echo -e "  ${W}Autenticación:${NC}   Cualquier usuario SSH de tu sistema"
+    echo -e "  ${W}Protocolo:${NC}        BHTTP (BHP1 Framing Dealer-Dev)"
+    echo -e "  ${W}Autenticación:${NC}    Cualquier usuario SSH de tu sistema"
     echo ""
     read -p "  Presiona ENTER para continuar..."
 }
@@ -810,7 +838,7 @@ menu_bhttp() {
         [ -z "$PUERTOS" ] && PUERTOS="Ninguno"
 
         echo -e "\033[0;33m╔═══════════════════════════════════════════════════════════════════════╗\033[0m"
-        echo -e "\033[0;33m║\033[0m      \033[43;30m PANEL DE GESTIÓN KTUN OFICIAL \033[0m                   \033[0;33m║\033[0m"
+        echo -e "\033[0;33m║\033[0m      \033[43;30m PANEL DE GESTIÓN KTUN OFICIAL \033[0m                    \033[0;33m║\033[0m"
         echo -e "\033[0;33m╚═══════════════════════════════════════════════════════════════════════╝\033[0m"
         echo ""
         echo -e "       \033[1;97mEstado\033[0m\033[0;32m\xE2\x9C\x85\033[0m: \033[1;97m${ACTIVOS} activo(s)\033[0m"
@@ -1011,7 +1039,7 @@ EOF
 
 menu_ws() {
     while true; do
-        banner; sep; echo -e "  ${Y}  WEBSOCKET PYTHON${NC}"; sep; echo ""
+        banner; sep; echo -e "  ${Y}   WEBSOCKET PYTHON${NC}"; sep; echo ""
         for f in $(ls $DIR_SERVICES/ws-proxy-*.service 2>/dev/null); do
             name=$(basename $f .service); port=$(echo $name | grep -o '[0-9]*$')
             echo -e "  Puerto ${Y}${port}${NC} $(status_service $name)"
@@ -1051,7 +1079,7 @@ menu_ws() {
 
 menu_badvpn() {
     while true; do
-        banner; sep; echo -e "  ${Y}  BADVPN UDP GATEWAY${NC}"; sep; echo ""
+        banner; sep; echo -e "  ${Y}   BADVPN UDP GATEWAY${NC}"; sep; echo ""
         echo -e "  BadVPN 7200 $(status_service badvpn-7200)"
         echo -e "  BadVPN 7300 $(status_service badvpn-7300)"
         echo ""; sep
@@ -1135,7 +1163,7 @@ menu_udp() {
     EXCLUDE_PORTS="5300,5667,8443,36712,6000:19999"
 
     while true; do
-        banner; sep; echo -e "  ${Y}   UDP CUSTOM${NC}"; sep; echo ""
+        banner; sep; echo -e "  ${Y}    UDP CUSTOM${NC}"; sep; echo ""
         ps aux | grep -i "udp-custom\|UDP-Custom" | grep -v grep | grep -q . && echo -e "  UDP Custom ${G}[ON]${NC}" || echo -e "  UDP Custom ${R}[OFF]${NC}"
         echo ""; sep
         echo -e "  ${W}[1]${NC} Instalar UDP Custom"
@@ -1166,7 +1194,7 @@ menu_udp() {
 
 menu_ssl() {
     while true; do
-        banner; sep; echo -e "  ${Y}  SSL/TLS STUNNEL${NC}"; sep; echo ""
+        banner; sep; echo -e "  ${Y}   SSL/TLS STUNNEL${NC}"; sep; echo ""
         echo -e "  Stunnel $(status_service stunnel4)"
         echo -e "  Puerto 443 $(status_port 443)"
         echo ""; sep
@@ -1232,7 +1260,7 @@ try:
     with open('/usr/local/etc/v2ray/config.json') as f: c=json.load(f)
     inbounds = c.get('inbounds',[])
     if not inbounds:
-        print('    \033[2;37m  Sin inbounds configurados\033[0m')
+        print('    \033[2;37m   Sin inbounds configurados\033[0m')
     for ib in inbounds:
         net=ib.get('streamSettings',{}).get('network','tcp')
         tls=ib.get('streamSettings',{}).get('security','none')
@@ -1244,8 +1272,8 @@ except: pass
         echo ""; sep
         printf " ${Y}❬1❭ ⚡ Instalar V2Ray      ❬2❭ ➕ Agregar inbound${NC}\n"
         printf " ${Y}❬3❭ 🗑  Eliminar inbound    ❬4❭ ▶  Iniciar${NC}\n"
-        printf " ${Y}❬5❭ ⏹  Detener             ❬6❭ 🔄 Reiniciar${NC}\n"
-        printf " ${Y}❬7❭ 👤 Crear usuario       ❬8❭ 📋 Ver usuarios${NC}\n"
+        printf " ${Y}❬5❭ ⏹  Detener              ❬6❭ 🔄 Reiniciar${NC}\n"
+        printf " ${Y}❬7❭ 👤 Crear usuario        ❬8❭ 📋 Ver usuarios${NC}\n"
         printf " ${R}❬9❭ 🗑  Desinstalar V2Ray${NC}\n"
         sep
         printf " ${R}❬0❭ Volver${NC}\n"; sep; echo ""
@@ -1489,10 +1517,10 @@ PYEOF
     aplicar_passwords_ziv
     echo ""; sep
     echo -e "  ${Y}  CREDENCIALES ZIVPN${NC}"; sep
-    echo -e "  ${W}IP:${NC}       $SERVER_IP"
-    echo -e "  ${W}Puerto:${NC}   5667"
-    echo -e "  ${W}Pass:${NC}     $ZIV_PASS"
-    echo -e "  ${W}Expira:${NC}   $EXP_SHOW ($ZIV_DAYS dias)"
+    echo -e "  ${W}IP:${NC}        $SERVER_IP"
+    echo -e "  ${W}Puerto:${NC}    5667"
+    echo -e "  ${W}Pass:${NC}      $ZIV_PASS"
+    echo -e "  ${W}Expira:${NC}    $EXP_SHOW ($ZIV_DAYS dias)"
     echo ""; sep; read -p "  ENTER..."
 }
 
@@ -2349,10 +2377,10 @@ menu_zivpn() {
         printf "   ${NEON}[5]${W} Desactivar cuenta         ${NEON}[10]${W} Instalar servicio\n"
         echo ""
         echo -e "${NEON}╭──────────────────────────────────────────────────╮${NC}"
-        echo -e "${NEON}│         ENTER) Volver al menú principal          │${NC}"
+        echo -e "${NEON}│          ENTER) Volver al menú principal          │${NC}"
         echo -e "${NEON}╰──────────────────────────────────────────────────╯${NC}"
         echo ""
-        read -p "       Seleccione una opción: " opcion
+        read -p "        Seleccione una opción: " opcion
 
         [[ -z "$opcion" ]] && return
 
@@ -2538,7 +2566,7 @@ editar_limite() {
 
 menu_usuarios() {
     while true; do
-        banner; sep; echo -e "  ${Y}  GESTIÓN DE USUARIOS SSH${NC}"; sep; echo ""
+        banner; sep; echo -e "  ${Y}   GESTIÓN DE USUARIOS SSH${NC}"; sep; echo ""
         TOTAL=$(awk -F: '$3>=1000 && $1!="nobody" {print $1}' /etc/passwd | wc -l)
         echo -e "  Total usuarios: ${G}${TOTAL}${NC}"; echo ""; sep
         echo -e "  ${W}[1]${NC} Crear usuario"
@@ -2943,6 +2971,7 @@ desinstalar_script() {
     echo -e "  - MOTD del servidor"
     echo -e "  - Archivos de configuracion"
     echo -e "  - Servicios instalados (WS, BadVPN, BHTTP, etc)"
+    echo -e "  - Auto Menú"
     echo ""
     read -p "  Confirmar (si/no): " CONFIRM
     [ "$CONFIRM" != "si" ] && echo -e "  ${Y}Cancelado${NC}" && sleep 1 && return
@@ -2957,6 +2986,8 @@ desinstalar_script() {
 
     rm -f /usr/local/bin/menu
     rm -f /etc/profile.d/sshfree-motd.sh
+    rm -f /etc/profile.d/dealer-automenu.sh
+    sed -i '/dealer-automenu/d' /root/.bashrc 2>/dev/null
     rm -rf /etc/dealer-adm
     rm -rf $DIR_SCRIPTS
     rm -f $BHTTP_BIN
@@ -3602,6 +3633,11 @@ menu_principal() {
         sep
         printf " ${Y}❬9❭ %-18s${NC} ${R}❬10❭ %s${NC}\n" "Configurar MOTD" "Desinstalar Script"
         printf " ${Y}❬11❭ Actualizar Script${NC} ${NEON}    Version:${Y}%s ${NEON}${NC}$SCRIPT_VERSION\n"
+        
+        # Estado Auto Menú
+        [ -f /etc/dealer-adm/automenu ] && ST_AUTO="${NEON}◆ ON ${NC}" || ST_AUTO="${R}◇ OFF${NC}"
+        printf " ${C}❬B❭ Auto Menú${NC} %b\n" "$ST_AUTO"
+        
         sep
         printf " ${R}❬0❭ ✖  Salir${NC}\n"
         sep
@@ -3618,6 +3654,7 @@ menu_principal() {
             9) instalar_motd ;;
             10) desinstalar_script ;;
             11) actualizar_script ;;
+            b|B) toggle_automenu ;;
             0) echo -e "\n  ${G}Hasta luego!${NC}\n"; exit 0 ;;
             *) echo -e "  ${R}Opcion invalida${NC}"; sleep 1 ;;
         esac
