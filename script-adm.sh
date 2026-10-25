@@ -5,7 +5,7 @@
 #   Ubuntu 22/24/25
 # ═══════════════════════════════════════════════════════
 
-SCRIPT_VERSION="1.4"
+SCRIPT_VERSION="1.5"
 R='\033[0;31m'
 G='\033[0;32m'
 Y='\033[1;33m'
@@ -323,11 +323,11 @@ status_port() {
 }
 
 # ══════════════════════════════════════════════════════════════════════
-#   MÓDULO BHTTPTUNNEL (DEALER VPN - EDICIÓN REPOSITORIO ORIGINAL)
+#   MÓDULO BHTTPTUNNEL (DEALER VPN - EDICIÓN EXACTA FUNCIONAL)
 # ══════════════════════════════════════════════════════════════════════
 
-DIR_BHTTP="/usr/local/lib/bhttp"
-BHTTP_BIN="$DIR_BHTTP/bhttp-server.py"
+DIR_BHTTP="/usr/local/bin"
+BHTTP_BIN="$DIR_BHTTP/bhttp-server"
 DIR_SERVICES="/etc/systemd/system"
 CONFIG_BHTTP_DB="/etc/dealer-adm/bhttp/ports.db"
 
@@ -340,32 +340,43 @@ C="\033[0;36m"
 NC="\033[0m"
 
 bhttp_optimizar_kernel() {
-    # Habilitar BBR y FQ
+    # 1. Habilitar módulo BBR
     modprobe tcp_bbr 2>/dev/null
     mkdir -p /etc/modules-load.d
     grep -q "^tcp_bbr" /etc/modules-load.d/bbr.conf 2>/dev/null || echo "tcp_bbr" > /etc/modules-load.d/bbr.conf 2>/dev/null
 
-    # Restaurar MTU nativa en loopback
-    ip link set dev lo mtu 65536 2>/dev/null || true
-
+    # 2. Configuración de kernel exacta extraída del VPS funcional
     cat > /etc/sysctl.d/99-bhttp.conf << 'EOF'
 net.core.default_qdisc = fq
 net.ipv4.tcp_congestion_control = bbr
 net.core.somaxconn = 65535
 net.core.netdev_max_backlog = 65535
 net.ipv4.tcp_max_syn_backlog = 65535
-net.ipv4.ip_local_port_range = 1024 65535
-fs.file-max = 2097152
 net.ipv4.tcp_slow_start_after_idle = 0
-net.ipv4.tcp_mtu_probing = 1
-net.ipv4.tcp_tw_reuse = 1
+net.ipv4.tcp_notsent_lowat = 16384
+net.core.rmem_max = 67108864
+net.core.wmem_max = 67108864
+net.ipv4.tcp_rmem = 4096 87380 33554432
+net.ipv4.tcp_wmem = 4096 65536 33554432
+net.ipv4.tcp_window_scaling = 1
+net.ipv4.tcp_timestamps = 1
+net.ipv4.tcp_sack = 1
+net.ipv4.tcp_dsack = 1
+net.ipv4.tcp_fack = 1
 net.ipv4.tcp_fin_timeout = 15
+net.ipv4.tcp_tw_reuse = 1
+fs.file-max = 1048576
 EOF
     sysctl --system >/dev/null 2>&1
 
-    # Parámetros OpenSSH para alta concurrencia Dealer VPN
+    # 3. Regla TCPMSS idéntica del VPS funcional
+    iptables -C FORWARD -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null || \
+    iptables -A FORWARD -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null
+
+    # 4. Ajustes en OpenSSH
     if [ -f /etc/ssh/sshd_config ]; then
         sed -i 's/^[[:space:]]*#\?[[:space:]]*AllowTcpForwarding.*/AllowTcpForwarding yes/' /etc/ssh/sshd_config
+        sed -i 's/^[[:space:]]*#\?[[:space:]]*GatewayPorts.*/GatewayPorts yes/' /etc/ssh/sshd_config
         sed -i 's/^[[:space:]]*#\?[[:space:]]*UseDNS.*/UseDNS no/' /etc/ssh/sshd_config
         grep -q "^UseDNS no" /etc/ssh/sshd_config || echo "UseDNS no" >> /etc/ssh/sshd_config
         grep -q "^MaxStartups" /etc/ssh/sshd_config && sed -i 's/^MaxStartups.*/MaxStartups 100:30:200/' /etc/ssh/sshd_config || echo "MaxStartups 100:30:200" >> /etc/ssh/sshd_config
@@ -375,7 +386,7 @@ EOF
 
 bhttp_instalar_binario() {
     clear
-    echo -e "${Y}Instalando motor BHTTP Original (Dealer-Dev)...${NC}"
+    echo -e "${Y}Instalando motor BHTTP Oficial DEALER VPN...${NC}"
     bhttp_optimizar_kernel
 
     mkdir -p "$DIR_BHTTP"
@@ -384,14 +395,10 @@ bhttp_instalar_binario() {
 
     cat > "$BHTTP_BIN" << 'PYEOF'
 #!/usr/bin/env python3
-import argparse, asyncio, hashlib, struct, sys
+import argparse, asyncio, hashlib, struct, sys, socket
 
 MAGIC = b"BHP1"
-LONGPOLL = 2.0
-
-def log(msg):
-    sys.stderr.write("[bhttp] %s\n" % msg)
-    sys.stderr.flush()
+LONGPOLL = 0.5
 
 def keystream(sess, mode, seq, d, n):
     base = hashlib.sha256(sess + bytes([mode]) + seq.to_bytes(8, "big") + bytes([d]))
@@ -432,12 +439,18 @@ class Session:
     async def connect(self):
         host, port = self.backend
         self.br, self.bw = await asyncio.open_connection(host, port)
+        try:
+            raw_sock = self.bw.get_extra_info('socket')
+            if raw_sock:
+                raw_sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        except Exception:
+            pass
         asyncio.create_task(self._reader())
 
     async def _reader(self):
         try:
             while True:
-                data = await self.br.read(65536)
+                data = await self.br.read(131072)
                 if not data:
                     break
                 async with self.cond:
@@ -465,7 +478,7 @@ class Session:
 
     async def download(self, seq, maxlen, deadline):
         if maxlen <= 0:
-            maxlen = 1399
+            maxlen = 32768
         loop = asyncio.get_running_loop()
         async with self.cond:
             while True:
@@ -485,7 +498,7 @@ class Session:
                         return b""
                     if not self.eof and loop.time() < deadline:
                         try:
-                            await asyncio.wait_for(self.cond.wait(), timeout=max(0.01, deadline - loop.time()))
+                            await asyncio.wait_for(self.cond.wait(), timeout=max(0.002, deadline - loop.time()))
                         except asyncio.TimeoutError:
                             pass
                         continue
@@ -520,16 +533,18 @@ class Server:
         async with self.slock:
             s = self.sessions.get(sess)
             if s is None or s.closed:
-                for old_sid, old in list(self.sessions.items()):
-                    if old_sid != sess:
-                        await old.close()
-                        del self.sessions[old_sid]
                 s = Session(sess, self.backend)
                 await s.connect()
                 self.sessions[sess] = s
             return s
 
     async def handle(self, reader, writer):
+        try:
+            raw_sock = writer.get_extra_info('socket')
+            if raw_sock:
+                raw_sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        except Exception:
+            pass
         try:
             while True:
                 hdr = await reader.readexactly(29)
@@ -556,7 +571,7 @@ class Server:
                     writer.write(bytes([0]) + (0).to_bytes(4, "big"))
                     await writer.drain()
                 elif mode == 2:
-                    chunk = await s.download(seq, ln if ln > 0 else 1399, asyncio.get_running_loop().time() + LONGPOLL)
+                    chunk = await s.download(seq, ln if ln > 0 else 32768, asyncio.get_running_loop().time() + LONGPOLL)
                     self._send_data(writer, sess, mode, seq, chunk)
                     await writer.drain()
                 elif mode == 3:
@@ -564,9 +579,9 @@ class Server:
                         chunk_size = int.from_bytes(payload[0:4], "big")
                         count = payload[5]
                     else:
-                        chunk_size, count = 1399, 1
+                        chunk_size, count = 32768, 1
                     if chunk_size <= 0:
-                        chunk_size = 1399
+                        chunk_size = 32768
                     if count <= 0:
                         count = 1
                     deadline = asyncio.get_running_loop().time() + LONGPOLL
@@ -597,7 +612,7 @@ class Server:
         writer.write(bytes([2]) + len(body).to_bytes(4, "big") + body)
 
     async def serve(self):
-        srv = await asyncio.start_server(self.handle, self.host, self.port, backlog=4096)
+        srv = await asyncio.start_server(self.handle, self.host, self.port, backlog=2048)
         async with srv:
             await srv.serve_forever()
 
@@ -616,7 +631,7 @@ PYEOF
 
     chmod +x "$BHTTP_BIN"
 
-    # Reiniciar puertos previamente configurados si existen
+    # Reiniciar servicios activos si existen
     if [ -s "$CONFIG_BHTTP_DB" ]; then
         while IFS='|' read -r L_PORT _; do
             [ -n "$L_PORT" ] && systemctl restart "bhttp-$L_PORT" 2>/dev/null
@@ -630,23 +645,23 @@ PYEOF
 bhttp_agregar_puerto() {
     clear
     echo -e "${Y}AGREGAR PUERTO BHTTP (DEALER VPN)${NC}\n"
-    read -p "Ingresa el puerto local BHTTP (ej. 90, 80): " L_PORT
+    read -p "Ingresa el puerto local BHTTP (ej. 90, 8880, 80): " L_PORT
     [ -z "$L_PORT" ] && return
     read -p "Ingresa el puerto SSH backend [22]: " T_PORT
     T_PORT=${T_PORT:-22}
 
     cat > "$DIR_SERVICES/bhttp-$L_PORT.service" << EOF
 [Unit]
-Description=Servidor BHTTP Para Dealer VPN Port $L_PORT -> $T_PORT
+Description=BHTTP Ultra-Speed Tunnel Port $L_PORT -> $T_PORT
 After=network.target
 
 [Service]
 Type=simple
 User=root
-LimitNOFILE=1048576
-ExecStart=/usr/bin/python3 $BHTTP_BIN --host 0.0.0.0 --port $L_PORT --backend-host 127.0.0.1 --backend-port $T_PORT
+ExecStart=/usr/bin/python3 -O $BHTTP_BIN --host 0.0.0.0 --port $L_PORT --backend-host 127.0.0.1 --backend-port $T_PORT
 Restart=always
 RestartSec=2
+LimitNOFILE=1048576
 
 [Install]
 WantedBy=multi-user.target
@@ -768,7 +783,7 @@ bhttp_desinstalar_todo() {
     fi
 
     systemctl daemon-reload
-    rm -rf "$DIR_BHTTP"
+    rm -rf "$DIR_BHTTP/bhttp-server"
     rm -f "$CONFIG_BHTTP_DB"
     echo -e "${G}BHTTP desinstalado por completo.${NC}"
     sleep 2
@@ -795,15 +810,15 @@ menu_bhttp() {
         [ -z "$PUERTOS" ] && PUERTOS="Ninguno"
 
         echo -e "\033[0;33m╔═══════════════════════════════════════════════════════════════════════╗\033[0m"
-        echo -e "\033[0;33m║\033[0m             \033[43;30m DEALER VPN • GESTIÓN BHTTP OFICIAL \033[0m                   \033[0;33m║\033[0m"
+        echo -e "\033[0;33m║\033[0m      \033[43;30m PANEL DE GESTIÓN KTUN OFICIAL \033[0m                   \033[0;33m║\033[0m"
         echo -e "\033[0;33m╚═══════════════════════════════════════════════════════════════════════╝\033[0m"
         echo ""
         echo -e "       \033[1;97mEstado\033[0m\033[0;32m\xE2\x9C\x85\033[0m: \033[1;97m${ACTIVOS} activo(s)\033[0m"
         echo -e "       \033[1;97mPuerto(s):\033[0m \033[1;97m${PUERTOS}\033[0m"
         echo ""
         echo -e "\033[0;33m╞═══════════════════════════════════════════════════════════════════════╡\033[0m"
-        echo -e " \033[1;97m[1]\033[0m\033[0;31m\xE2\x9E\xA4\033[0m \033[1;97mInstalar / Re-instalar motor BHTTP\033[0m"
-        echo -e " \033[1;97m[2]\033[0m\033[0;31m\xE2\x9E\xA4\033[0m \033[1;97mAgregar nuevo puerto BHTTP\033[0m"
+        echo -e " \033[1;97m[1]\033[0m\033[0;31m\xE2\x9E\xA4\033[0m \033[1;97mInstalar / Re-instalar motor KTUN\033[0m"
+        echo -e " \033[1;97m[2]\033[0m\033[0;31m\xE2\x9E\xA4\033[0m \033[1;97mAgregar nuevo puerto KTUN\033[0m"
         echo -e " \033[1;97m[3]\033[0m\033[0;31m\xE2\x9E\xA4\033[0m \033[1;97mListar puertos activos\033[0m"
         echo -e " \033[1;97m[4]\033[0m\033[0;31m\xE2\x9E\xA4\033[0m \033[1;97mReiniciar puerto específico\033[0m"
         echo -e " \033[1;97m[5]\033[0m\033[0;31m\xE2\x9E\xA4\033[0m \033[1;97mDetener y eliminar un puerto\033[0m"
