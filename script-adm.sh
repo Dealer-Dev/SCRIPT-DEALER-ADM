@@ -5,7 +5,7 @@
 #   Ubuntu 22/24/25
 # ═══════════════════════════════════════════════════════
 
-SCRIPT_VERSION="1.2"
+SCRIPT_VERSION="1.3"
 R='\033[0;31m'
 G='\033[0;32m'
 Y='\033[1;33m'
@@ -58,7 +58,7 @@ EXP_SHOW=$(date -d "$EXP" +%d-%m-%Y 2>/dev/null)
 [ -z "$EXP_SHOW" ] && EXP_SHOW="$EXP"
 
 cat > /etc/dealer-adm/banner.txt << BANNER
-&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<font color="#0095b6">❒════════════════════════❒</font><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<font color="#0095b6"><br>❒════════════════════════❒</font><br>
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<font color="#FF8000"><b>Usuario:</b></font>
 <font color="#FFD700">$NOMBRE</font><br>
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<font color="#ff00ff"><b>Expira:</b></font>
