@@ -5,7 +5,7 @@
 #   Ubuntu 22/24/25
 # ═══════════════════════════════════════════════════════
 
-SCRIPT_VERSION="1.4"
+SCRIPT_VERSION="1.5"
 R='\033[0;31m'
 G='\033[0;32m'
 Y='\033[1;33m'
@@ -350,7 +350,7 @@ EOF
 }
 
 # ══════════════════════════════════════════════════════════════════════
-#   MÓDULO BHTTPTUNNEL (DEALER VPN - EDICIÓN EXACTA FUNCIONAL)
+#   MÓDULO BHTTPTUNNEL (DEALER VPN - EDICIÓN COMPLETA BHTTP.PY MULTI-PUERTO)
 # ══════════════════════════════════════════════════════════════════════
 
 DIR_BHTTP="/usr/local/bin"
@@ -372,7 +372,7 @@ bhttp_optimizar_kernel() {
     mkdir -p /etc/modules-load.d
     grep -q "^tcp_bbr" /etc/modules-load.d/bbr.conf 2>/dev/null || echo "tcp_bbr" > /etc/modules-load.d/bbr.conf 2>/dev/null
 
-    # 2. Configuración de kernel exacta extraída del VPS funcional
+    # 2. Configuración de kernel exacta
     cat > /etc/sysctl.d/99-bhttp.conf << 'EOF'
 net.core.default_qdisc = fq
 net.ipv4.tcp_congestion_control = bbr
@@ -396,11 +396,14 @@ fs.file-max = 1048576
 EOF
     sysctl --system >/dev/null 2>&1
 
-    # 3. Regla TCPMSS idéntica del VPS funcional
+    # 3. Regla TCPMSS
     iptables -C FORWARD -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null || \
     iptables -A FORWARD -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null
 
-    # 4. Ajustes en OpenSSH
+    # 4. Dependencias del sistema necesarias para BHTTP
+    apt-get install -y python3 python3-pam net-tools >/dev/null 2>&1
+
+    # 5. Ajustes en OpenSSH
     if [ -f /etc/ssh/sshd_config ]; then
         sed -i 's/^[[:space:]]*#\?[[:space:]]*AllowTcpForwarding.*/AllowTcpForwarding yes/' /etc/ssh/sshd_config
         sed -i 's/^[[:space:]]*#\?[[:space:]]*GatewayPorts.*/GatewayPorts yes/' /etc/ssh/sshd_config
@@ -422,226 +425,489 @@ bhttp_instalar_binario() {
 
     cat > "$BHTTP_BIN" << 'PYEOF'
 #!/usr/bin/env python3
-import argparse, asyncio, hashlib, struct, sys, socket
+"""BHTTP - concurrent HTTP-upgrade relay for SSH.
+Full Engine adaptation for multi-port systemd services.
+"""
 
-MAGIC = b"BHP1"
-LONGPOLL = 0.5
+import socket
+import struct
+import hashlib
+import threading
+import json
+import time
+import logging
+import ipaddress
+import select
+import os
+import ssl
+import traceback
+import sys
+import argparse
+from dataclasses import dataclass, field
+from typing import Optional, Dict, Tuple
 
-def keystream(sess, mode, seq, d, n):
-    base = hashlib.sha256(sess + bytes([mode]) + seq.to_bytes(8, "big") + bytes([d]))
-    out = bytearray()
-    c = 0
-    while len(out) < n:
-        h = base.copy()
-        h.update(c.to_bytes(4, "big"))
-        out += h.digest()
-        c += 1
-    return bytes(out[:n])
+CONFIG = {
+    "server": {
+        "virtual_subnet_cidr": "10.10.0.0/16",
+        "auth": {"system": True}
+    },
+    "proxy": {
+        "target": {"host": "127.0.0.1", "port": 22},
+    },
+    "tls": {
+        "certificate": "/etc/ssl/certs/bhttp.crt",
+        "private_key": "/etc/ssl/private/bhttp.key",
+    },
+}
 
-def mask(data, sess, mode, seq, d):
-    return bytes(a ^ b for a, b in zip(data, keystream(sess, mode, seq, d, len(data))))
+logging.basicConfig(
+    format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+    level=logging.INFO,
+)
+log = logging.getLogger("BHTTP")
 
-def probe_reply(mode, size):
-    n = size if (mode == 2 and size >= 10) else 10
-    out = bytearray(MAGIC + bytes([1, mode]) + size.to_bytes(4, "big"))
-    for i in range(10, n):
-        out.append((i * 31) & 255)
+MODE_PROBE    = 0
+MODE_UPLOAD   = 1
+MODE_DOWNLOAD = 2
+MODE_BATCH    = 3
+MODE_ACK      = 4
+
+STATUS_OK      = 0
+STATUS_DATA    = 2
+
+HEADER_SIZE = 29
+SESSIONS_LOCK = threading.Lock()
+
+def bhttp_crypt(data: bytes, sid: bytes, mode: int, seq: int, isr: bool) -> bytes:
+    if not data:
+        return b""
+    out = bytearray(len(data))
+    sb = bytearray(26)
+    sb[0:16] = sid[:16]
+    sb[16] = mode & 0xFF
+    struct.pack_into(">Q", sb, 17, seq)
+    sb[25] = 1 if isr else 0
+    o = i = 0
+    while o < len(data):
+        k = hashlib.sha256(bytes(sb) + struct.pack(">I", i)).digest()
+        n = min(32, len(data) - o)
+        for j in range(n):
+            out[o + j] = data[o + j] ^ k[j]
+        o += n
+        i += 1
     return bytes(out)
 
+class IPPool:
+    def __init__(self, cidr: str):
+        self.network = ipaddress.ip_network(cidr, strict=False)
+        self.hosts = iter(self.network.hosts())
+        next(self.hosts)
+        self.assigned: Dict[str, str] = {}
+        self.lock = threading.Lock()
+
+    def assign(self, sid_hex: str) -> Optional[str]:
+        with self.lock:
+            if sid_hex in self.assigned:
+                return self.assigned[sid_hex]
+            try:
+                ip = str(next(self.hosts))
+                self.assigned[sid_hex] = ip
+                return ip
+            except StopIteration:
+                return None
+
+    def release(self, sid_hex: str):
+        with self.lock:
+            self.assigned.pop(sid_hex, None)
+
+    @property
+    def subnet_mask(self) -> str:
+        return str(self.network.netmask)
+
+    @property
+    def gateway(self) -> str:
+        return str(next(self.network.hosts()))
+
+@dataclass
 class Session:
-    def __init__(self, sess, backend):
-        self.sess = sess
-        self.backend = backend
-        self.cond = asyncio.Condition()
-        self.up_next = 0
-        self.up_pending = {}
-        self.down_raw = bytearray()
-        self.down_chunks = {}
-        self.down_assign = 0
-        self.eof = False
-        self.closed = False
-        self.br = None
-        self.bw = None
+    sid: bytes
+    target: Optional[socket.socket] = None
+    target_started: bool = False
+    target_eof: bool = False
+    target_error: str = ""
+    banner_delivered: bool = False
+    download_buffer: bytearray = field(default_factory=bytearray)
+    upload_pending: Dict[int, bytes] = field(default_factory=dict)
+    upload_next_seq: int = 0
+    first_upload_logged: bool = False
+    lock: threading.RLock = field(default_factory=threading.RLock)
+    download_next_seq: int = 0
+    download_acked_seq: int = -1
+    download_closed: bool = False
+    download_frames: Dict[int, bytes] = field(default_factory=dict)
+    download_order_lock: threading.Lock = field(default_factory=threading.Lock)
+    download_order: threading.Condition = field(init=False)
+    ready: threading.Condition = field(init=False)
+    last_seen: float = field(default_factory=time.time)
 
-    async def connect(self):
-        host, port = self.backend
-        self.br, self.bw = await asyncio.open_connection(host, port)
+    def __post_init__(self):
+        self.ready = threading.Condition(self.lock)
+        self.download_order = threading.Condition(self.download_order_lock)
+
+    def acknowledge_download(self, seq: int):
+        with self.download_order:
+            if seq <= self.download_acked_seq:
+                return
+            self.download_acked_seq = seq
+            stale = [number for number in self.download_frames if number <= seq]
+            for number in stale:
+                self.download_frames.pop(number, None)
+
+    def open_target(self, host: str, port: int) -> bool:
+        with self.lock:
+            if self.target is not None:
+                return True
+            if self.target_started:
+                return not self.target_error
+            self.target_started = True
+
         try:
-            raw_sock = self.bw.get_extra_info('socket')
-            if raw_sock:
-                raw_sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-        except Exception:
-            pass
-        asyncio.create_task(self._reader())
+            target = socket.create_connection((host, port), timeout=10)
+            target.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+            target.settimeout(None)
+        except OSError as exc:
+            with self.ready:
+                self.target_error = str(exc)
+                self.target_eof = True
+                self.ready.notify_all()
+            return False
 
-    async def _reader(self):
+        with self.ready:
+            self.target = target
+            self.ready.notify_all()
+        threading.Thread(target=self._read_target, daemon=True).start()
+        return True
+
+    def _read_target(self):
+        tag = self.sid.hex()[:8]
         try:
             while True:
-                data = await self.br.read(131072)
+                data = self.target.recv(65536) if self.target else b""
                 if not data:
                     break
-                async with self.cond:
-                    self.down_raw += data
-                    self.cond.notify_all()
-        except Exception:
-            pass
+                with self.ready:
+                    self.download_buffer.extend(data)
+                    self.last_seen = time.time()
+                    self.ready.notify_all()
+        except OSError as exc:
+            with self.lock:
+                if not self.target_error:
+                    self.target_error = str(exc)
         finally:
-            async with self.cond:
-                self.eof = True
-                self.cond.notify_all()
+            with self.ready:
+                self.target_eof = True
+                self.ready.notify_all()
+            with self.download_order:
+                self.download_closed = True
+                self.download_order.notify_all()
 
-    async def upload(self, seq, data):
-        async with self.cond:
-            if data:
-                self.up_pending[seq] = data
-            while self.up_next in self.up_pending:
-                chunk = self.up_pending.pop(self.up_next)
-                try:
-                    self.bw.write(chunk)
-                    await self.bw.drain()
-                except Exception:
-                    self.closed = True
-                self.up_next += 1
+    def write_upload(self, seq: int, payload: bytes):
+        with self.lock:
+            if seq < self.upload_next_seq:
+                return
+            self.upload_pending.setdefault(seq, payload)
+            while self.upload_next_seq in self.upload_pending:
+                chunk = self.upload_pending.pop(self.upload_next_seq)
+                if not self.first_upload_logged and chunk:
+                    self.first_upload_logged = True
+                    tag = self.sid.hex()[:8]
+                    if chunk.startswith(b"SSH-"):
+                        line = chunk.split(b"\n", 1)[0] + b"\n"
+                        log.info(f"[{tag}] Client SSH identification seq={self.upload_next_seq}: {line!r}")
+                if chunk and self.target is not None:
+                    self.target.sendall(chunk)
+                self.upload_next_seq += 1
+                self.last_seen = time.time()
 
-    async def download(self, seq, maxlen, deadline):
-        if maxlen <= 0:
-            maxlen = 32768
-        loop = asyncio.get_running_loop()
-        async with self.cond:
-            while True:
-                if seq < self.down_assign:
-                    return self.down_chunks.get(seq, b"")
-                if seq == self.down_assign:
-                    if self.down_raw:
-                        take = bytes(self.down_raw[:maxlen])
-                        del self.down_raw[:maxlen]
-                        self.down_chunks[self.down_assign] = take
-                        self.down_assign += 1
-                        self.cond.notify_all()
-                        return take
-                    if self.eof:
-                        self.down_assign += 1
-                        self.cond.notify_all()
-                        return b""
-                    if not self.eof and loop.time() < deadline:
-                        try:
-                            await asyncio.wait_for(self.cond.wait(), timeout=max(0.002, deadline - loop.time()))
-                        except asyncio.TimeoutError:
-                            pass
-                        continue
-                while self.down_assign <= seq:
-                    self.down_assign += 1
-                self.cond.notify_all()
+    def take_download(self, seq: int, size: int, banner_timeout: float = 5.0) -> bytes:
+        size = min(max(size, 1), 524284)
+        deadline = time.monotonic() + banner_timeout
+        with self.ready:
+            if not self.banner_delivered and seq != 0:
                 return b""
 
-    async def ack(self, seq):
-        async with self.cond:
-            for k in [k for k in self.down_chunks if k <= seq]:
-                del self.down_chunks[k]
+            while not self.download_buffer and not self.target_eof:
+                if self.banner_delivered:
+                    return b""
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    return b""
+                self.ready.wait(remaining)
 
-    async def close(self):
-        async with self.cond:
-            self.closed = True
-            self.cond.notify_all()
-        try:
-            self.bw.close()
-        except Exception:
-            pass
+            if not self.download_buffer:
+                return b""
+            chunk = bytes(self.download_buffer[:size])
+            del self.download_buffer[:len(chunk)]
+            if not self.banner_delivered:
+                self.banner_delivered = True
+            self.last_seen = time.time()
+            return chunk
 
-class Server:
-    def __init__(self, host, port, backend):
-        self.host = host
-        self.port = port
-        self.backend = backend
-        self.sessions = {}
-        self.slock = asyncio.Lock()
-
-    async def get_session(self, sess):
-        async with self.slock:
-            s = self.sessions.get(sess)
-            if s is None or s.closed:
-                s = Session(sess, self.backend)
-                await s.connect()
-                self.sessions[sess] = s
-            return s
-
-    async def handle(self, reader, writer):
-        try:
-            raw_sock = writer.get_extra_info('socket')
-            if raw_sock:
-                raw_sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-        except Exception:
-            pass
-        try:
-            while True:
-                hdr = await reader.readexactly(29)
-                mode = hdr[0]
-                sess = hdr[1:17]
-                seq = int.from_bytes(hdr[17:25], "big")
-                ln = int.from_bytes(hdr[25:29], "big")
-                payload = b""
-                if ln and mode in (0, 1, 2, 3):
-                    raw = await reader.readexactly(ln)
-                    payload = mask(raw, sess, mode, seq, 0)
-
-                if payload[:4] == MAGIC:
-                    size = int.from_bytes(payload[6:10], "big") if len(payload) >= 10 else 0
-                    pmode = payload[5] if len(payload) >= 6 else mode
-                    body = mask(probe_reply(pmode, size), sess, mode, seq, 1)
-                    writer.write(bytes([0]) + len(body).to_bytes(4, "big") + body)
-                    await writer.drain()
-                    continue
-
-                s = await self.get_session(sess)
-                if mode == 1:
-                    await s.upload(seq, payload)
-                    writer.write(bytes([0]) + (0).to_bytes(4, "big"))
-                    await writer.drain()
-                elif mode == 2:
-                    chunk = await s.download(seq, ln if ln > 0 else 32768, asyncio.get_running_loop().time() + LONGPOLL)
-                    self._send_data(writer, sess, mode, seq, chunk)
-                    await writer.drain()
-                elif mode == 3:
-                    if len(payload) >= 6:
-                        chunk_size = int.from_bytes(payload[0:4], "big")
-                        count = payload[5]
-                    else:
-                        chunk_size, count = 32768, 1
-                    if chunk_size <= 0:
-                        chunk_size = 32768
-                    if count <= 0:
-                        count = 1
-                    deadline = asyncio.get_running_loop().time() + LONGPOLL
-                    for i in range(count):
-                        chunk = await s.download(seq + i, chunk_size, deadline)
-                        self._send_data(writer, sess, mode, seq + i, chunk)
-                    await writer.drain()
-                elif mode == 4:
-                    await s.ack(seq)
-                    writer.write(bytes([0]) + (0).to_bytes(4, "big"))
-                    await writer.drain()
-                else:
-                    return
-        except (asyncio.IncompleteReadError, ConnectionError, OSError):
-            pass
-        except Exception:
-            pass
-        finally:
+    def close(self):
+        with self.ready:
+            target = self.target
+            self.target = None
+            self.target_eof = True
+            self.ready.notify_all()
+        with self.download_order:
+            self.download_closed = True
+            self.download_order.notify_all()
+        if target:
             try:
-                writer.close()
-            except Exception:
+                target.close()
+            except OSError:
                 pass
 
-    def _send_data(self, writer, sess, mode, seq, data):
-        real = len(data)
-        masked = mask(data, sess, mode, seq, 1) if data else b""
-        body = real.to_bytes(4, "big") + masked
-        writer.write(bytes([2]) + len(body).to_bytes(4, "big") + body)
+def read_bhttp_frame_buf(sock: socket.socket, buf: bytes) -> Tuple[int, bytes, int, bytes, bytes]:
+    while len(buf) < HEADER_SIZE:
+        chunk = sock.recv(4096)
+        if not chunk:
+            raise ConnectionError("Connection closed")
+        buf += chunk
+    header = buf[:HEADER_SIZE]
+    buf = buf[HEADER_SIZE:]
+    mode = header[0]
+    sid = header[1:17]
+    seq = struct.unpack(">Q", header[17:25])[0]
+    length = struct.unpack(">I", header[25:29])[0]
+    if mode in (MODE_DOWNLOAD, MODE_ACK):
+        return mode, sid, seq, b"", buf
+    while len(buf) < length:
+        chunk = sock.recv(max(4096, length - len(buf)))
+        if not chunk:
+            raise ConnectionError("Connection closed")
+        buf += chunk
+    payload = buf[:length]
+    buf = buf[length:]
+    return mode, sid, seq, payload, buf
 
-    async def serve(self):
-        srv = await asyncio.start_server(self.handle, self.host, self.port, backlog=2048)
-        async with srv:
-            await srv.serve_forever()
+def send_bhttp_status(sock: socket.socket, status: int, data: bytes = b""):
+    sock.sendall(struct.pack(">BI", status, len(data)) + data)
+
+def send_bhttp_download(sock: socket.socket, sid: bytes, data: bytes, mode: int = MODE_DOWNLOAD, seq: int = 0):
+    enc = bhttp_crypt(data, sid, mode, seq, True)
+    payload = struct.pack(">I", len(data)) + enc
+    sock.sendall(struct.pack(">BI", STATUS_DATA, len(payload)) + payload)
+
+def handle_bhttp_probe(conn: socket.socket):
+    mode, sid, seq, encrypted, _ = read_bhttp_frame_buf(conn, b"")
+    if mode != MODE_PROBE:
+        return
+    clear = bhttp_crypt(encrypted, sid, MODE_PROBE, seq, False)
+    if len(clear) < 10 or clear[:4] != b"BHP1" or clear[4] != 1:
+        send_bhttp_status(conn, 1, b"invalid BHTTP v1 probe")
+        return
+
+    submode = clear[5]
+    parameter = struct.unpack_from(">I", clear, 6)[0]
+    response_size = max(parameter, 10) if submode == MODE_DOWNLOAD else 10
+    if response_size > 524288:
+        return
+
+    response = bytearray(response_size)
+    response[:4] = b"BHP1"
+    response[4] = 1
+    response[5] = submode
+    struct.pack_into(">I", response, 6, parameter)
+    for index in range(10, response_size):
+        response[index] = (index * 31) & 0xFF
+
+    encrypted_response = bhttp_crypt(bytes(response), sid, MODE_PROBE, seq, True)
+    response_count = min(max(parameter, 1), 256) if submode == MODE_ACK else 1
+    for _ in range(response_count):
+        send_bhttp_status(conn, STATUS_OK, encrypted_response)
+
+class SessionHandler:
+    def __init__(self, conn: socket.socket, addr, sessions: dict, ip_pool: IPPool, extra_bytes: bytes = b""):
+        self.conn = conn
+        self.addr = addr
+        self.sessions = sessions
+        self.ip_pool = ip_pool
+        self.extra_bytes = extra_bytes
+
+    def get_session(self, sid: bytes) -> Session:
+        sid_hex = sid.hex()
+        with SESSIONS_LOCK:
+            session = self.sessions.get(sid_hex)
+            if session is None:
+                session = Session(sid=sid)
+                self.sessions[sid_hex] = session
+            return session
+
+    def handle(self):
+        try:
+            while True:
+                mode, sid, seq, enc_payload, self.extra_bytes = read_bhttp_frame_buf(self.conn, self.extra_bytes)
+                session = self.get_session(sid)
+                session.last_seen = time.time()
+
+                payload = b""
+                if enc_payload and mode == MODE_UPLOAD:
+                    payload = bhttp_crypt(enc_payload, sid, mode, seq, False)
+
+                if mode == MODE_UPLOAD:
+                    with session.lock:
+                        self._handle_upload(session, seq, payload)
+                elif mode == MODE_DOWNLOAD:
+                    with session.download_order:
+                        while seq > session.download_next_seq and not session.download_closed:
+                            session.download_order.wait()
+                        is_new = seq == session.download_next_seq
+                        if is_new:
+                            chunk = session.take_download(seq, 65536)
+                            if chunk:
+                                session.download_frames[seq] = chunk
+                            session.download_next_seq += 1
+                            session.download_order.notify_all()
+                        else:
+                            chunk = session.download_frames.get(seq, b"")
+                        send_bhttp_download(self.conn, session.sid, chunk, mode, seq)
+                elif mode == MODE_BATCH:
+                    try:
+                        clear = bhttp_crypt(enc_payload, sid, mode, seq, False)
+                        chunk_size, count = struct.unpack(">IH", clear)
+                        chunk_size = min(max(chunk_size, 1), 524284)
+                        count = min(max(count, 1), 256)
+                    except struct.error:
+                        send_bhttp_status(self.conn, 1, b"invalid BHTTP batch request")
+                        continue
+                    with session.download_order:
+                        while seq > session.download_next_seq and not session.download_closed:
+                            session.download_order.wait()
+                        is_new = seq == session.download_next_seq
+                        chunks = []
+                        for offset in range(count):
+                            current_seq = seq + offset
+                            if is_new:
+                                chunk = session.take_download(current_seq, chunk_size)
+                                if chunk:
+                                    session.download_frames[current_seq] = chunk
+                            else:
+                                chunk = session.download_frames.get(current_seq, b"")
+                            chunks.append(chunk)
+                        if is_new:
+                            session.download_next_seq += count
+                            session.download_order.notify_all()
+                        for offset, chunk in enumerate(chunks):
+                            current_seq = seq + offset
+                            send_bhttp_download(self.conn, session.sid, chunk, mode, current_seq)
+                elif mode == MODE_ACK:
+                    session.acknowledge_download(seq)
+                    send_bhttp_status(self.conn, STATUS_OK)
+        except (ConnectionError, OSError):
+            pass
+        except Exception as e:
+            pass
+        finally:
+            self.conn.close()
+
+    def _handle_upload(self, session: Session, seq: int, payload: bytes):
+        target = CONFIG["proxy"]["target"]
+        if seq == 0 and not payload:
+            if session.open_target(target["host"], target["port"]):
+                send_bhttp_status(self.conn, STATUS_OK)
+            else:
+                send_bhttp_status(self.conn, 1, b"SSH target unavailable")
+            return
+        if session.target is None:
+            if not session.open_target(target["host"], target["port"]):
+                send_bhttp_status(self.conn, 1, b"SSH target unavailable")
+                return
+        try:
+            session.write_upload(seq, payload)
+            send_bhttp_status(self.conn, STATUS_OK)
+        except OSError:
+            send_bhttp_status(self.conn, 1, b"SSH upload failed")
+
+def handle_http_upgrade(conn: socket.socket) -> Tuple[bool, bytes]:
+    try:
+        buf = b""
+        while b"\r\n\r\n" not in buf:
+            chunk = conn.recv(1024)
+            if not chunk:
+                return False, b""
+            buf += chunk
+    except OSError:
+        return False, b""
+
+    idx = buf.find(b"\r\n\r\n") + 4
+    extra = buf[idx:]
+
+    conn.sendall(
+        b"HTTP/1.1 101 BHTTP\r\n"
+        b"Upgrade: websocket\r\n"
+        b"Connection: Upgrade\r\n"
+        b"\r\n"
+        b"HTTP/1.1 200 BHTTP\r\n"
+        b"\r\n"
+    )
+    return True, extra
+
+def handle_client(conn: socket.socket, addr, sessions: dict, ip_pool: IPPool):
+    try:
+        first = conn.recv(1, socket.MSG_PEEK)
+        if not first:
+            conn.close()
+            return
+
+        if first[0] == 0:
+            handle_bhttp_probe(conn)
+            conn.close()
+            return
+
+        extra_bytes = b""
+        if first[0] not in (MODE_UPLOAD, MODE_DOWNLOAD, MODE_BATCH, MODE_ACK):
+            success, extra_bytes = handle_http_upgrade(conn)
+            if not success:
+                conn.close()
+                return
+
+        handler = SessionHandler(conn, addr, sessions, ip_pool, extra_bytes)
+        handler.handle()
+    except Exception:
+        conn.close()
+
+def start_listener(host: str, port: int, sessions: dict, ip_pool: IPPool):
+    srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    srv.bind((host, port))
+    srv.listen(256)
+    log.info(f"BHTTP Server listening on {host}:{port} -> Backend SSH {CONFIG['proxy']['target']['port']}")
+    while True:
+        try:
+            conn, addr = srv.accept()
+            t = threading.Thread(
+                target=handle_client,
+                args=(conn, addr, sessions, ip_pool),
+                daemon=True,
+            )
+            t.start()
+        except Exception:
+            pass
+
+def cleanup_sessions(sessions: dict, ip_pool: IPPool, timeout: int = 120):
+    while True:
+        time.sleep(30)
+        now = time.time()
+        with SESSIONS_LOCK:
+            dead = [k for k, s in sessions.items() if now - s.last_seen > timeout]
+        for k in dead:
+            with SESSIONS_LOCK:
+                session = sessions.pop(k, None)
+            if session:
+                session.close()
+                ip_pool.release(k)
 
 def main():
     ap = argparse.ArgumentParser()
@@ -650,7 +916,20 @@ def main():
     ap.add_argument("--backend-host", default="127.0.0.1")
     ap.add_argument("--backend-port", type=int, default=22)
     a = ap.parse_args()
-    asyncio.run(Server(a.host, a.port, (a.backend_host, a.backend_port)).serve())
+
+    CONFIG["proxy"]["target"]["host"] = a.backend_host
+    CONFIG["proxy"]["target"]["port"] = a.backend_port
+
+    ip_pool = IPPool(CONFIG["server"]["virtual_subnet_cidr"])
+    sessions: Dict[str, Session] = {}
+
+    threading.Thread(
+        target=cleanup_sessions,
+        args=(sessions, ip_pool),
+        daemon=True,
+    ).start()
+
+    start_listener(a.host, a.port, sessions, ip_pool)
 
 if __name__ == "__main__":
     main()
@@ -674,6 +953,19 @@ bhttp_agregar_puerto() {
     echo -e "${Y}AGREGAR PUERTO BHTTP (DEALER VPN)${NC}\n"
     read -p "Ingresa el puerto local BHTTP (ej. 90, 8880, 80): " L_PORT
     [ -z "$L_PORT" ] && return
+    
+    if ! [[ "$L_PORT" =~ ^[0-9]+$ ]]; then
+        echo -e "\n${R}[!] Número de puerto inválido.${NC}"
+        sleep 2
+        return
+    fi
+
+    if netstat -tuln 2>/dev/null | grep -qE ":$L_PORT\b"; then
+        echo -e "\n${R}[!] El puerto $L_PORT ya está en uso por otro proceso.${NC}"
+        sleep 2
+        return
+    fi
+
     read -p "Ingresa el puerto SSH backend [22]: " T_PORT
     T_PORT=${T_PORT:-22}
 
@@ -697,12 +989,17 @@ EOF
     systemctl daemon-reload
     systemctl enable "bhttp-$L_PORT" >/dev/null 2>&1
     systemctl restart "bhttp-$L_PORT"
+    sleep 1
 
-    grep -v "^$L_PORT|" "$CONFIG_BHTTP_DB" 2>/dev/null > "$CONFIG_BHTTP_DB.tmp" || true
-    mv "$CONFIG_BHTTP_DB.tmp" "$CONFIG_BHTTP_DB" 2>/dev/null || true
-    echo "$L_PORT|$T_PORT" >> "$CONFIG_BHTTP_DB"
-
-    echo -e "\n${G}Puerto BHTTP $L_PORT activo apuntando a SSH $T_PORT.${NC}"
+    if systemctl is-active --quiet "bhttp-$L_PORT"; then
+        grep -v "^$L_PORT|" "$CONFIG_BHTTP_DB" 2>/dev/null > "$CONFIG_BHTTP_DB.tmp" || true
+        mv "$CONFIG_BHTTP_DB.tmp" "$CONFIG_BHTTP_DB" 2>/dev/null || true
+        echo "$L_PORT|$T_PORT" >> "$CONFIG_BHTTP_DB"
+        echo -e "\n${G}✅ Puerto BHTTP $L_PORT activo apuntando a SSH $T_PORT con éxito.${NC}"
+    else
+        echo -e "\n${R}[!] Error al iniciar el servicio bhttp-$L_PORT.${NC}"
+        journalctl -u "bhttp-$L_PORT" -n 10 --no-pager
+    fi
     sleep 2
 }
 
@@ -770,7 +1067,7 @@ bhttp_datos_http_custom() {
     echo -e "${Y}DATOS DE CONEXIÓN (DEALER VPN)${NC}\n"
     echo -e "  ${W}IP del Servidor:${NC} ${G}$SRV_IP${NC}"
     echo -e "  ${W}Puertos Activos:${NC} ${C}${PORTS:-Ninguno}${NC}"
-    echo -e "  ${W}Protocolo:${NC}        BHTTP (BHP1 Framing Dealer-Dev)"
+    echo -e "  ${W}Protocolo:${NC}        BHTTP (Upgrade 101/200 & Multiplexed Chunks)"
     echo -e "  ${W}Autenticación:${NC}    Cualquier usuario SSH de tu sistema"
     echo ""
     read -p "  Presiona ENTER para continuar..."
@@ -875,6 +1172,7 @@ menu_bhttp() {
         esac
     done
 }
+
 # ══════════════════════════════════════════
 #   WEBSOCKET PYTHON
 # ══════════════════════════════════════════
