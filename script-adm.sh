@@ -5,7 +5,7 @@
 #   Ubuntu 22/24/25
 # ═══════════════════════════════════════════════════════
 
-SCRIPT_VERSION="1.2 xd"
+SCRIPT_VERSION="1.3"
 R='\033[0;31m'
 G='\033[0;32m'
 Y='\033[1;33m'
@@ -426,7 +426,7 @@ bhttp_instalar_binario() {
     cat > "$BHTTP_BIN" << 'PYEOF'
 #!/usr/bin/env python3
 """BHTTP - concurrent HTTP-upgrade relay for SSH.
-High-Performance Engine adaptation for multi-port systemd services.
+Full Engine adaptation for multi-port systemd services.
 """
 
 import socket
@@ -585,7 +585,7 @@ class Session:
     def _read_target(self):
         try:
             while True:
-                data = self.target.recv(262144) if self.target else b""
+                data = self.target.recv(131072) if self.target else b""
                 if not data:
                     break
                 with self.ready:
@@ -660,7 +660,7 @@ class Session:
 
 def read_bhttp_frame_buf(sock: socket.socket, buf: bytes) -> Tuple[int, bytes, int, bytes, bytes]:
     while len(buf) < HEADER_SIZE:
-        chunk = sock.recv(65536)
+        chunk = sock.recv(16384)
         if not chunk:
             raise ConnectionError("Connection closed")
         buf += chunk
@@ -673,7 +673,7 @@ def read_bhttp_frame_buf(sock: socket.socket, buf: bytes) -> Tuple[int, bytes, i
     if mode in (MODE_DOWNLOAD, MODE_ACK):
         return mode, sid, seq, b"", buf
     while len(buf) < length:
-        chunk = sock.recv(max(65536, length - len(buf)))
+        chunk = sock.recv(max(16384, length - len(buf)))
         if not chunk:
             raise ConnectionError("Connection closed")
         buf += chunk
@@ -684,10 +684,10 @@ def read_bhttp_frame_buf(sock: socket.socket, buf: bytes) -> Tuple[int, bytes, i
 def send_bhttp_status(sock: socket.socket, status: int, data: bytes = b""):
     sock.sendall(struct.pack(">BI", status, len(data)) + data)
 
-def pack_bhttp_download_frame(sid: bytes, data: bytes, mode: int, seq: int) -> bytes:
+def pack_bhttp_download(sid: bytes, data: bytes, mode: int, seq: int) -> bytes:
     enc = bhttp_crypt(data, sid, mode, seq, True)
-    payload_len = 4 + len(enc)
-    return struct.pack(">BII", STATUS_DATA, payload_len, len(data)) + enc
+    payload = struct.pack(">I", len(data)) + enc
+    return struct.pack(">BI", STATUS_DATA, len(payload)) + payload
 
 def handle_bhttp_probe(conn: socket.socket):
     mode, sid, seq, encrypted, _ = read_bhttp_frame_buf(conn, b"")
@@ -714,11 +714,8 @@ def handle_bhttp_probe(conn: socket.socket):
 
     encrypted_response = bhttp_crypt(bytes(response), sid, MODE_PROBE, seq, True)
     response_count = min(max(parameter, 1), 256) if submode == MODE_ACK else 1
-    out = bytearray()
-    frame = struct.pack(">BI", STATUS_OK, len(encrypted_response)) + encrypted_response
     for _ in range(response_count):
-        out.extend(frame)
-    conn.sendall(out)
+        send_bhttp_status(conn, STATUS_OK, encrypted_response)
 
 class SessionHandler:
     def __init__(self, conn: socket.socket, addr, sessions: dict, ip_pool: IPPool, extra_bytes: bytes = b""):
@@ -744,26 +741,27 @@ class SessionHandler:
                 session = self.get_session(sid)
                 session.last_seen = time.time()
 
+                payload = b""
+                if enc_payload and mode == MODE_UPLOAD:
+                    payload = bhttp_crypt(enc_payload, sid, mode, seq, False)
+
                 if mode == MODE_UPLOAD:
-                    payload = bhttp_crypt(enc_payload, sid, mode, seq, False) if enc_payload else b""
                     with session.lock:
                         self._handle_upload(session, seq, payload)
                 elif mode == MODE_DOWNLOAD:
                     with session.download_order:
                         while seq > session.download_next_seq and not session.download_closed:
-                            session.download_order.wait(timeout=2.0)
-                            if seq > session.download_next_seq:
-                                break
-                        if seq >= session.download_next_seq:
-                            while session.download_next_seq <= seq:
-                                c_seq = session.download_next_seq
-                                chunk = session.take_download(c_seq, 65536)
-                                if chunk:
-                                    session.download_frames[c_seq] = chunk
-                                session.download_next_seq += 1
+                            session.download_order.wait()
+                        is_new = seq == session.download_next_seq
+                        if is_new:
+                            chunk = session.take_download(seq, 65536)
+                            if chunk:
+                                session.download_frames[seq] = chunk
+                            session.download_next_seq += 1
                             session.download_order.notify_all()
-                        chunk = session.download_frames.get(seq, b"")
-                    self.conn.sendall(pack_bhttp_download_frame(session.sid, chunk, mode, seq))
+                        else:
+                            chunk = session.download_frames.get(seq, b"")
+                    self.conn.sendall(pack_bhttp_download(session.sid, chunk, mode, seq))
                 elif mode == MODE_BATCH:
                     try:
                         clear = bhttp_crypt(enc_payload, sid, mode, seq, False)
@@ -775,34 +773,25 @@ class SessionHandler:
                         continue
                     with session.download_order:
                         while seq > session.download_next_seq and not session.download_closed:
-                            if not session.download_order.wait(timeout=1.5):
-                                break
-                        if seq > session.download_next_seq:
-                            # Rellena huecos si un hilo anterior se retrasó en red móvil
-                            while session.download_next_seq < seq:
-                                gap_seq = session.download_next_seq
-                                g_chunk = session.take_download(gap_seq, chunk_size)
-                                if g_chunk:
-                                    session.download_frames[gap_seq] = g_chunk
-                                session.download_next_seq += 1
+                            session.download_order.wait()
+                        is_new = seq == session.download_next_seq
                         chunks = []
                         for offset in range(count):
                             current_seq = seq + offset
-                            if current_seq >= session.download_next_seq:
+                            if is_new:
                                 chunk = session.take_download(current_seq, chunk_size)
                                 if chunk:
                                     session.download_frames[current_seq] = chunk
-                                session.download_next_seq = current_seq + 1
                             else:
                                 chunk = session.download_frames.get(current_seq, b"")
                             chunks.append((current_seq, chunk))
-                        session.download_order.notify_all()
-
-                    # Cifra y empaqueta fuera del lock para no bloquear a los otros hilos
-                    out_buffer = bytearray()
+                        if is_new:
+                            session.download_next_seq += count
+                            session.download_order.notify_all()
+                    out_buf = bytearray()
                     for current_seq, chunk in chunks:
-                        out_buffer.extend(pack_bhttp_download_frame(session.sid, chunk, mode, current_seq))
-                    self.conn.sendall(out_buffer)
+                        out_buf.extend(pack_bhttp_download(session.sid, chunk, mode, current_seq))
+                    self.conn.sendall(out_buf)
                 elif mode == MODE_ACK:
                     session.acknowledge_download(seq)
                     send_bhttp_status(self.conn, STATUS_OK)
@@ -884,7 +873,7 @@ def start_listener(host: str, port: int, sessions: dict, ip_pool: IPPool):
     srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     srv.bind((host, port))
-    srv.listen(4096)
+    srv.listen(2048)
     while True:
         try:
             conn, addr = srv.accept()
