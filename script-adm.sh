@@ -5,7 +5,7 @@
 #   Ubuntu 22/24/25
 # ═══════════════════════════════════════════════════════
 
-SCRIPT_VERSION="1.5"
+SCRIPT_VERSION="1.2 xd"
 R='\033[0;31m'
 G='\033[0;32m'
 Y='\033[1;33m'
@@ -416,7 +416,7 @@ EOF
 
 bhttp_instalar_binario() {
     clear
-    echo -e "${Y}Instalando motor BHTTP Oficial DEALER VPN...${NC}"
+    echo -e "${Y}Instalando motor BHTTP Oficial DEALER VPN (Turbo Edition)...${NC}"
     bhttp_optimizar_kernel
 
     mkdir -p "$DIR_BHTTP"
@@ -426,22 +426,16 @@ bhttp_instalar_binario() {
     cat > "$BHTTP_BIN" << 'PYEOF'
 #!/usr/bin/env python3
 """BHTTP - concurrent HTTP-upgrade relay for SSH.
-Full Engine adaptation for multi-port systemd services.
+High-Performance Engine adaptation for multi-port systemd services.
 """
 
 import socket
 import struct
 import hashlib
 import threading
-import json
 import time
 import logging
 import ipaddress
-import select
-import os
-import ssl
-import traceback
-import sys
 import argparse
 from dataclasses import dataclass, field
 from typing import Optional, Dict, Tuple
@@ -463,7 +457,7 @@ CONFIG = {
 logging.basicConfig(
     format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
-    level=logging.INFO,
+    level=logging.WARNING,
 )
 log = logging.getLogger("BHTTP")
 
@@ -473,30 +467,24 @@ MODE_DOWNLOAD = 2
 MODE_BATCH    = 3
 MODE_ACK      = 4
 
-STATUS_OK      = 0
-STATUS_DATA    = 2
+STATUS_OK     = 0
+STATUS_DATA   = 2
 
 HEADER_SIZE = 29
 SESSIONS_LOCK = threading.Lock()
 
 def bhttp_crypt(data: bytes, sid: bytes, mode: int, seq: int, isr: bool) -> bytes:
-    if not data:
+    length = len(data)
+    if not length:
         return b""
-    out = bytearray(len(data))
-    sb = bytearray(26)
-    sb[0:16] = sid[:16]
-    sb[16] = mode & 0xFF
-    struct.pack_into(">Q", sb, 17, seq)
-    sb[25] = 1 if isr else 0
-    o = i = 0
-    while o < len(data):
-        k = hashlib.sha256(bytes(sb) + struct.pack(">I", i)).digest()
-        n = min(32, len(data) - o)
-        for j in range(n):
-            out[o + j] = data[o + j] ^ k[j]
-        o += n
-        i += 1
-    return bytes(out)
+    prefix = sid[:16] + struct.pack(">BQB", mode & 0xFF, seq, 1 if isr else 0)
+    blocks = (length + 31) >> 5
+    sha256 = hashlib.sha256
+    pack = struct.pack
+    keystream = b"".join(sha256(prefix + pack(">I", i)).digest() for i in range(blocks))
+    if len(keystream) > length:
+        keystream = keystream[:length]
+    return (int.from_bytes(data, "big") ^ int.from_bytes(keystream, "big")).to_bytes(length, "big")
 
 class IPPool:
     def __init__(self, cidr: str):
@@ -575,6 +563,11 @@ class Session:
         try:
             target = socket.create_connection((host, port), timeout=10)
             target.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+            try:
+                target.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 2097152)
+                target.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 2097152)
+            except OSError:
+                pass
             target.settimeout(None)
         except OSError as exc:
             with self.ready:
@@ -590,10 +583,9 @@ class Session:
         return True
 
     def _read_target(self):
-        tag = self.sid.hex()[:8]
         try:
             while True:
-                data = self.target.recv(65536) if self.target else b""
+                data = self.target.recv(262144) if self.target else b""
                 if not data:
                     break
                 with self.ready:
@@ -617,17 +609,14 @@ class Session:
             if seq < self.upload_next_seq:
                 return
             self.upload_pending.setdefault(seq, payload)
+            out_chunks = bytearray()
             while self.upload_next_seq in self.upload_pending:
                 chunk = self.upload_pending.pop(self.upload_next_seq)
-                if not self.first_upload_logged and chunk:
-                    self.first_upload_logged = True
-                    tag = self.sid.hex()[:8]
-                    if chunk.startswith(b"SSH-"):
-                        line = chunk.split(b"\n", 1)[0] + b"\n"
-                        log.info(f"[{tag}] Client SSH identification seq={self.upload_next_seq}: {line!r}")
-                if chunk and self.target is not None:
-                    self.target.sendall(chunk)
+                if chunk:
+                    out_chunks.extend(chunk)
                 self.upload_next_seq += 1
+            if out_chunks and self.target is not None:
+                self.target.sendall(out_chunks)
                 self.last_seen = time.time()
 
     def take_download(self, seq: int, size: int, banner_timeout: float = 5.0) -> bytes:
@@ -671,7 +660,7 @@ class Session:
 
 def read_bhttp_frame_buf(sock: socket.socket, buf: bytes) -> Tuple[int, bytes, int, bytes, bytes]:
     while len(buf) < HEADER_SIZE:
-        chunk = sock.recv(4096)
+        chunk = sock.recv(65536)
         if not chunk:
             raise ConnectionError("Connection closed")
         buf += chunk
@@ -684,7 +673,7 @@ def read_bhttp_frame_buf(sock: socket.socket, buf: bytes) -> Tuple[int, bytes, i
     if mode in (MODE_DOWNLOAD, MODE_ACK):
         return mode, sid, seq, b"", buf
     while len(buf) < length:
-        chunk = sock.recv(max(4096, length - len(buf)))
+        chunk = sock.recv(max(65536, length - len(buf)))
         if not chunk:
             raise ConnectionError("Connection closed")
         buf += chunk
@@ -695,10 +684,10 @@ def read_bhttp_frame_buf(sock: socket.socket, buf: bytes) -> Tuple[int, bytes, i
 def send_bhttp_status(sock: socket.socket, status: int, data: bytes = b""):
     sock.sendall(struct.pack(">BI", status, len(data)) + data)
 
-def send_bhttp_download(sock: socket.socket, sid: bytes, data: bytes, mode: int = MODE_DOWNLOAD, seq: int = 0):
+def pack_bhttp_download_frame(sid: bytes, data: bytes, mode: int, seq: int) -> bytes:
     enc = bhttp_crypt(data, sid, mode, seq, True)
-    payload = struct.pack(">I", len(data)) + enc
-    sock.sendall(struct.pack(">BI", STATUS_DATA, len(payload)) + payload)
+    payload_len = 4 + len(enc)
+    return struct.pack(">BII", STATUS_DATA, payload_len, len(data)) + enc
 
 def handle_bhttp_probe(conn: socket.socket):
     mode, sid, seq, encrypted, _ = read_bhttp_frame_buf(conn, b"")
@@ -725,8 +714,11 @@ def handle_bhttp_probe(conn: socket.socket):
 
     encrypted_response = bhttp_crypt(bytes(response), sid, MODE_PROBE, seq, True)
     response_count = min(max(parameter, 1), 256) if submode == MODE_ACK else 1
+    out = bytearray()
+    frame = struct.pack(">BI", STATUS_OK, len(encrypted_response)) + encrypted_response
     for _ in range(response_count):
-        send_bhttp_status(conn, STATUS_OK, encrypted_response)
+        out.extend(frame)
+    conn.sendall(out)
 
 class SessionHandler:
     def __init__(self, conn: socket.socket, addr, sessions: dict, ip_pool: IPPool, extra_bytes: bytes = b""):
@@ -752,27 +744,26 @@ class SessionHandler:
                 session = self.get_session(sid)
                 session.last_seen = time.time()
 
-                payload = b""
-                if enc_payload and mode == MODE_UPLOAD:
-                    payload = bhttp_crypt(enc_payload, sid, mode, seq, False)
-
                 if mode == MODE_UPLOAD:
+                    payload = bhttp_crypt(enc_payload, sid, mode, seq, False) if enc_payload else b""
                     with session.lock:
                         self._handle_upload(session, seq, payload)
                 elif mode == MODE_DOWNLOAD:
                     with session.download_order:
                         while seq > session.download_next_seq and not session.download_closed:
-                            session.download_order.wait()
-                        is_new = seq == session.download_next_seq
-                        if is_new:
-                            chunk = session.take_download(seq, 65536)
-                            if chunk:
-                                session.download_frames[seq] = chunk
-                            session.download_next_seq += 1
+                            session.download_order.wait(timeout=2.0)
+                            if seq > session.download_next_seq:
+                                break
+                        if seq >= session.download_next_seq:
+                            while session.download_next_seq <= seq:
+                                c_seq = session.download_next_seq
+                                chunk = session.take_download(c_seq, 65536)
+                                if chunk:
+                                    session.download_frames[c_seq] = chunk
+                                session.download_next_seq += 1
                             session.download_order.notify_all()
-                        else:
-                            chunk = session.download_frames.get(seq, b"")
-                        send_bhttp_download(self.conn, session.sid, chunk, mode, seq)
+                        chunk = session.download_frames.get(seq, b"")
+                    self.conn.sendall(pack_bhttp_download_frame(session.sid, chunk, mode, seq))
                 elif mode == MODE_BATCH:
                     try:
                         clear = bhttp_crypt(enc_payload, sid, mode, seq, False)
@@ -784,30 +775,40 @@ class SessionHandler:
                         continue
                     with session.download_order:
                         while seq > session.download_next_seq and not session.download_closed:
-                            session.download_order.wait()
-                        is_new = seq == session.download_next_seq
+                            if not session.download_order.wait(timeout=1.5):
+                                break
+                        if seq > session.download_next_seq:
+                            # Rellena huecos si un hilo anterior se retrasó en red móvil
+                            while session.download_next_seq < seq:
+                                gap_seq = session.download_next_seq
+                                g_chunk = session.take_download(gap_seq, chunk_size)
+                                if g_chunk:
+                                    session.download_frames[gap_seq] = g_chunk
+                                session.download_next_seq += 1
                         chunks = []
                         for offset in range(count):
                             current_seq = seq + offset
-                            if is_new:
+                            if current_seq >= session.download_next_seq:
                                 chunk = session.take_download(current_seq, chunk_size)
                                 if chunk:
                                     session.download_frames[current_seq] = chunk
+                                session.download_next_seq = current_seq + 1
                             else:
                                 chunk = session.download_frames.get(current_seq, b"")
-                            chunks.append(chunk)
-                        if is_new:
-                            session.download_next_seq += count
-                            session.download_order.notify_all()
-                        for offset, chunk in enumerate(chunks):
-                            current_seq = seq + offset
-                            send_bhttp_download(self.conn, session.sid, chunk, mode, current_seq)
+                            chunks.append((current_seq, chunk))
+                        session.download_order.notify_all()
+
+                    # Cifra y empaqueta fuera del lock para no bloquear a los otros hilos
+                    out_buffer = bytearray()
+                    for current_seq, chunk in chunks:
+                        out_buffer.extend(pack_bhttp_download_frame(session.sid, chunk, mode, current_seq))
+                    self.conn.sendall(out_buffer)
                 elif mode == MODE_ACK:
                     session.acknowledge_download(seq)
                     send_bhttp_status(self.conn, STATUS_OK)
         except (ConnectionError, OSError):
             pass
-        except Exception as e:
+        except Exception:
             pass
         finally:
             self.conn.close()
@@ -856,6 +857,7 @@ def handle_http_upgrade(conn: socket.socket) -> Tuple[bool, bytes]:
 
 def handle_client(conn: socket.socket, addr, sessions: dict, ip_pool: IPPool):
     try:
+        conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
         first = conn.recv(1, socket.MSG_PEEK)
         if not first:
             conn.close()
@@ -882,8 +884,7 @@ def start_listener(host: str, port: int, sessions: dict, ip_pool: IPPool):
     srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     srv.bind((host, port))
-    srv.listen(256)
-    log.info(f"BHTTP Server listening on {host}:{port} -> Backend SSH {CONFIG['proxy']['target']['port']}")
+    srv.listen(4096)
     while True:
         try:
             conn, addr = srv.accept()
@@ -944,7 +945,7 @@ PYEOF
         done < "$CONFIG_BHTTP_DB"
     fi
 
-    echo -e "\n${G}Motor BHTTP Original instalado y sincronizado con éxito.${NC}"
+    echo -e "\n${G}Motor BHTTP Turbo instalado y sincronizado con éxito.${NC}"
     sleep 2
 }
 
