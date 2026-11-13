@@ -5,7 +5,7 @@
 #   Ubuntu 22/24/25
 # ═══════════════════════════════════════════════════════
 
-SCRIPT_VERSION="1.4"
+SCRIPT_VERSION="1.5"
 R='\033[0;31m'
 G='\033[0;32m'
 Y='\033[1;33m'
@@ -365,14 +365,25 @@ Y="\033[0;33m"
 C="\033[0;36m"
 NC="\033[0m"
 
+bhttp_abrir_firewall() {
+    local PORT="$1"
+    [ -z "$PORT" ] && return
+    iptables -C INPUT -p tcp --dport "$PORT" -j ACCEPT 2>/dev/null || \
+    iptables -I INPUT 1 -p tcp --dport "$PORT" -j ACCEPT 2>/dev/null
+    if command -v ufw >/dev/null 2>&1; then
+        ufw allow "${PORT}/tcp" >/dev/null 2>&1 || true
+    fi
+}
+
 bhttp_optimizar_kernel() {
     # 1. Habilitar módulo BBR
     modprobe tcp_bbr 2>/dev/null
     mkdir -p /etc/modules-load.d
     grep -q "^tcp_bbr" /etc/modules-load.d/bbr.conf 2>/dev/null || echo "tcp_bbr" > /etc/modules-load.d/bbr.conf 2>/dev/null
 
-    # 2. Configuración de kernel exacta
+    # 2. Configuración de kernel exacta + IP Forward
     cat > /etc/sysctl.d/99-bhttp.conf << 'EOF'
+net.ipv4.ip_forward = 1
 net.core.default_qdisc = fq
 net.ipv4.tcp_congestion_control = bbr
 net.core.somaxconn = 65535
@@ -402,14 +413,16 @@ EOF
     # 4. Dependencias del sistema necesarias para BHTTP
     apt-get install -y python3 python3-pam net-tools >/dev/null 2>&1
 
-    # 5. Ajustes en OpenSSH
+    # 5. Ajustes en OpenSSH (garantiza que acepte el reenvío de DEALER VPN)
     if [ -f /etc/ssh/sshd_config ]; then
+        sed -i 's/\r$//' /etc/ssh/sshd_config
         sed -i 's/^[[:space:]]*#\?[[:space:]]*AllowTcpForwarding.*/AllowTcpForwarding yes/' /etc/ssh/sshd_config
         sed -i 's/^[[:space:]]*#\?[[:space:]]*GatewayPorts.*/GatewayPorts yes/' /etc/ssh/sshd_config
         sed -i 's/^[[:space:]]*#\?[[:space:]]*UseDNS.*/UseDNS no/' /etc/ssh/sshd_config
+        grep -q "^AllowTcpForwarding yes" /etc/ssh/sshd_config || echo "AllowTcpForwarding yes" >> /etc/ssh/sshd_config
         grep -q "^UseDNS no" /etc/ssh/sshd_config || echo "UseDNS no" >> /etc/ssh/sshd_config
         grep -q "^MaxStartups" /etc/ssh/sshd_config && sed -i 's/^MaxStartups.*/MaxStartups 100:30:200/' /etc/ssh/sshd_config || echo "MaxStartups 100:30:200" >> /etc/ssh/sshd_config
-        systemctl reload ssh 2>/dev/null || systemctl reload sshd 2>/dev/null || true
+        systemctl reload ssh 2>/dev/null || systemctl reload sshd 2>/dev/null || service ssh restart 2>/dev/null || true
     fi
 }
 
@@ -421,6 +434,7 @@ bhttp_instalar_binario() {
     mkdir -p "$DIR_BHTTP"
     mkdir -p "$(dirname "$CONFIG_BHTTP_DB")"
     touch "$CONFIG_BHTTP_DB"
+    sed -i 's/\r$//' "$CONFIG_BHTTP_DB" 2>/dev/null
 
     cat > "$BHTTP_BIN" << 'PYEOF'
 #!/usr/bin/env python3
@@ -432,15 +446,9 @@ import socket
 import struct
 import hashlib
 import threading
-import json
 import time
 import logging
 import ipaddress
-import select
-import os
-import ssl
-import traceback
-import sys
 import argparse
 from dataclasses import dataclass, field
 from typing import Optional, Dict, Tuple
@@ -472,8 +480,9 @@ MODE_DOWNLOAD = 2
 MODE_BATCH    = 3
 MODE_ACK      = 4
 
-STATUS_OK      = 0
-STATUS_DATA    = 2
+STATUS_OK     = 0
+STATUS_ERR    = 1
+STATUS_DATA   = 2
 
 HEADER_SIZE = 29
 SESSIONS_LOCK = threading.Lock()
@@ -576,6 +585,7 @@ class Session:
             target.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
             target.settimeout(None)
         except OSError as exc:
+            log.error(f"Error connecting to backend SSH {host}:{port} -> {exc}")
             with self.ready:
                 self.target_error = str(exc)
                 self.target_eof = True
@@ -589,7 +599,6 @@ class Session:
         return True
 
     def _read_target(self):
-        tag = self.sid.hex()[:8]
         try:
             while True:
                 data = self.target.recv(65536) if self.target else b""
@@ -680,7 +689,14 @@ def read_bhttp_frame_buf(sock: socket.socket, buf: bytes) -> Tuple[int, bytes, i
     sid = header[1:17]
     seq = struct.unpack(">Q", header[17:25])[0]
     length = struct.unpack(">I", header[25:29])[0]
-    if mode in (MODE_DOWNLOAD, MODE_ACK):
+    if length == 0 or mode in (MODE_DOWNLOAD, MODE_ACK):
+        if length > 0:
+            while len(buf) < length:
+                chunk = sock.recv(max(4096, length - len(buf)))
+                if not chunk:
+                    raise ConnectionError("Connection closed")
+                buf += chunk
+            buf = buf[length:]
         return mode, sid, seq, b"", buf
     while len(buf) < length:
         chunk = sock.recv(max(4096, length - len(buf)))
@@ -806,7 +822,7 @@ class SessionHandler:
                     send_bhttp_status(self.conn, STATUS_OK)
         except (ConnectionError, OSError):
             pass
-        except Exception as e:
+        except Exception:
             pass
         finally:
             self.conn.close()
@@ -855,6 +871,7 @@ def handle_http_upgrade(conn: socket.socket) -> Tuple[bool, bytes]:
 
 def handle_client(conn: socket.socket, addr, sessions: dict, ip_pool: IPPool):
     try:
+        conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
         first = conn.recv(1, socket.MSG_PEEK)
         if not first:
             conn.close()
@@ -881,7 +898,7 @@ def start_listener(host: str, port: int, sessions: dict, ip_pool: IPPool):
     srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     srv.bind((host, port))
-    srv.listen(256)
+    srv.listen(1024)
     log.info(f"BHTTP Server listening on {host}:{port} -> Backend SSH {CONFIG['proxy']['target']['port']}")
     while True:
         try:
@@ -934,12 +951,19 @@ if __name__ == "__main__":
     main()
 PYEOF
 
+    sed -i 's/\r$//' "$BHTTP_BIN"
     chmod +x "$BHTTP_BIN"
 
-    # Reiniciar servicios activos si existen
+    # Reiniciar y asegurar firewall en servicios activos si existen
     if [ -s "$CONFIG_BHTTP_DB" ]; then
-        while IFS='|' read -r L_PORT _; do
-            [ -n "$L_PORT" ] && systemctl restart "bhttp-$L_PORT" 2>/dev/null
+        while IFS='|' read -r L_PORT T_PORT; do
+            L_PORT=$(echo "$L_PORT" | tr -dc '0-9')
+            if [ -n "$L_PORT" ]; then
+                bhttp_abrir_firewall "$L_PORT"
+                sed -i 's/\r$//' "$DIR_SERVICES/bhttp-$L_PORT.service" 2>/dev/null
+                systemctl daemon-reload
+                systemctl restart "bhttp-$L_PORT" 2>/dev/null
+            fi
         done < "$CONFIG_BHTTP_DB"
     fi
 
@@ -951,13 +975,8 @@ bhttp_agregar_puerto() {
     clear
     echo -e "${Y}AGREGAR PUERTO BHTTP (DEALER VPN)${NC}\n"
     read -p "Ingresa el puerto local BHTTP (ej. 90, 8880, 80): " L_PORT
+    L_PORT=$(echo "$L_PORT" | tr -dc '0-9')
     [ -z "$L_PORT" ] && return
-    
-    if ! [[ "$L_PORT" =~ ^[0-9]+$ ]]; then
-        echo -e "\n${R}[!] Número de puerto inválido.${NC}"
-        sleep 2
-        return
-    fi
 
     if netstat -tuln 2>/dev/null | grep -qE ":$L_PORT\b"; then
         echo -e "\n${R}[!] El puerto $L_PORT ya está en uso por otro proceso.${NC}"
@@ -966,6 +985,7 @@ bhttp_agregar_puerto() {
     fi
 
     read -p "Ingresa el puerto SSH backend [22]: " T_PORT
+    T_PORT=$(echo "$T_PORT" | tr -dc '0-9')
     T_PORT=${T_PORT:-22}
 
     cat > "$DIR_SERVICES/bhttp-$L_PORT.service" << EOF
@@ -984,6 +1004,9 @@ LimitNOFILE=1048576
 [Install]
 WantedBy=multi-user.target
 EOF
+
+    sed -i 's/\r$//' "$DIR_SERVICES/bhttp-$L_PORT.service"
+    bhttp_abrir_firewall "$L_PORT"
 
     systemctl daemon-reload
     systemctl enable "bhttp-$L_PORT" >/dev/null 2>&1
@@ -1009,6 +1032,8 @@ bhttp_listar_puertos() {
         echo -e "  ${R}No hay puertos configurados.${NC}"
     else
         while IFS='|' read -r L_PORT T_PORT; do
+            L_PORT=$(echo "$L_PORT" | tr -dc '0-9')
+            T_PORT=$(echo "$T_PORT" | tr -dc '0-9')
             [ -z "$L_PORT" ] && continue
             if systemctl is-active --quiet "bhttp-$L_PORT" 2>/dev/null; then
                 STATUS="${G}[ACTIVO]${NC}"
@@ -1025,8 +1050,10 @@ bhttp_listar_puertos() {
 bhttp_reiniciar_puerto() {
     clear
     read -p "Ingresa el puerto a reiniciar: " P
+    P=$(echo "$P" | tr -dc '0-9')
     [ -z "$P" ] && return
     if [ -f "$DIR_SERVICES/bhttp-$P.service" ]; then
+        bhttp_abrir_firewall "$P"
         systemctl restart "bhttp-$P"
         echo -e "${G}Puerto BHTTP $P reiniciado con éxito.${NC}"
     else
@@ -1038,6 +1065,7 @@ bhttp_reiniciar_puerto() {
 bhttp_eliminar_puerto() {
     clear
     read -p "Ingresa el puerto a eliminar: " P
+    P=$(echo "$P" | tr -dc '0-9')
     [ -z "$P" ] && return
     systemctl stop "bhttp-$P" 2>/dev/null
     systemctl disable "bhttp-$P" 2>/dev/null
@@ -1053,6 +1081,7 @@ bhttp_eliminar_puerto() {
 bhttp_detener_todos() {
     clear
     while IFS='|' read -r L_PORT _; do
+        L_PORT=$(echo "$L_PORT" | tr -dc '0-9')
         [ -n "$L_PORT" ] && systemctl stop "bhttp-$L_PORT" 2>/dev/null
     done < "$CONFIG_BHTTP_DB"
     echo -e "${Y}Todos los servicios BHTTP han sido detenidos.${NC}"
@@ -1075,7 +1104,11 @@ bhttp_datos_http_custom() {
 bhttp_reiniciar_todos() {
     clear
     while IFS='|' read -r L_PORT _; do
-        [ -n "$L_PORT" ] && systemctl restart "bhttp-$L_PORT" 2>/dev/null
+        L_PORT=$(echo "$L_PORT" | tr -dc '0-9')
+        if [ -n "$L_PORT" ]; then
+            bhttp_abrir_firewall "$L_PORT"
+            systemctl restart "bhttp-$L_PORT" 2>/dev/null
+        fi
     done < "$CONFIG_BHTTP_DB"
     echo -e "${G}Todos los servicios BHTTP han sido reiniciados.${NC}"
     sleep 2
@@ -1084,6 +1117,7 @@ bhttp_reiniciar_todos() {
 bhttp_ver_logs() {
     clear
     read -p "Ingresa el puerto BHTTP para ver logs: " P
+    P=$(echo "$P" | tr -dc '0-9')
     [ -z "$P" ] && return
     journalctl -u "bhttp-$P" -n 40 --no-pager
     echo ""
@@ -1097,6 +1131,7 @@ bhttp_desinstalar_todo() {
 
     if [ -f "$CONFIG_BHTTP_DB" ]; then
         while IFS='|' read -r L_PORT _; do
+            L_PORT=$(echo "$L_PORT" | tr -dc '0-9')
             if [ -n "$L_PORT" ]; then
                 systemctl stop "bhttp-$L_PORT" 2>/dev/null
                 systemctl disable "bhttp-$L_PORT" 2>/dev/null
@@ -1119,6 +1154,7 @@ menu_bhttp() {
         PUERTOS=""
         if [ -s "$CONFIG_BHTTP_DB" ]; then
             while IFS='|' read -r L_PORT _; do
+                L_PORT=$(echo "$L_PORT" | tr -dc '0-9')
                 [ -z "$L_PORT" ] && continue
                 if systemctl is-active --quiet "bhttp-$L_PORT" 2>/dev/null; then
                     ((ACTIVOS++))
