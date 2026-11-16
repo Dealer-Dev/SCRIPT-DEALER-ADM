@@ -5,7 +5,7 @@
 #   Ubuntu 22/24/25
 # ═══════════════════════════════════════════════════════
 
-SCRIPT_VERSION="1.5"
+SCRIPT_VERSION="1.2"
 R='\033[0;31m'
 G='\033[0;32m'
 Y='\033[1;33m'
@@ -413,7 +413,7 @@ EOF
     # 4. Dependencias del sistema necesarias para BHTTP
     apt-get install -y python3 python3-pam net-tools >/dev/null 2>&1
 
-    # 5. Ajustes en OpenSSH (garantiza que acepte el reenvío de DEALER VPN)
+    # 5. Ajustes en OpenSSH (Incluyendo compatibilidad de algoritmos para TrileadSSH2Java)
     if [ -f /etc/ssh/sshd_config ]; then
         sed -i 's/\r$//' /etc/ssh/sshd_config
         sed -i 's/^[[:space:]]*#\?[[:space:]]*AllowTcpForwarding.*/AllowTcpForwarding yes/' /etc/ssh/sshd_config
@@ -422,7 +422,20 @@ EOF
         grep -q "^AllowTcpForwarding yes" /etc/ssh/sshd_config || echo "AllowTcpForwarding yes" >> /etc/ssh/sshd_config
         grep -q "^UseDNS no" /etc/ssh/sshd_config || echo "UseDNS no" >> /etc/ssh/sshd_config
         grep -q "^MaxStartups" /etc/ssh/sshd_config && sed -i 's/^MaxStartups.*/MaxStartups 100:30:200/' /etc/ssh/sshd_config || echo "MaxStartups 100:30:200" >> /etc/ssh/sshd_config
-        systemctl reload ssh 2>/dev/null || systemctl reload sshd 2>/dev/null || service ssh restart 2>/dev/null || true
+
+        # Integración oficial de algoritmos legacy para evitar bucle de reconexión en la app
+        if ! grep -q "Compatibilidad para TrileadSSH2Java" /etc/ssh/sshd_config; then
+            cat >> /etc/ssh/sshd_config << 'EOF'
+
+# Compatibilidad para TrileadSSH2Java_213 (DEALER VPN)
+HostKeyAlgorithms +ssh-rsa,ssh-dss
+PubkeyAcceptedKeyTypes +ssh-rsa,ssh-dss
+KexAlgorithms +diffie-hellman-group1-sha1,diffie-hellman-group14-sha1,diffie-hellman-group-exchange-sha1,diffie-hellman-group-exchange-sha256
+Ciphers +aes128-cbc,3des-cbc,aes128-ctr,aes192-ctr,aes256-ctr
+EOF
+        fi
+
+        systemctl restart ssh 2>/dev/null || systemctl restart sshd 2>/dev/null || service ssh restart 2>/dev/null || true
     fi
 }
 
@@ -689,14 +702,7 @@ def read_bhttp_frame_buf(sock: socket.socket, buf: bytes) -> Tuple[int, bytes, i
     sid = header[1:17]
     seq = struct.unpack(">Q", header[17:25])[0]
     length = struct.unpack(">I", header[25:29])[0]
-    if length == 0 or mode in (MODE_DOWNLOAD, MODE_ACK):
-        if length > 0:
-            while len(buf) < length:
-                chunk = sock.recv(max(4096, length - len(buf)))
-                if not chunk:
-                    raise ConnectionError("Connection closed")
-                buf += chunk
-            buf = buf[length:]
+    if mode in (MODE_DOWNLOAD, MODE_ACK):
         return mode, sid, seq, b"", buf
     while len(buf) < length:
         chunk = sock.recv(max(4096, length - len(buf)))
