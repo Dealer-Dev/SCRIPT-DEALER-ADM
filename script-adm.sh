@@ -5,7 +5,7 @@
 #   Ubuntu 20/22/24/25 & Debian 10/11/12+
 # ═══════════════════════════════════════════════════════
 
-SCRIPT_VERSION="1.3"
+SCRIPT_VERSION="1.4"
 R='\033[0;31m'
 G='\033[0;32m'
 Y='\033[1;33m'
@@ -37,11 +37,12 @@ touch $CONFIG_BHTTP_DB
 chmod -R 777 $DIR_SCRIPTS
 
 wget -qO /etc/dealer-adm/scripts/zivpn_manager.sh \
-"https://raw.githubusercontent.com/Dealer-Dev/SCRIPT-DEALER-ADM/main/scripts/zivpn_manager.sh"
+"https://raw.githubusercontent.com/Dealer-Dev/SCRIPT-DEALER-ADM/main/scripts/zivpn_manager.sh" >/dev/null 2>&1
 
-chmod +x /etc/dealer-adm/scripts/zivpn_manager.sh
+chmod +x /etc/dealer-adm/scripts/zivpn_manager.sh 2>/dev/null
 
-source /etc/dealer-adm/scripts/zivpn_manager.sh
+# Cargar funciones de ZIVPN en silencio sin imprimir mensajes al iniciar
+[ -f /etc/dealer-adm/scripts/zivpn_manager.sh ] && source /etc/dealer-adm/scripts/zivpn_manager.sh >/dev/null 2>&1
 
 # ==========================================
 # CONFIGURAR CHECKUSER Y BANNER PAM OFICIAL
@@ -1187,7 +1188,7 @@ EOF
         done < "$CONFIG_BHTTP_DB"
     fi
 
-    echo -e "\n${G}Motor BHTTP Oficial instalado y sincronizado con éxito.${NC}"
+    echo -e "\n${G}Motor BHTTP Oficial instalado y sincronizado con éxito (Puerto interno 10090 activo).${NC}"
     sleep 2
 }
 
@@ -1273,7 +1274,7 @@ bhttp_reiniciar_puerto() {
     P=$(echo "$P" | tr -dc '0-9')
     [ -z "$P" ] && return
     if [ -f "$DIR_SERVICES/bhttp-$P.service" ]; then
-        bhttp_abrir_firewall "$P"
+        [ "$P" != "10090" ] && bhttp_abrir_firewall "$P"
         systemctl restart "bhttp-$P"
         echo -e "${G}Puerto BHTTP $P reiniciado con éxito.${NC}"
     else
@@ -1431,16 +1432,17 @@ menu_bhttp() {
 }
 
 # ══════════════════════════════════════════
-#   WEBSOCKET PYTHON
+#   WEBSOCKET PYTHON (AUTO-INTERNO 10081)
 # ══════════════════════════════════════════
 
 instalar_ws() {
     banner; sep
-    echo -e "  ${Y}Configurar WebSocket Python${NC}"; sep; echo ""
-    echo -e "  ${DIM}(Usa 10081 para compartir con Multipuerto 80/8080)${NC}"
-    read -p "  Puerto WebSocket (default 10081): " WS_PORT; WS_PORT=${WS_PORT:-10081}
-    read -p "  Puerto local SSH (default 22): " SSH_PORT; SSH_PORT=${SSH_PORT:-22}
-    echo ""; sep
+    echo -e "  ${Y}Configurar WebSocket Python (Auto-Multipuerto)${NC}"; sep; echo ""
+    WS_PORT=10081
+    SSH_PORT=22
+    echo -e "  ${C}Puerto interno asignado:${NC} ${W}${WS_PORT}${NC} -> ${W}SSH ${SSH_PORT}${NC}"
+    echo -e "  ${DIM}(Enlazado automáticamente con Multipuerto 80 / 8080)${NC}\n"
+    sep
     echo -e "  ${W}RESPONSE (101 para WebSocket, 200 default):${NC}"
     read -p "  RESPONSE: " STATUS_RESP; STATUS_RESP=${STATUS_RESP:-200}
     echo ""; read -p "  Mini-Banner: " BANNER_MSG
@@ -1455,7 +1457,7 @@ instalar_ws() {
     cat > $DIR_SCRIPTS/proxy_ws_${WS_PORT}.py << PYEOF
 #!/usr/bin/env python3
 import socket, threading, select, sys, time
-LISTENING_ADDR = '0.0.0.0'
+LISTENING_ADDR = '127.0.0.1'
 LISTENING_PORT = ${WS_PORT}
 BUFLEN = 4096 * 4
 TIMEOUT = 60
@@ -1566,8 +1568,6 @@ class ConnectionHandler(threading.Thread):
             if error: break
 
 if __name__ == '__main__':
-    print(f"\033[0;34m{'*'*8} \033[1;32mPROXY PYTHON3 WEBSOCKET \033[0;34m{'*'*8}\n")
-    print(f"\033[1;33mPUERTO:\033[1;32m {LISTENING_PORT}\n")
     server = Server(LISTENING_ADDR, LISTENING_PORT); server.start()
     while True:
         try: time.sleep(2)
@@ -1577,20 +1577,26 @@ PYEOF
     chmod +x $DIR_SCRIPTS/proxy_ws_${WS_PORT}.py
     cat > $DIR_SERVICES/ws-proxy-${WS_PORT}.service << EOF
 [Unit]
-Description=WebSocket Proxy Python Puerto ${WS_PORT}
+Description=WebSocket Proxy Python Puerto Interno ${WS_PORT}
 After=network.target
 [Service]
 Type=simple
 User=root
-ExecStart=/usr/bin/python3 ${DIR_SCRIPTS}/proxy_ws_${WS_PORT}.py ${WS_PORT}
+ExecStart=/usr/bin/python3 ${DIR_SCRIPTS}/proxy_ws_${WS_PORT}.py
 Restart=always
-RestartSec=5
+RestartSec=3
 [Install]
 WantedBy=multi-user.target
 EOF
-    systemctl daemon-reload; systemctl enable ws-proxy-${WS_PORT}; systemctl start ws-proxy-${WS_PORT}
-    sleep 2
-    systemctl is-active --quiet ws-proxy-${WS_PORT} && echo -e "\n  ${G}OK WebSocket activo en puerto ${WS_PORT}${NC}" || echo -e "\n  ${R}Error${NC}"
+    systemctl daemon-reload
+    systemctl enable ws-proxy-${WS_PORT} >/dev/null 2>&1
+    systemctl restart ws-proxy-${WS_PORT}
+    sleep 1
+    if systemctl is-active --quiet ws-proxy-${WS_PORT}; then
+        echo -e "\n  ${G}[OK] WebSocket activo en puerto interno ${WS_PORT} (Disponible en 80 y 8080)${NC}"
+    else
+        echo -e "\n  ${R}[X] Error al iniciar WebSocket${NC}"
+    fi
     read -p "  ENTER..."
 }
 
@@ -1599,10 +1605,10 @@ menu_ws() {
         banner; sep; echo -e "  ${Y}   WEBSOCKET PYTHON${NC}"; sep; echo ""
         for f in $(ls $DIR_SERVICES/ws-proxy-*.service 2>/dev/null); do
             name=$(basename $f .service); port=$(echo $name | grep -o '[0-9]*$')
-            echo -e "  Puerto ${Y}${port}${NC} $(status_service $name)"
+            echo -e "  Puerto Interno ${Y}${port}${NC} $(status_service $name)"
         done
         echo ""; sep
-        echo -e "  ${W}[1]${NC} Instalar/Configurar"
+        echo -e "  ${W}[1]${NC} Instalar/Configurar (Auto-Multipuerto)"
         echo -e "  ${W}[2]${NC} Iniciar"
         echo -e "  ${W}[3]${NC} Detener"
         echo -e "  ${W}[4]${NC} Reiniciar"
@@ -1611,19 +1617,15 @@ menu_ws() {
         read -p "  Opcion: " OPT
         case $OPT in
             1) instalar_ws ;;
-            2) read -p "  Puerto: " P; systemctl start ws-proxy-${P} && echo -e "  ${G}Iniciado${NC}"; sleep 1 ;;
-            3) read -p "  Puerto: " P; systemctl stop ws-proxy-${P} && echo -e "  ${Y}Detenido${NC}"; sleep 1 ;;
-            4) read -p "  Puerto: " P; systemctl restart ws-proxy-${P} && echo -e "  ${G}Reiniciado${NC}"; sleep 1 ;;
+            2) systemctl start ws-proxy-10081 2>/dev/null && echo -e "  ${G}Iniciado${NC}"; sleep 1 ;;
+            3) systemctl stop ws-proxy-10081 2>/dev/null && echo -e "  ${Y}Detenido${NC}"; sleep 1 ;;
+            4) systemctl restart ws-proxy-10081 2>/dev/null && echo -e "  ${G}Reiniciado${NC}"; sleep 1 ;;
             5)
-                read -p "  Puerto (0=todos): " DEL_PORT
-                if [ "$DEL_PORT" = "0" ]; then
-                    for f in $DIR_SERVICES/ws-proxy-*.service; do
-                        name=$(basename $f .service); systemctl stop $name; systemctl disable $name; rm -f $f
-                    done; rm -f $DIR_SCRIPTS/proxy_ws_*.py
-                else
-                    systemctl stop ws-proxy-${DEL_PORT}; systemctl disable ws-proxy-${DEL_PORT}
-                    rm -f $DIR_SERVICES/ws-proxy-${DEL_PORT}.service $DIR_SCRIPTS/proxy_ws_${DEL_PORT}.py
-                fi
+                for f in $DIR_SERVICES/ws-proxy-*.service; do
+                    [ -f "$f" ] || continue
+                    name=$(basename $f .service); systemctl stop $name 2>/dev/null; systemctl disable $name 2>/dev/null; rm -f $f
+                done
+                rm -f $DIR_SCRIPTS/proxy_ws_*.py
                 systemctl daemon-reload; echo -e "  ${G}Eliminado${NC}"; sleep 1 ;;
             0) break ;;
         esac
@@ -1746,16 +1748,16 @@ menu_udp() {
 }
 
 # ══════════════════════════════════════════
-#   SSL/TLS STUNNEL
+#   SSL/TLS STUNNEL (AUTO-ENLACE A MULTIPUERTO 80)
 # ══════════════════════════════════════════
 
 menu_ssl() {
     while true; do
-        banner; sep; echo -e "  ${Y}   SSL/TLS STUNNEL${NC}"; sep; echo ""
+        banner; sep; echo -e "  ${Y}   SSL/TLS STUNNEL (MULTI-PROTOCOLO)${NC}"; sep; echo ""
         echo -e "  Stunnel $(status_service stunnel4)"
         echo -e "  Puerto 443 $(status_port 443)"
         echo ""; sep
-        echo -e "  ${W}[1]${NC} Instalar SSL/TLS Stunnel"
+        echo -e "  ${W}[1]${NC} Instalar SSL/TLS Stunnel (Auto-Multipuerto)"
         echo -e "  ${W}[2]${NC} Iniciar"
         echo -e "  ${W}[3]${NC} Detener"
         echo -e "  ${W}[4]${NC} Reiniciar SSL"
@@ -1764,35 +1766,24 @@ menu_ssl() {
         case $OPT in
             1)
                 DEBIAN_FRONTEND=noninteractive apt-get install -y -qq stunnel4 > /dev/null 2>&1
-                read -p "  Puerto SSL (ej: 443): " SSL_PORT; SSL_PORT=${SSL_PORT:-443}
-                
-                echo -e ""
-                echo -e "  ${Y}¿Hacia dónde redirigir el tráfico SSL descifrado?${NC}"
-                echo -e "  ${W}[1]${NC} Directo a SSH (Puerto 22) - Solo SSL sin payload"
-                echo -e "  ${W}[2]${NC} A Multipuerto (Puerto 80) - Soporta BHTTP + WS + V2Ray + SSL"
-                read -p "  Elige una opción [1-2]: " SSL_REDIR_OPT
-                
-                if [ "$SSL_REDIR_OPT" = "2" ]; then
-                    read -p "  Puerto destino Multipuerto/WS (default 80): " LOCAL_PORT
-                    LOCAL_PORT=${LOCAL_PORT:-80}
-                else
-                    read -p "  Puerto local SSH (default 22): " LOCAL_PORT
-                    LOCAL_PORT=${LOCAL_PORT:-22}
-                fi
+                read -p "  Puerto SSL público (default 443): " SSL_PORT; SSL_PORT=${SSL_PORT:-443}
+                LOCAL_PORT=80
 
-                openssl req -new -x509 -days 3650 -nodes -out /etc/stunnel/stunnel.pem -keyout /etc/stunnel/stunnel.pem -subj "/C=US/ST=Miami/L=Miami/O=SSHFREE/CN=sshfree" 2>/dev/null
+                openssl req -new -x509 -days 3650 -nodes -out /etc/stunnel/stunnel.pem -keyout /etc/stunnel/stunnel.pem -subj "/C=US/ST=Miami/L=Miami/O=DEALER/CN=dealervpn" 2>/dev/null
                 
                 cat > /etc/stunnel/stunnel.conf << EOF
 pid = /var/run/stunnel4/stunnel.pid
 cert = /etc/stunnel/stunnel.pem
 socket = a:SO_REUSEADDR=1
-[ssh]
+[dealer_multi_ssl]
 accept = ${SSL_PORT}
 connect = 127.0.0.1:${LOCAL_PORT}
 EOF
+                bhttp_abrir_firewall "$SSL_PORT"
                 sed -i 's/ENABLED=0/ENABLED=1/' /etc/default/stunnel4 2>/dev/null
-                systemctl enable stunnel4; systemctl start stunnel4
-                echo -e "  ${G}OK SSL/TLS en puerto ${SSL_PORT} apuntando a ${LOCAL_PORT}${NC}"; sleep 2 ;;
+                systemctl enable stunnel4 >/dev/null 2>&1
+                systemctl restart stunnel4
+                echo -e "\n  ${G}[OK] SSL/TLS en puerto ${SSL_PORT} enlazado al Multipuerto (SSL + BHTTP + WS + V2Ray + SSH)${NC}"; sleep 2 ;;
             2) systemctl start stunnel4 && echo -e "  ${G}Iniciado${NC}"; sleep 1 ;;
             3) systemctl stop stunnel4 && echo -e "  ${Y}Detenido${NC}"; sleep 1 ;;
             4) systemctl restart stunnel4 && echo -e "  ${G}Reiniciado${NC}"; sleep 1 ;;
@@ -1802,7 +1793,7 @@ EOF
 }
 
 # ══════════════════════════════════════════
-#   V2RAY
+#   V2RAY (AUTO-INTERNO 10080 + /v2ray)
 # ══════════════════════════════════════════
 
 menu_v2ray() {
@@ -1837,7 +1828,7 @@ except: pass
         read -p " Opcion: " OPT
         case $OPT in
             1)
-                read -p "  Dominio (para SSL): " DOMAIN
+                read -p "  Dominio (para SSL / Host): " DOMAIN
                 EMAIL="admin@${DOMAIN#*.}"
                 echo -e "  ${C}Instalando V2Ray...${NC}"
                 bash <(curl -s https://raw.githubusercontent.com/v2fly/fhs-install-v2ray/master/install-release.sh) > /dev/null 2>&1
@@ -1850,17 +1841,35 @@ except: pass
                 chmod 755 /etc/letsencrypt/live/ /etc/letsencrypt/archive/ 2>/dev/null
                 chmod 644 /etc/letsencrypt/live/$DOMAIN/*.pem 2>/dev/null
                 chmod 644 /etc/letsencrypt/archive/$DOMAIN/*.pem 2>/dev/null
+
+                # Preconfigurar inbound interno 10080 (VMess + WS + /v2ray) para Multipuerto 80/8080
                 cat > /usr/local/etc/v2ray/config.json << EOF
-{"log":{"loglevel":"warning"},"inbounds":[],"outbounds":[{"protocol":"freedom"}]}
+{
+  "log": { "loglevel": "warning" },
+  "inbounds": [
+    {
+      "listen": "127.0.0.1",
+      "port": 10080,
+      "protocol": "vmess",
+      "settings": { "clients": [] },
+      "streamSettings": {
+        "network": "ws",
+        "security": "none",
+        "wsSettings": { "path": "/v2ray" }
+      }
+    }
+  ],
+  "outbounds": [ { "protocol": "freedom" } ]
+}
 EOF
                 mkdir -p /etc/dealer-adm
                 echo "$DOMAIN" > /etc/dealer-adm/v2ray_domain
-                systemctl enable v2ray; systemctl start v2ray
-                echo -e "  ${G}OK V2Ray instalado — Usa ❬2❭ para agregar puertos (usa 10080 para compartir puerto 80/8080)${NC}"; sleep 2 ;;
+                systemctl enable v2ray >/dev/null 2>&1
+                systemctl restart v2ray
+                echo -e "  ${G}[OK] V2Ray instalado con puerto interno 10080 (/v2ray) listo en 80 y 8080${NC}"; sleep 2 ;;
             2)
                 banner; sep
-                echo -e "  ${Y}  AGREGAR INBOUND${NC}"; sep; echo ""
-                echo -e "  ${DIM}(Usa 10080 con path /v2ray para compartir puerto 80/8080)${NC}"
+                echo -e "  ${Y}  AGREGAR INBOUND ADICIONAL${NC}"; sep; echo ""
                 read -p "  Puerto (default 10080): " V2_PORT; V2_PORT=${V2_PORT:-10080}
                 echo -e "  Protocolo: ${Y}❬1❭${NC} vmess ${Y}❬2❭${NC} vless ${Y}❬3❭${NC} trojan"
                 read -p "  Opcion: " V2_PROTO_OPT
@@ -1925,7 +1934,7 @@ for i,ib in enumerate(c.get('inbounds',[])):
     tls=ib.get('streamSettings',{}).get('security','none')
     print(f'  [{i+1}] Puerto {ib[\"port\"]} | {ib[\"protocol\"]} | {net} | tls:{tls}')
 " 2>/dev/null
-                echo ""; read -p "  Numero de inbound: " IB_NUM
+                echo ""; read -p "  Numero de inbound [1]: " IB_NUM; IB_NUM=${IB_NUM:-1}
                 IB_IDX=$((IB_NUM - 1))
                 read -p "  Nombre del perfil: " VNAME
                 read -p "  Dias de validez (default 30): " V2_DAYS; V2_DAYS=${V2_DAYS:-30}
@@ -2014,21 +2023,21 @@ menu_ziv() {
         case $OPT in
             1) 
                 bash <(curl -fsSL https://raw.githubusercontent.com/powermx/zivpn/main/ziv2.sh)
-                sincronizar_usuarios_zivpn
+                sincronizar_usuarios_zivpn >/dev/null 2>&1
                 ;;
             2) 
                 bash <(curl -fsSL https://raw.githubusercontent.com/powermx/zivpn/main/ziv1.sh)
-                sincronizar_usuarios_zivpn
+                sincronizar_usuarios_zivpn >/dev/null 2>&1
                 ;;
             3) 
-                sincronizar_usuarios_zivpn
+                sincronizar_usuarios_zivpn >/dev/null 2>&1
                 systemctl start zivpn && echo -e "  ${G}Iniciado${NC}"; sleep 1 
                 ;;
             4) 
                 systemctl stop zivpn && echo -e "  ${Y}Detenido${NC}"; sleep 1 
                 ;;
             5) 
-                sincronizar_usuarios_zivpn
+                sincronizar_usuarios_zivpn >/dev/null 2>&1
                 systemctl restart zivpn && echo -e "  ${G}Reiniciado${NC}"; sleep 1 
                 ;;
             6) 
@@ -2298,8 +2307,7 @@ EOF
         if ! grep -q "^$USR_NAME|" /etc/zivpn/passwords.db; then
             echo "$USR_NAME|$USR_PASS|$EXP_DATE|active" >> /etc/zivpn/passwords.db
             if [ -f /etc/dealer-adm/scripts/zivpn_manager.sh ]; then
-                bash /etc/dealer-adm/scripts/zivpn_manager.sh rebuild_zivpn_json
-                echo -e "  ${G}[OK] Sincronizado automáticamente con ZIVPN${NC}"
+                bash /etc/dealer-adm/scripts/zivpn_manager.sh rebuild_zivpn_json >/dev/null 2>&1
             fi
         fi
     fi
@@ -2662,7 +2670,7 @@ renovar_usuario_api() {
         if grep -q "^$USER|" /etc/zivpn/passwords.db; then
             awk -F"|" -v user="$USER" -v new_exp="$EXP_DATE" 'BEGIN{OFS="|"} $1==user {$3=new_exp} {print}' /etc/zivpn/passwords.db > tmp_zi.db && mv tmp_zi.db /etc/zivpn/passwords.db
             if [ -f /etc/dealer-adm/scripts/zivpn_manager.sh ]; then
-                bash /etc/dealer-adm/scripts/zivpn_manager.sh rebuild
+                bash /etc/dealer-adm/scripts/zivpn_manager.sh rebuild >/dev/null 2>&1
             fi
         fi
     fi
@@ -3013,7 +3021,7 @@ eliminar_usuario() {
         if [ -f /etc/zivpn/passwords.db ]; then
             sed -i "/^$USER|/d" /etc/zivpn/passwords.db
             if [ -f /etc/dealer-adm/scripts/zivpn_manager.sh ]; then
-                bash /etc/dealer-adm/scripts/zivpn_manager.sh rebuild
+                bash /etc/dealer-adm/scripts/zivpn_manager.sh rebuild >/dev/null 2>&1
             fi
         fi
 
