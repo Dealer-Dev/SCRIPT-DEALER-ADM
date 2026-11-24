@@ -5,7 +5,7 @@
 #   Ubuntu 20/22/24/25 & Debian 10/11/12+
 # ═══════════════════════════════════════════════════════
 
-SCRIPT_VERSION="1.4"
+SCRIPT_VERSION="1.5"
 R='\033[0;31m'
 G='\033[0;32m'
 Y='\033[1;33m'
@@ -125,7 +125,6 @@ EOF
 chmod +x /etc/dealer-adm/scripts/sync_hysteria.sh
 chmod 777 /etc/dealer-adm/scripts/sync_hysteria.sh
 
-# Otorgar permisos de sudo a Apache (www-data) sin contraseña
 chmod 777 /etc/hysteria/config.json 2>/dev/null
 if ! grep -q "sync_hysteria.sh" /etc/sudoers; then
     echo "www-data ALL=(ALL) NOPASSWD: /etc/dealer-adm/scripts/sync_hysteria.sh" >> /etc/sudoers
@@ -184,11 +183,10 @@ configurar_red_udp_global() {
     fi
 }
 
-# Aplicar mapa de red UDP automático
 configurar_red_udp_global
 
 # ======================================================================
-#   AUTO-INSTALACIÓN MOTOR MULTIPUERTO (UBUNTU 20/22/24+ & DEBIAN 10/11/12+)
+#   MOTOR MULTIPUERTO INVISIBLE (PERMITE COMPARTIR CUALQUIER PUERTO)
 # ======================================================================
 instalar_multipuerto_auto() {
     export DEBIAN_FRONTEND=noninteractive
@@ -199,6 +197,7 @@ instalar_multipuerto_auto() {
     fi
 
     mkdir -p /etc/dealer-adm /etc/systemd/system
+    touch /etc/dealer-adm/multiport_ports.db
 
     cat > /usr/local/bin/dealer-router << 'PYEOF'
 #!/usr/bin/env python3
@@ -342,22 +341,34 @@ PYEOF
 }
 EOF
     fi
+}
 
-    if [ ! -f /etc/dealer-adm/.multiport_initialized ]; then
-        touch /etc/dealer-adm/multiport_ports.db
-        for DEF_PORT in 80 8080; do
-            systemctl stop "bhttp-${DEF_PORT}" "ws-proxy-${DEF_PORT}" 2>/dev/null || true
-            systemctl disable "bhttp-${DEF_PORT}" "ws-proxy-${DEF_PORT}" 2>/dev/null || true
+# Registra y activa un puerto público compartido para cualquier protocolo
+activar_puerto_compartido() {
+    local PROTO="$1"
+    local PPORT=$(echo "$2" | tr -dc '0-9')
+    [ -z "$PPORT" ] && return 1
 
-            cat > "/etc/systemd/system/dealer-multi-${DEF_PORT}.service" << EOF
+    # Guardar puerto visible para este protocolo
+    local DB_PROTO="/etc/dealer-adm/public_ports_${PROTO}.db"
+    touch "$DB_PROTO"
+    grep -q "^${PPORT}$" "$DB_PROTO" || echo "${PPORT}" >> "$DB_PROTO"
+
+    # Detener cualquier servicio antiguo individual en ese puerto
+    systemctl stop "bhttp-${PPORT}" "ws-proxy-${PPORT}" 2>/dev/null || true
+    systemctl disable "bhttp-${PPORT}" "ws-proxy-${PPORT}" 2>/dev/null || true
+
+    # Levantar el enrutador multipuerto en 0.0.0.0:PPORT si no esta activo
+    if ! systemctl is-active --quiet "dealer-multi-${PPORT}" 2>/dev/null; then
+        cat > "/etc/systemd/system/dealer-multi-${PPORT}.service" << EOF
 [Unit]
-Description=Dealer Multi-Protocol Router Port ${DEF_PORT}
+Description=Dealer Multi-Protocol Router Port ${PPORT}
 After=network.target
 
 [Service]
 Type=simple
 User=root
-ExecStart=/usr/bin/python3 -O /usr/local/bin/dealer-router --port ${DEF_PORT}
+ExecStart=/usr/bin/python3 -O /usr/local/bin/dealer-router --port ${PPORT}
 Restart=always
 RestartSec=2
 LimitNOFILE=1048576
@@ -365,19 +376,39 @@ LimitNOFILE=1048576
 [Install]
 WantedBy=multi-user.target
 EOF
-            iptables -C INPUT -p tcp --dport "${DEF_PORT}" -j ACCEPT 2>/dev/null || \
-            iptables -I INPUT 1 -p tcp --dport "${DEF_PORT}" -j ACCEPT 2>/dev/null
-            if command -v ufw >/dev/null 2>&1 && ufw status | grep -q "Status: active"; then
-                ufw allow "${DEF_PORT}/tcp" >/dev/null 2>&1 || true
-            fi
+        iptables -C INPUT -p tcp --dport "${PPORT}" -j ACCEPT 2>/dev/null || \
+        iptables -I INPUT 1 -p tcp --dport "${PPORT}" -j ACCEPT 2>/dev/null
+        if command -v ufw >/dev/null 2>&1 && ufw status | grep -q "Status: active"; then
+            ufw allow "${PPORT}/tcp" >/dev/null 2>&1 || true
+        fi
 
-            systemctl daemon-reload
-            systemctl enable "dealer-multi-${DEF_PORT}" >/dev/null 2>&1
-            systemctl restart "dealer-multi-${DEF_PORT}" >/dev/null 2>&1
+        systemctl daemon-reload
+        systemctl enable "dealer-multi-${PPORT}" >/dev/null 2>&1
+        systemctl restart "dealer-multi-${PPORT}" >/dev/null 2>&1
+    fi
 
-            grep -q "^${DEF_PORT}$" /etc/dealer-adm/multiport_ports.db || echo "${DEF_PORT}" >> /etc/dealer-adm/multiport_ports.db
-        done
-        touch /etc/dealer-adm/.multiport_initialized
+    grep -q "^${PPORT}$" /etc/dealer-adm/multiport_ports.db || echo "${PPORT}" >> /etc/dealer-adm/multiport_ports.db
+}
+
+# Limpia un puerto de un protocolo y apaga el router si ningun otro protocolo lo usa
+eliminar_puerto_compartido() {
+    local PROTO="$1"
+    local PPORT=$(echo "$2" | tr -dc '0-9')
+    local DB_PROTO="/etc/dealer-adm/public_ports_${PROTO}.db"
+
+    if [ -f "$DB_PROTO" ]; then
+        grep -v "^${PPORT}$" "$DB_PROTO" > "${DB_PROTO}.tmp" 2>/dev/null || true
+        mv "${DB_PROTO}.tmp" "$DB_PROTO"
+    fi
+
+    # Verificar si algun otro protocolo sigue usando ese puerto
+    if ! grep -qx "$PPORT" /etc/dealer-adm/public_ports_*.db 2>/dev/null; then
+        systemctl stop "dealer-multi-${PPORT}" 2>/dev/null || true
+        systemctl disable "dealer-multi-${PPORT}" 2>/dev/null || true
+        rm -f "/etc/systemd/system/dealer-multi-${PPORT}.service"
+        grep -v "^${PPORT}$" /etc/dealer-adm/multiport_ports.db > /tmp/mp.tmp 2>/dev/null || true
+        mv /tmp/mp.tmp /etc/dealer-adm/multiport_ports.db 2>/dev/null || true
+        systemctl daemon-reload
     fi
 }
 
@@ -547,13 +578,13 @@ EOF
 }
 
 # ══════════════════════════════════════════════════════════════════════
-#   MÓDULO BHTTPTUNNEL (DEALER VPN - EDICIÓN COMPLETA BHTTP.PY MULTI-PUERTO)
+#   MÓDULO BHTTPTUNNEL (DEALER VPN - PUERTO INTERNO INVISIBLE 10090)
 # ══════════════════════════════════════════════════════════════════════
 
 DIR_BHTTP="/usr/local/bin"
 BHTTP_BIN="$DIR_BHTTP/bhttp-server"
 DIR_SERVICES="/etc/systemd/system"
-CONFIG_BHTTP_DB="/etc/dealer-adm/bhttp/ports.db"
+CONFIG_BHTTP_DB="/etc/dealer-adm/public_ports_bhttp.db"
 
 W="\033[1;97m"
 G="\033[0;32m"
@@ -632,13 +663,16 @@ EOF
 
 bhttp_instalar_binario() {
     clear
-    echo -e "${Y}Instalando motor BHTTP Oficial DEALER VPN...${NC}"
+    echo -e "${Y}INSTALAR MOTOR BHTTP (DEALER VPN)${NC}\n"
+    read -p "Digita el puerto público para BHTTP (ej. 80, 90, 8080): " PUB_PORT
+    PUB_PORT=$(echo "$PUB_PORT" | tr -dc '0-9')
+    [ -z "$PUB_PORT" ] && return
+
+    echo -e "\n${C}Optimizando kernel e instalando motor BHTTP...${NC}"
     bhttp_optimizar_kernel
 
     mkdir -p "$DIR_BHTTP"
-    mkdir -p "$(dirname "$CONFIG_BHTTP_DB")"
     touch "$CONFIG_BHTTP_DB"
-    sed -i 's/\r$//' "$CONFIG_BHTTP_DB" 2>/dev/null
 
     cat > "$BHTTP_BIN" << 'PYEOF'
 #!/usr/bin/env python3
@@ -732,14 +766,6 @@ class IPPool:
     def release(self, sid_hex: str):
         with self.lock:
             self.assigned.pop(sid_hex, None)
-
-    @property
-    def subnet_mask(self) -> str:
-        return str(self.network.netmask)
-
-    @property
-    def gateway(self) -> str:
-        return str(next(self.network.hosts()))
 
 @dataclass
 class Session:
@@ -1096,7 +1122,6 @@ def start_listener(host: str, port: int, sessions: dict, ip_pool: IPPool):
     srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     srv.bind((host, port))
     srv.listen(1024)
-    log.info(f"BHTTP Server listening on {host}:{port} -> Backend SSH {CONFIG['proxy']['target']['port']}")
     while True:
         try:
             conn, addr = srv.accept()
@@ -1124,7 +1149,7 @@ def cleanup_sessions(sessions: dict, ip_pool: IPPool, timeout: int = 120):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--host", default="0.0.0.0")
+    ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--port", type=int, required=True)
     ap.add_argument("--backend-host", default="127.0.0.1")
     ap.add_argument("--backend-port", type=int, default=22)
@@ -1151,11 +1176,10 @@ PYEOF
     sed -i 's/\r$//' "$BHTTP_BIN"
     chmod +x "$BHTTP_BIN"
 
-    # Crear puerto interno 10090 para el modo Multipuerto Compartido si no existe
-    if ! grep -q "^10090|" "$CONFIG_BHTTP_DB" 2>/dev/null; then
-        cat > "$DIR_SERVICES/bhttp-10090.service" << EOF
+    # Servicio interno oculto en 127.0.0.1:10090
+    cat > "$DIR_SERVICES/bhttp-internal.service" << EOF
 [Unit]
-Description=BHTTP Internal Backend Port 10090 -> 22
+Description=BHTTP Internal Engine
 After=network.target
 
 [Service]
@@ -1169,99 +1193,49 @@ LimitNOFILE=1048576
 [Install]
 WantedBy=multi-user.target
 EOF
-        systemctl daemon-reload
-        systemctl enable bhttp-10090 >/dev/null 2>&1
-        systemctl start bhttp-10090 >/dev/null 2>&1
-        echo "10090|22" >> "$CONFIG_BHTTP_DB"
-    fi
+    systemctl daemon-reload
+    systemctl enable bhttp-internal >/dev/null 2>&1
+    systemctl restart bhttp-internal >/dev/null 2>&1
 
-    # Reiniciar y asegurar firewall en servicios activos si existen
-    if [ -s "$CONFIG_BHTTP_DB" ]; then
-        while IFS='|' read -r L_PORT T_PORT; do
-            L_PORT=$(echo "$L_PORT" | tr -dc '0-9')
-            if [ -n "$L_PORT" ]; then
-                [ "$L_PORT" != "10090" ] && bhttp_abrir_firewall "$L_PORT"
-                sed -i 's/\r$//' "$DIR_SERVICES/bhttp-$L_PORT.service" 2>/dev/null
-                systemctl daemon-reload
-                systemctl restart "bhttp-$L_PORT" 2>/dev/null
-            fi
-        done < "$CONFIG_BHTTP_DB"
-    fi
+    # Activar el puerto publico elegido en modo compatible multipuerto
+    activar_puerto_compartido "bhttp" "$PUB_PORT"
 
-    echo -e "\n${G}Motor BHTTP Oficial instalado y sincronizado con éxito (Puerto interno 10090 activo).${NC}"
+    echo -e "\n${G}[OK] BHTTP instalado y activo en puerto público ${PUB_PORT}.${NC}"
     sleep 2
 }
 
 bhttp_agregar_puerto() {
     clear
     echo -e "${Y}AGREGAR PUERTO BHTTP (DEALER VPN)${NC}\n"
-    read -p "Ingresa el puerto local BHTTP (ej. 90, 8880, 10090): " L_PORT
+    read -p "Digita el puerto público para BHTTP (ej. 90, 8080, 8880): " L_PORT
     L_PORT=$(echo "$L_PORT" | tr -dc '0-9')
     [ -z "$L_PORT" ] && return
 
-    if ss -tuln 2>/dev/null | grep -qE ":$L_PORT\b"; then
-        echo -e "\n${R}[!] El puerto $L_PORT ya está en uso por otro proceso (o por Multipuerto).${NC}"
+    if ! systemctl is-active --quiet bhttp-internal 2>/dev/null; then
+        echo -e "\n${R}[!] Primero instala el motor BHTTP con la opción [1].${NC}"
         sleep 2
         return
     fi
 
-    read -p "Ingresa el puerto SSH backend [22]: " T_PORT
-    T_PORT=$(echo "$T_PORT" | tr -dc '0-9')
-    T_PORT=${T_PORT:-22}
-
-    cat > "$DIR_SERVICES/bhttp-$L_PORT.service" << EOF
-[Unit]
-Description=BHTTP Ultra-Speed Tunnel Port $L_PORT -> $T_PORT
-After=network.target
-
-[Service]
-Type=simple
-User=root
-ExecStart=/usr/bin/python3 -O $BHTTP_BIN --host 0.0.0.0 --port $L_PORT --backend-host 127.0.0.1 --backend-port $T_PORT
-Restart=always
-RestartSec=2
-LimitNOFILE=1048576
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-    sed -i 's/\r$//' "$DIR_SERVICES/bhttp-$L_PORT.service"
-    bhttp_abrir_firewall "$L_PORT"
-
-    systemctl daemon-reload
-    systemctl enable "bhttp-$L_PORT" >/dev/null 2>&1
-    systemctl restart "bhttp-$L_PORT"
-    sleep 1
-
-    if systemctl is-active --quiet "bhttp-$L_PORT"; then
-        grep -v "^$L_PORT|" "$CONFIG_BHTTP_DB" 2>/dev/null > "$CONFIG_BHTTP_DB.tmp" || true
-        mv "$CONFIG_BHTTP_DB.tmp" "$CONFIG_BHTTP_DB" 2>/dev/null || true
-        echo "$L_PORT|$T_PORT" >> "$CONFIG_BHTTP_DB"
-        echo -e "\n${G}[OK] Puerto BHTTP $L_PORT activo apuntando a SSH $T_PORT con éxito.${NC}"
-    else
-        echo -e "\n${R}[!] Error al iniciar el servicio bhttp-$L_PORT.${NC}"
-        journalctl -u "bhttp-$L_PORT" -n 10 --no-pager
-    fi
+    activar_puerto_compartido "bhttp" "$L_PORT"
+    echo -e "\n${G}[OK] Puerto BHTTP ${L_PORT} activo y compatible con los demás protocolos.${NC}"
     sleep 2
 }
 
 bhttp_listar_puertos() {
     clear
-    echo -e "${Y}Puertos BHTTP Configurados:${NC}\n"
+    echo -e "${Y}Puertos Públicos BHTTP Activos:${NC}\n"
     if [ ! -s "$CONFIG_BHTTP_DB" ]; then
         echo -e "  ${R}No hay puertos configurados.${NC}"
     else
-        while IFS='|' read -r L_PORT T_PORT; do
-            L_PORT=$(echo "$L_PORT" | tr -dc '0-9')
-            T_PORT=$(echo "$T_PORT" | tr -dc '0-9')
+        while read -r L_PORT; do
             [ -z "$L_PORT" ] && continue
-            if systemctl is-active --quiet "bhttp-$L_PORT" 2>/dev/null; then
+            if systemctl is-active --quiet "dealer-multi-$L_PORT" 2>/dev/null; then
                 STATUS="${G}[ACTIVO]${NC}"
             else
                 STATUS="${R}[INACTIVO]${NC}"
             fi
-            echo -e "  Puerto BHTTP: ${W}$L_PORT${NC} -> Backend SSH: ${C}$T_PORT${NC} $STATUS"
+            echo -e "  Puerto BHTTP: ${W}$L_PORT${NC} $STATUS"
         done < "$CONFIG_BHTTP_DB"
     fi
     echo ""
@@ -1270,79 +1244,65 @@ bhttp_listar_puertos() {
 
 bhttp_reiniciar_puerto() {
     clear
-    read -p "Ingresa el puerto a reiniciar: " P
+    read -p "Digita el puerto a reiniciar: " P
     P=$(echo "$P" | tr -dc '0-9')
     [ -z "$P" ] && return
-    if [ -f "$DIR_SERVICES/bhttp-$P.service" ]; then
-        [ "$P" != "10090" ] && bhttp_abrir_firewall "$P"
-        systemctl restart "bhttp-$P"
+    systemctl restart bhttp-internal 2>/dev/null
+    if [ -f "$DIR_SERVICES/dealer-multi-$P.service" ]; then
+        bhttp_abrir_firewall "$P"
+        systemctl restart "dealer-multi-$P"
         echo -e "${G}Puerto BHTTP $P reiniciado con éxito.${NC}"
     else
-        echo -e "${R}El servicio bhttp-$P no existe.${NC}"
+        echo -e "${R}El puerto $P no está configurado.${NC}"
     fi
     sleep 2
 }
 
 bhttp_eliminar_puerto() {
     clear
-    read -p "Ingresa el puerto a eliminar: " P
+    read -p "Digita el puerto a eliminar: " P
     P=$(echo "$P" | tr -dc '0-9')
     [ -z "$P" ] && return
-    systemctl stop "bhttp-$P" 2>/dev/null
-    systemctl disable "bhttp-$P" 2>/dev/null
-    rm -f "$DIR_SERVICES/bhttp-$P.service"
-    systemctl daemon-reload
-
-    grep -v "^$P|" "$CONFIG_BHTTP_DB" > "$CONFIG_BHTTP_DB.tmp" 2>/dev/null && mv "$CONFIG_BHTTP_DB.tmp" "$CONFIG_BHTTP_DB"
-
-    echo -e "${G}Puerto BHTTP $P detenido y eliminado correctamente.${NC}"
+    eliminar_puerto_compartido "bhttp" "$P"
+    echo -e "${G}Puerto BHTTP $P eliminado correctamente.${NC}"
     sleep 2
 }
 
 bhttp_detener_todos() {
     clear
-    while IFS='|' read -r L_PORT _; do
-        L_PORT=$(echo "$L_PORT" | tr -dc '0-9')
-        [ -n "$L_PORT" ] && systemctl stop "bhttp-$L_PORT" 2>/dev/null
-    done < "$CONFIG_BHTTP_DB"
-    echo -e "${Y}Todos los servicios BHTTP han sido detenidos.${NC}"
+    systemctl stop bhttp-internal 2>/dev/null
+    echo -e "${Y}Motor BHTTP detenido.${NC}"
     sleep 2
 }
 
 bhttp_datos_http_custom() {
     clear
     SRV_IP=$(curl -s -4 ifconfig.me 2>/dev/null || hostname -I | awk '{print $1}')
-    PORTS=$(awk -F'|' '{print $1}' "$CONFIG_BHTTP_DB" 2>/dev/null | paste -sd "," -)
-    SHARED=$(cat /etc/dealer-adm/multiport_ports.db 2>/dev/null | paste -sd "," -)
-    echo -e "${Y}DATOS DE CONEXIÓN (DEALER VPN)${NC}\n"
-    echo -e "  ${W}IP del Servidor:${NC}     ${G}$SRV_IP${NC}"
-    echo -e "  ${W}Puertos Directos:${NC}    ${C}${PORTS:-Ninguno}${NC}"
-    echo -e "  ${W}Puertos Compartidos:${NC} ${G}${SHARED:-Ninguno}${NC}"
-    echo -e "  ${W}Protocolo:${NC}           BHTTP (Upgrade 101/200 & Multiplexed Chunks)"
-    echo -e "  ${W}Autenticación:${NC}       Cualquier usuario SSH de tu sistema"
+    PORTS=$(paste -sd "," "$CONFIG_BHTTP_DB" 2>/dev/null)
+    echo -e "${Y}DATOS DE CONEXIÓN BHTTP (DEALER VPN)${NC}\n"
+    echo -e "  ${W}IP del Servidor:${NC} ${G}$SRV_IP${NC}"
+    echo -e "  ${W}Puertos Activos:${NC} ${C}${PORTS:-Ninguno}${NC}"
+    echo -e "  ${W}Compatibilidad:${NC}  Multiprotocolo simultáneo activo"
+    echo -e "  ${W}Autenticación:${NC}   Cualquier usuario SSH de tu sistema"
     echo ""
     read -p "  Presiona ENTER para continuar..."
 }
 
 bhttp_reiniciar_todos() {
     clear
-    while IFS='|' read -r L_PORT _; do
-        L_PORT=$(echo "$L_PORT" | tr -dc '0-9')
-        if [ -n "$L_PORT" ]; then
-            [ "$L_PORT" != "10090" ] && bhttp_abrir_firewall "$L_PORT"
-            systemctl restart "bhttp-$L_PORT" 2>/dev/null
-        fi
-    done < "$CONFIG_BHTTP_DB"
-    echo -e "${G}Todos los servicios BHTTP han sido reiniciados.${NC}"
+    systemctl restart bhttp-internal 2>/dev/null
+    if [ -s "$CONFIG_BHTTP_DB" ]; then
+        while read -r L_PORT; do
+            [ -n "$L_PORT" ] && systemctl restart "dealer-multi-$L_PORT" 2>/dev/null
+        done < "$CONFIG_BHTTP_DB"
+    fi
+    echo -e "${G}Todos los puertos BHTTP han sido reiniciados.${NC}"
     sleep 2
 }
 
 bhttp_ver_logs() {
     clear
-    read -p "Ingresa el puerto BHTTP para ver logs: " P
-    P=$(echo "$P" | tr -dc '0-9')
-    [ -z "$P" ] && return
-    journalctl -u "bhttp-$P" -n 40 --no-pager
+    journalctl -u bhttp-internal -n 40 --no-pager
     echo ""
     read -p "  Presiona ENTER para volver..."
 }
@@ -1352,17 +1312,15 @@ bhttp_desinstalar_todo() {
     read -p "¿Estás seguro de desinstalar todo BHTTP? (si/no): " CONFIRM
     [ "$CONFIRM" != "si" ] && return
 
-    if [ -f "$CONFIG_BHTTP_DB" ]; then
-        while IFS='|' read -r L_PORT _; do
-            L_PORT=$(echo "$L_PORT" | tr -dc '0-9')
-            if [ -n "$L_PORT" ]; then
-                systemctl stop "bhttp-$L_PORT" 2>/dev/null
-                systemctl disable "bhttp-$L_PORT" 2>/dev/null
-                rm -f "$DIR_SERVICES/bhttp-$L_PORT.service"
-            fi
+    if [ -s "$CONFIG_BHTTP_DB" ]; then
+        while read -r L_PORT; do
+            [ -n "$L_PORT" ] && eliminar_puerto_compartido "bhttp" "$L_PORT"
         done < "$CONFIG_BHTTP_DB"
     fi
 
+    systemctl stop bhttp-internal 2>/dev/null
+    systemctl disable bhttp-internal 2>/dev/null
+    rm -f "$DIR_SERVICES/bhttp-internal.service"
     systemctl daemon-reload
     rm -rf "$DIR_BHTTP/bhttp-server"
     rm -f "$CONFIG_BHTTP_DB"
@@ -1375,17 +1333,12 @@ menu_bhttp() {
         clear
         ACTIVOS=0
         PUERTOS=""
-        if [ -s "$CONFIG_BHTTP_DB" ]; then
-            while IFS='|' read -r L_PORT _; do
-                L_PORT=$(echo "$L_PORT" | tr -dc '0-9')
+        if systemctl is-active --quiet bhttp-internal 2>/dev/null && [ -s "$CONFIG_BHTTP_DB" ]; then
+            while read -r L_PORT; do
                 [ -z "$L_PORT" ] && continue
-                if systemctl is-active --quiet "bhttp-$L_PORT" 2>/dev/null; then
+                if systemctl is-active --quiet "dealer-multi-$L_PORT" 2>/dev/null; then
                     ((ACTIVOS++))
-                    if [ -z "$PUERTOS" ]; then
-                        PUERTOS="$L_PORT"
-                    else
-                        PUERTOS="$PUERTOS,$L_PORT"
-                    fi
+                    [ -z "$PUERTOS" ] && PUERTOS="$L_PORT" || PUERTOS="$PUERTOS,$L_PORT"
                 fi
             done < "$CONFIG_BHTTP_DB"
         fi
@@ -1400,14 +1353,14 @@ menu_bhttp() {
         echo ""
         echo -e "\033[0;33m╞═══════════════════════════════════════════════════════════════════════╡\033[0m"
         echo -e " \033[1;97m[1]\033[0m\033[0;31m\xE2\x9E\xA4\033[0m \033[1;97mInstalar / Re-instalar motor KTUN\033[0m"
-        echo -e " \033[1;97m[2]\033[0m\033[0;31m\xE2\x9E\xA4\033[0m \033[1;97mAgregar nuevo puerto KTUN\033[0m"
+        echo -e " \033[1;97m[2]\033[0m\033[0;31m\xE2\x9E\xA4\033[0m \033[1;97mAgregar nuevo puerto público KTUN\033[0m"
         echo -e " \033[1;97m[3]\033[0m\033[0;31m\xE2\x9E\xA4\033[0m \033[1;97mListar puertos activos\033[0m"
         echo -e " \033[1;97m[4]\033[0m\033[0;31m\xE2\x9E\xA4\033[0m \033[1;97mReiniciar puerto específico\033[0m"
-        echo -e " \033[1;97m[5]\033[0m\033[0;31m\xE2\x9E\xA4\033[0m \033[1;97mDetener y eliminar un puerto\033[0m"
-        echo -e " \033[1;97m[6]\033[0m\033[0;31m\xE2\x9E\xA4\033[0m \033[1;97mDetener TODOS los puertos\033[0m"
+        echo -e " \033[1;97m[5]\033[0m\033[0;31m\xE2\x9E\xA4\033[0m \033[1;97mEliminar un puerto\033[0m"
+        echo -e " \033[1;97m[6]\033[0m\033[0;31m\xE2\x9E\xA4\033[0m \033[1;97mDetener motor KTUN\033[0m"
         echo -e " \033[1;97m[7]\033[0m\033[0;31m\xE2\x9E\xA4\033[0m \033[1;97mConfiguración y datos Dealer VPN\033[0m"
         echo -e " \033[1;97m[8]\033[0m\033[0;31m\xE2\x9E\xA4\033[0m \033[1;97mReiniciar todos los puertos\033[0m"
-        echo -e " \033[1;97m[9]\033[0m\033[0;31m\xE2\x9E\xA4\033[0m \033[1;97mVer logs de un puerto\033[0m"
+        echo -e " \033[1;97m[9]\033[0m\033[0;31m\xE2\x9E\xA4\033[0m \033[1;97mVer logs del motor\033[0m"
         echo -e "\033[0;33m╞═══════════════════════════════════════════════════════════════════════╡\033[0m"
         echo -e " \033[1;97m[10]\033[0m\033[0;31m\xE2\x9E\xA4\033[0m \033[1;97mDesinstalar TODO\033[0m"
         echo -e " \033[1;97m[0]\033[0m\033[0;31m\xE2\x9E\xA4\033[0m \033[1;97mVolver al menú principal\033[0m"
@@ -1432,17 +1385,18 @@ menu_bhttp() {
 }
 
 # ══════════════════════════════════════════
-#   WEBSOCKET PYTHON (AUTO-INTERNO 10081)
+#   WEBSOCKET PYTHON (PUERTO INTERNO OCULTO 10081)
 # ══════════════════════════════════════════
 
 instalar_ws() {
     banner; sep
-    echo -e "  ${Y}Configurar WebSocket Python (Auto-Multipuerto)${NC}"; sep; echo ""
-    WS_PORT=10081
-    SSH_PORT=22
-    echo -e "  ${C}Puerto interno asignado:${NC} ${W}${WS_PORT}${NC} -> ${W}SSH ${SSH_PORT}${NC}"
-    echo -e "  ${DIM}(Enlazado automáticamente con Multipuerto 80 / 8080)${NC}\n"
-    sep
+    echo -e "  ${Y}Configurar WebSocket Python${NC}"; sep; echo ""
+    read -p "  Digita el puerto público para WebSocket (ej: 80, 8080): " PUB_WS_PORT
+    PUB_WS_PORT=$(echo "$PUB_WS_PORT" | tr -dc '0-9')
+    [ -z "$PUB_WS_PORT" ] && return
+
+    read -p "  Puerto local SSH (default 22): " SSH_PORT; SSH_PORT=${SSH_PORT:-22}
+    echo ""; sep
     echo -e "  ${W}RESPONSE (101 para WebSocket, 200 default):${NC}"
     read -p "  RESPONSE: " STATUS_RESP; STATUS_RESP=${STATUS_RESP:-200}
     echo ""; read -p "  Mini-Banner: " BANNER_MSG
@@ -1452,13 +1406,13 @@ instalar_ws() {
     read -p "  Cabecera: " CUSTOM_HEADER
     [ -z "$CUSTOM_HEADER" ] && CUSTOM_HEADER="\r\nContent-length: 0\r\n\r\nHTTP/1.1 200 Connection Established\r\n\r\n"
 
-    echo "$WS_PORT" > /etc/dealer-adm/ws_port
+    WS_INTERNAL=10081
 
-    cat > $DIR_SCRIPTS/proxy_ws_${WS_PORT}.py << PYEOF
+    cat > $DIR_SCRIPTS/proxy_ws_internal.py << PYEOF
 #!/usr/bin/env python3
 import socket, threading, select, sys, time
 LISTENING_ADDR = '127.0.0.1'
-LISTENING_PORT = ${WS_PORT}
+LISTENING_PORT = ${WS_INTERNAL}
 BUFLEN = 4096 * 4
 TIMEOUT = 60
 DEFAULT_HOST = b'127.0.0.1:${SSH_PORT}'
@@ -1574,26 +1528,29 @@ if __name__ == '__main__':
         except KeyboardInterrupt: server.close(); break
 PYEOF
 
-    chmod +x $DIR_SCRIPTS/proxy_ws_${WS_PORT}.py
-    cat > $DIR_SERVICES/ws-proxy-${WS_PORT}.service << EOF
+    chmod +x $DIR_SCRIPTS/proxy_ws_internal.py
+    cat > $DIR_SERVICES/ws-proxy-internal.service << EOF
 [Unit]
-Description=WebSocket Proxy Python Puerto Interno ${WS_PORT}
+Description=WebSocket Proxy Python Internal
 After=network.target
 [Service]
 Type=simple
 User=root
-ExecStart=/usr/bin/python3 ${DIR_SCRIPTS}/proxy_ws_${WS_PORT}.py
+ExecStart=/usr/bin/python3 ${DIR_SCRIPTS}/proxy_ws_internal.py
 Restart=always
 RestartSec=3
 [Install]
 WantedBy=multi-user.target
 EOF
     systemctl daemon-reload
-    systemctl enable ws-proxy-${WS_PORT} >/dev/null 2>&1
-    systemctl restart ws-proxy-${WS_PORT}
+    systemctl enable ws-proxy-internal >/dev/null 2>&1
+    systemctl restart ws-proxy-internal
+
+    activar_puerto_compartido "ws" "$PUB_WS_PORT"
+
     sleep 1
-    if systemctl is-active --quiet ws-proxy-${WS_PORT}; then
-        echo -e "\n  ${G}[OK] WebSocket activo en puerto interno ${WS_PORT} (Disponible en 80 y 8080)${NC}"
+    if systemctl is-active --quiet ws-proxy-internal; then
+        echo -e "\n  ${G}[OK] WebSocket activo en puerto público ${PUB_WS_PORT}${NC}"
     else
         echo -e "\n  ${R}[X] Error al iniciar WebSocket${NC}"
     fi
@@ -1603,29 +1560,40 @@ EOF
 menu_ws() {
     while true; do
         banner; sep; echo -e "  ${Y}   WEBSOCKET PYTHON${NC}"; sep; echo ""
-        for f in $(ls $DIR_SERVICES/ws-proxy-*.service 2>/dev/null); do
-            name=$(basename $f .service); port=$(echo $name | grep -o '[0-9]*$')
-            echo -e "  Puerto Interno ${Y}${port}${NC} $(status_service $name)"
-        done
+        if systemctl is-active --quiet ws-proxy-internal 2>/dev/null && [ -s /etc/dealer-adm/public_ports_ws.db ]; then
+            while read -r P; do
+                [ -z "$P" ] && continue
+                echo -e "  Puerto ${Y}${P}${NC} $(status_service dealer-multi-${P})"
+            done < /etc/dealer-adm/public_ports_ws.db
+        else
+            echo -e "  ${DIM}Sin puertos WebSocket activos${NC}"
+        fi
         echo ""; sep
-        echo -e "  ${W}[1]${NC} Instalar/Configurar (Auto-Multipuerto)"
+        echo -e "  ${W}[1]${NC} Instalar / Agregar puerto WebSocket"
         echo -e "  ${W}[2]${NC} Iniciar"
         echo -e "  ${W}[3]${NC} Detener"
         echo -e "  ${W}[4]${NC} Reiniciar"
-        echo -e "  ${W}[5]${NC} Eliminar"
+        echo -e "  ${W}[5]${NC} Eliminar puerto"
         echo -e "  ${W}[0]${NC} Volver"; sep
         read -p "  Opcion: " OPT
         case $OPT in
             1) instalar_ws ;;
-            2) systemctl start ws-proxy-10081 2>/dev/null && echo -e "  ${G}Iniciado${NC}"; sleep 1 ;;
-            3) systemctl stop ws-proxy-10081 2>/dev/null && echo -e "  ${Y}Detenido${NC}"; sleep 1 ;;
-            4) systemctl restart ws-proxy-10081 2>/dev/null && echo -e "  ${G}Reiniciado${NC}"; sleep 1 ;;
+            2) systemctl start ws-proxy-internal 2>/dev/null && echo -e "  ${G}Iniciado${NC}"; sleep 1 ;;
+            3) systemctl stop ws-proxy-internal 2>/dev/null && echo -e "  ${Y}Detenido${NC}"; sleep 1 ;;
+            4) systemctl restart ws-proxy-internal 2>/dev/null && echo -e "  ${G}Reiniciado${NC}"; sleep 1 ;;
             5)
-                for f in $DIR_SERVICES/ws-proxy-*.service; do
-                    [ -f "$f" ] || continue
-                    name=$(basename $f .service); systemctl stop $name 2>/dev/null; systemctl disable $name 2>/dev/null; rm -f $f
-                done
-                rm -f $DIR_SCRIPTS/proxy_ws_*.py
+                read -p "  Puerto a eliminar (0=todos): " DEL_PORT
+                if [ "$DEL_PORT" = "0" ]; then
+                    if [ -s /etc/dealer-adm/public_ports_ws.db ]; then
+                        while read -r P; do
+                            [ -n "$P" ] && eliminar_puerto_compartido "ws" "$P"
+                        done < /etc/dealer-adm/public_ports_ws.db
+                    fi
+                    systemctl stop ws-proxy-internal 2>/dev/null; systemctl disable ws-proxy-internal 2>/dev/null
+                    rm -f $DIR_SERVICES/ws-proxy-internal.service $DIR_SCRIPTS/proxy_ws_internal.py
+                else
+                    eliminar_puerto_compartido "ws" "$DEL_PORT"
+                fi
                 systemctl daemon-reload; echo -e "  ${G}Eliminado${NC}"; sleep 1 ;;
             0) break ;;
         esac
@@ -1748,16 +1716,17 @@ menu_udp() {
 }
 
 # ══════════════════════════════════════════
-#   SSL/TLS STUNNEL (AUTO-ENLACE A MULTIPUERTO 80)
+#   SSL/TLS STUNNEL (PUERTO PÚBLICO ELEGIBLE)
 # ══════════════════════════════════════════
 
 menu_ssl() {
     while true; do
-        banner; sep; echo -e "  ${Y}   SSL/TLS STUNNEL (MULTI-PROTOCOLO)${NC}"; sep; echo ""
+        banner; sep; echo -e "  ${Y}   SSL/TLS STUNNEL${NC}"; sep; echo ""
         echo -e "  Stunnel $(status_service stunnel4)"
-        echo -e "  Puerto 443 $(status_port 443)"
+        SSL_CURR=$(cat /etc/dealer-adm/ssl_port 2>/dev/null)
+        [ -n "$SSL_CURR" ] && echo -e "  Puerto SSL: ${Y}${SSL_CURR}${NC} $(status_port $SSL_CURR)"
         echo ""; sep
-        echo -e "  ${W}[1]${NC} Instalar SSL/TLS Stunnel (Auto-Multipuerto)"
+        echo -e "  ${W}[1]${NC} Instalar SSL/TLS Stunnel"
         echo -e "  ${W}[2]${NC} Iniciar"
         echo -e "  ${W}[3]${NC} Detener"
         echo -e "  ${W}[4]${NC} Reiniciar SSL"
@@ -1766,8 +1735,18 @@ menu_ssl() {
         case $OPT in
             1)
                 DEBIAN_FRONTEND=noninteractive apt-get install -y -qq stunnel4 > /dev/null 2>&1
-                read -p "  Puerto SSL público (default 443): " SSL_PORT; SSL_PORT=${SSL_PORT:-443}
-                LOCAL_PORT=80
+                read -p "  Digita el puerto público para SSL (default 443): " SSL_PORT; SSL_PORT=${SSL_PORT:-443}
+                SSL_PORT=$(echo "$SSL_PORT" | tr -dc '0-9')
+                [ -z "$SSL_PORT" ] && continue
+
+                echo "$SSL_PORT" > /etc/dealer-adm/ssl_port
+
+                # Asegurar que exista al menos un puerto multipuerto interno o usar 80
+                TARGET_MULTI=$(head -n 1 /etc/dealer-adm/multiport_ports.db 2>/dev/null)
+                if [ -z "$TARGET_MULTI" ]; then
+                    activar_puerto_compartido "ssl" "80"
+                    TARGET_MULTI=80
+                fi
 
                 openssl req -new -x509 -days 3650 -nodes -out /etc/stunnel/stunnel.pem -keyout /etc/stunnel/stunnel.pem -subj "/C=US/ST=Miami/L=Miami/O=DEALER/CN=dealervpn" 2>/dev/null
                 
@@ -1777,13 +1756,13 @@ cert = /etc/stunnel/stunnel.pem
 socket = a:SO_REUSEADDR=1
 [dealer_multi_ssl]
 accept = ${SSL_PORT}
-connect = 127.0.0.1:${LOCAL_PORT}
+connect = 127.0.0.1:${TARGET_MULTI}
 EOF
                 bhttp_abrir_firewall "$SSL_PORT"
                 sed -i 's/ENABLED=0/ENABLED=1/' /etc/default/stunnel4 2>/dev/null
                 systemctl enable stunnel4 >/dev/null 2>&1
                 systemctl restart stunnel4
-                echo -e "\n  ${G}[OK] SSL/TLS en puerto ${SSL_PORT} enlazado al Multipuerto (SSL + BHTTP + WS + V2Ray + SSH)${NC}"; sleep 2 ;;
+                echo -e "\n  ${G}[OK] SSL/TLS activo en puerto ${SSL_PORT} (Compatible con todos los protocolos)${NC}"; sleep 2 ;;
             2) systemctl start stunnel4 && echo -e "  ${G}Iniciado${NC}"; sleep 1 ;;
             3) systemctl stop stunnel4 && echo -e "  ${Y}Detenido${NC}"; sleep 1 ;;
             4) systemctl restart stunnel4 && echo -e "  ${G}Reiniciado${NC}"; sleep 1 ;;
@@ -1793,7 +1772,7 @@ EOF
 }
 
 # ══════════════════════════════════════════
-#   V2RAY (AUTO-INTERNO 10080 + /v2ray)
+#   V2RAY (PUERTO INTERNO OCULTO 10080 + PUERTO PÚBLICO ELEGIBLE)
 # ══════════════════════════════════════════
 
 menu_v2ray() {
@@ -1801,25 +1780,13 @@ menu_v2ray() {
         banner; sep
         echo -e "  ${NEON}◆ V2RAY VMESS${NC}"; sep; echo ""
         echo -e "  V2Ray $(status_service v2ray)"
-        if [ -f /usr/local/etc/v2ray/config.json ]; then
-            python3 -c "
-import json
-try:
-    with open('/usr/local/etc/v2ray/config.json') as f: c=json.load(f)
-    inbounds = c.get('inbounds',[])
-    if not inbounds:
-        print('    \033[2;37m   Sin inbounds configurados\033[0m')
-    for ib in inbounds:
-        net=ib.get('streamSettings',{}).get('network','tcp')
-        tls=ib.get('streamSettings',{}).get('security','none')
-        tls_icon='\033[1;96m TLS\033[0m' if tls=='tls' else ''
-        print(f'  \033[1;96m◈\033[0m \033[1;97mPuerto \033[1;33m{ib[\"port\"]}\033[0m \033[2;37m|\033[0m \033[1;96m{ib[\"protocol\"]}\033[0m \033[2;37m|\033[0m {net}{tls_icon}')
-except: pass
-" 2>/dev/null
+        if [ -s /etc/dealer-adm/public_ports_v2ray.db ]; then
+            V2_PUBS=$(paste -sd "," /etc/dealer-adm/public_ports_v2ray.db)
+            echo -e "  Puertos públicos activos: ${Y}${V2_PUBS}${NC}"
         fi
         echo ""; sep
-        printf " ${Y}❬1❭ [+] Instalar V2Ray      ❬2❭ [+] Agregar inbound${NC}\n"
-        printf " ${Y}❬3❭ [-] Eliminar inbound    ❬4❭ [>] Iniciar${NC}\n"
+        printf " ${Y}❬1❭ [+] Instalar V2Ray      ❬2❭ [+] Agregar puerto público${NC}\n"
+        printf " ${Y}❬3❭ [-] Eliminar puerto     ❬4❭ [>] Iniciar${NC}\n"
         printf " ${Y}❬5❭ [X] Detener             ❬6❭ [*] Reiniciar${NC}\n"
         printf " ${Y}❬7❭ [U] Crear usuario       ❬8❭ [L] Ver usuarios${NC}\n"
         printf " ${R}❬9❭ [!] Desinstalar V2Ray${NC}\n"
@@ -1829,6 +1796,10 @@ except: pass
         case $OPT in
             1)
                 read -p "  Dominio (para SSL / Host): " DOMAIN
+                read -p "  Digita el puerto público para V2Ray (ej: 80, 8080): " V2_PUB_PORT
+                V2_PUB_PORT=$(echo "$V2_PUB_PORT" | tr -dc '0-9')
+                [ -z "$V2_PUB_PORT" ] && continue
+
                 EMAIL="admin@${DOMAIN#*.}"
                 echo -e "  ${C}Instalando V2Ray...${NC}"
                 bash <(curl -s https://raw.githubusercontent.com/v2fly/fhs-install-v2ray/master/install-release.sh) > /dev/null 2>&1
@@ -1842,7 +1813,7 @@ except: pass
                 chmod 644 /etc/letsencrypt/live/$DOMAIN/*.pem 2>/dev/null
                 chmod 644 /etc/letsencrypt/archive/$DOMAIN/*.pem 2>/dev/null
 
-                # Preconfigurar inbound interno 10080 (VMess + WS + /v2ray) para Multipuerto 80/8080
+                # Inbound interno invisible en 127.0.0.1:10080
                 cat > /usr/local/etc/v2ray/config.json << EOF
 {
   "log": { "loglevel": "warning" },
@@ -1866,98 +1837,51 @@ EOF
                 echo "$DOMAIN" > /etc/dealer-adm/v2ray_domain
                 systemctl enable v2ray >/dev/null 2>&1
                 systemctl restart v2ray
-                echo -e "  ${G}[OK] V2Ray instalado con puerto interno 10080 (/v2ray) listo en 80 y 8080${NC}"; sleep 2 ;;
+
+                activar_puerto_compartido "v2ray" "$V2_PUB_PORT"
+                echo -e "  ${G}[OK] V2Ray activo en puerto público ${V2_PUB_PORT} (Path: /v2ray)${NC}"; sleep 2 ;;
             2)
                 banner; sep
-                echo -e "  ${Y}  AGREGAR INBOUND ADICIONAL${NC}"; sep; echo ""
-                read -p "  Puerto (default 10080): " V2_PORT; V2_PORT=${V2_PORT:-10080}
-                echo -e "  Protocolo: ${Y}❬1❭${NC} vmess ${Y}❬2❭${NC} vless ${Y}❬3❭${NC} trojan"
-                read -p "  Opcion: " V2_PROTO_OPT
-                case $V2_PROTO_OPT in
-                    1) V2_PROTO="vmess" ;; 2) V2_PROTO="vless" ;; 3) V2_PROTO="trojan" ;; *) V2_PROTO="vmess" ;;
-                esac
-                echo -e "  Red: ${Y}❬1❭${NC} ws ${Y}❬2❭${NC} tcp ${Y}❬3❭${NC} xhttp ${Y}❬4❭${NC} grpc"
-                read -p "  Opcion: " V2_NET_OPT
-                case $V2_NET_OPT in
-                    1) V2_NET="ws" ;; 2) V2_NET="tcp" ;; 3) V2_NET="xhttp" ;; 4) V2_NET="grpc" ;; *) V2_NET="ws" ;;
-                esac
-                read -p "  Path (ej: /v2ray): " V2_PATH; V2_PATH=${V2_PATH:-/v2ray}
-                echo -e "  TLS: ${Y}❬1❭${NC} Si ${Y}❬2❭${NC} No"
-                read -p "  Opcion: " V2_TLS_OPT
-                [ "$V2_TLS_OPT" = "1" ] && V2_TLS="tls" || V2_TLS="none"
-                python3 - << PYEOF
-import json, os
-port, proto, net, path, tls = int("$V2_PORT"), "$V2_PROTO", "$V2_NET", "$V2_PATH", "$V2_TLS"
-with open('/usr/local/etc/v2ray/config.json') as f: config = json.load(f)
-ib = {"port": port, "protocol": proto, "settings": {"clients": []}, "streamSettings": {"network": net, "security": tls}}
-if net == "ws": ib["streamSettings"]["wsSettings"] = {"path": path}
-elif net == "xhttp": ib["streamSettings"]["xhttpSettings"] = {"path": path}
-elif net == "grpc": ib["streamSettings"]["grpcSettings"] = {"serviceName": path.strip("/")}
-if tls == "tls":
-    domain = open('/etc/dealer-adm/v2ray_domain').read().strip() if os.path.exists('/etc/dealer-adm/v2ray_domain') else ''
-    ib["streamSettings"]["tlsSettings"] = {"certificates": [{"certificateFile": f"/etc/letsencrypt/live/{domain}/fullchain.pem","keyFile": f"/etc/letsencrypt/live/{domain}/privkey.pem"}]}
-config["inbounds"].append(ib)
-with open('/usr/local/etc/v2ray/config.json', 'w') as f: json.dump(config, f, indent=2)
-print(f"OK {proto} {net} puerto {port}")
-PYEOF
-                systemctl restart v2ray; echo -e "  ${G}OK Inbound agregado${NC}"; read -p "  ENTER..." ;;
+                echo -e "  ${Y}  AGREGAR PUERTO PÚBLICO V2RAY${NC}"; sep; echo ""
+                read -p "  Digita el nuevo puerto público (ej: 80, 8080, 8880): " V2_NEW_P
+                V2_NEW_P=$(echo "$V2_NEW_P" | tr -dc '0-9')
+                [ -z "$V2_NEW_P" ] && continue
+                activar_puerto_compartido "v2ray" "$V2_NEW_P"
+                echo -e "  ${G}[OK] Puerto ${V2_NEW_P} agregado a V2Ray${NC}"; sleep 2 ;;
             3)
-                banner; sep; echo -e "  ${R}  ELIMINAR INBOUND${NC}"; sep; echo ""
-                python3 -c "
-import json
-with open('/usr/local/etc/v2ray/config.json') as f: c=json.load(f)
-for i,ib in enumerate(c.get('inbounds',[])):
-    print(f'  [{i+1}] Puerto {ib[\"port\"]} | {ib[\"protocol\"]}')
-" 2>/dev/null
-                echo ""; read -p "  Numero a eliminar: " DEL_NUM
-                python3 - << PYEOF
-import json
-with open('/usr/local/etc/v2ray/config.json') as f: config = json.load(f)
-idx = int("$DEL_NUM") - 1
-if 0 <= idx < len(config['inbounds']):
-    removed = config['inbounds'].pop(idx)
-    with open('/usr/local/etc/v2ray/config.json', 'w') as f: json.dump(config, f, indent=2)
-    print(f"OK Puerto {removed['port']} eliminado")
-else: print("Numero invalido")
-PYEOF
-                systemctl restart v2ray; sleep 1 ;;
+                banner; sep; echo -e "  ${R}  ELIMINAR PUERTO PÚBLICO V2RAY${NC}"; sep; echo ""
+                read -p "  Puerto a eliminar: " DEL_P
+                DEL_P=$(echo "$DEL_P" | tr -dc '0-9')
+                [ -z "$DEL_P" ] && continue
+                eliminar_puerto_compartido "v2ray" "$DEL_P"
+                echo -e "  ${G}[OK] Puerto ${DEL_P} eliminado de V2Ray${NC}"; sleep 1 ;;
             4) systemctl start v2ray && echo -e "  ${G}Iniciado${NC}"; sleep 1 ;;
             5) systemctl stop v2ray && echo -e "  ${Y}Detenido${NC}"; sleep 1 ;;
             6) systemctl restart v2ray && echo -e "  ${G}Reiniciado${NC}"; sleep 1 ;;
             7)
                 banner; sep; echo -e "  ${Y}  CREAR USUARIO VMESS${NC}"; sep; echo ""
-                python3 -c "
-import json
-with open('/usr/local/etc/v2ray/config.json') as f: c=json.load(f)
-for i,ib in enumerate(c.get('inbounds',[])):
-    net=ib.get('streamSettings',{}).get('network','tcp')
-    tls=ib.get('streamSettings',{}).get('security','none')
-    print(f'  [{i+1}] Puerto {ib[\"port\"]} | {ib[\"protocol\"]} | {net} | tls:{tls}')
-" 2>/dev/null
-                echo ""; read -p "  Numero de inbound [1]: " IB_NUM; IB_NUM=${IB_NUM:-1}
-                IB_IDX=$((IB_NUM - 1))
                 read -p "  Nombre del perfil: " VNAME
+                [ -z "$VNAME" ] && continue
+                DEFAULT_V2_P=$(head -n 1 /etc/dealer-adm/public_ports_v2ray.db 2>/dev/null)
+                DEFAULT_V2_P=${DEFAULT_V2_P:-80}
+                read -p "  Puerto de conexión [default ${DEFAULT_V2_P}]: " CLIENT_PORT; CLIENT_PORT=${CLIENT_PORT:-$DEFAULT_V2_P}
                 read -p "  Dias de validez (default 30): " V2_DAYS; V2_DAYS=${V2_DAYS:-30}
                 EXP_SHOW=$(date -d "+${V2_DAYS} days" +%d/%m/%Y)
                 VDOMAIN=$(cat /etc/dealer-adm/v2ray_domain 2>/dev/null || hostname -I | awk '{print $1}')
                 python3 - << PYEOF
 import json, uuid, base64, datetime
-idx, name, days, domain = int("$IB_IDX"), "$VNAME", int("$V2_DAYS"), "$VDOMAIN"
+name, days, domain, out_port = "$VNAME", int("$V2_DAYS"), "$VDOMAIN", str("$CLIENT_PORT")
 with open('/usr/local/etc/v2ray/config.json') as f: config = json.load(f)
 inbounds = config.get('inbounds', [])
-if idx >= len(inbounds): print("Inbound no encontrado"); exit(1)
-ib = inbounds[idx]
+if not inbounds: print("V2Ray no instalado"); exit(1)
+ib = inbounds[0]
 uid = str(uuid.uuid4())
 exp = (datetime.datetime.now() + datetime.timedelta(days=days)).strftime("%Y-%m-%d")
 if 'clients' not in ib['settings']: ib['settings']['clients'] = []
 ib['settings']['clients'].append({"id": uid, "alterId": 0, "email": name, "expires": exp})
 with open('/usr/local/etc/v2ray/config.json', 'w') as f: json.dump(config, f, indent=2)
-net = ib.get('streamSettings', {}).get('network', 'tcp')
-tls = ib.get('streamSettings', {}).get('security', 'none')
-path = ib.get('streamSettings', {}).get('wsSettings', {}).get('path', '/v2ray') if net == 'ws' else ''
-out_port = "80" if ib['port'] == 10080 else ("443" if ib['port'] == 8080 else str(ib['port']))
-out_tls = "tls" if ib['port'] == 8080 else (tls if tls != "none" else "")
-vmess = {"v":"2","ps":name,"add":domain,"port":out_port,"id":uid,"aid":"0","net":net,"type":"none","host":domain,"path":path,"tls":out_tls}
+out_tls = "tls" if out_port == "443" else ""
+vmess = {"v":"2","ps":name,"add":domain,"port":out_port,"id":uid,"aid":"0","net":"ws","type":"none","host":domain,"path":"/v2ray","tls":out_tls}
 link = "vmess://" + base64.b64encode(json.dumps(vmess).encode()).decode()
 print("")
 print("\033[1;96m◆━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━◆\033[0m")
@@ -1966,7 +1890,7 @@ print("\033[1;96m◆━━━━━━━━━━━━━━━━━━━━
 print(f"  \033[1;96m◈\033[0m \033[2;37mPerfil :\033[0m  \033[1;97m{name}\033[0m")
 print(f"  \033[1;96m◈\033[0m \033[2;37mHost   :\033[0m  \033[1;97m{domain}\033[0m")
 print(f"  \033[1;96m◈\033[0m \033[2;37mPuerto :\033[0m  \033[1;33m{out_port}\033[0m")
-print(f"  \033[1;96m◈\033[0m \033[2;37mRed    :\033[0m  \033[1;96m{net}\033[0m")
+print(f"  \033[1;96m◈\033[0m \033[2;37mRed    :\033[0m  \033[1;96mws (/v2ray)\033[0m")
 print(f"  \033[1;96m◈\033[0m \033[2;37mExpira :\033[0m  \033[1;33m$EXP_SHOW\033[0m")
 print("\033[1;96m◆━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━◆\033[0m")
 print("  \033[1;96m[KEY] VMESS LINK:\033[0m")
@@ -1982,7 +1906,6 @@ import json
 try:
     with open('/usr/local/etc/v2ray/config.json') as f: c=json.load(f)
     for ib in c['inbounds']:
-        print(f'  Puerto {ib[\"port\"]}:')
         for u in ib['settings'].get('clients',[]):
             print(f'    - {u.get(\"email\",\"?\")} | expira: {u.get(\"expires\",\"sin exp\")}')
 except Exception as e: print(f'Error: {e}')
@@ -1990,9 +1913,14 @@ except Exception as e: print(f'Error: {e}')
             9)
                 read -p "  Confirmar desinstalar V2Ray (si/no): " CONFIRM
                 if [ "$CONFIRM" = "si" ]; then
+                    if [ -s /etc/dealer-adm/public_ports_v2ray.db ]; then
+                        while read -r P; do
+                            [ -n "$P" ] && eliminar_puerto_compartido "v2ray" "$P"
+                        done < /etc/dealer-adm/public_ports_v2ray.db
+                    fi
                     systemctl stop v2ray; systemctl disable v2ray
                     bash <(curl -s https://raw.githubusercontent.com/v2fly/fhs-install-v2ray/master/install-release.sh) --remove > /dev/null 2>&1
-                    rm -f /etc/dealer-adm/v2ray_domain
+                    rm -f /etc/dealer-adm/v2ray_domain /etc/dealer-adm/public_ports_v2ray.db
                     echo -e "  ${G}OK V2Ray desinstalado${NC}"; sleep 2
                 fi ;;
             0) break ;;
@@ -2330,9 +2258,26 @@ EOF
     echo -e "  ${W}$SERVER_IP:22@$USR_NAME:$USR_PASS${NC}"
     echo ""
 
-    ss -tlnp | grep -q ":80 " && echo -e "  ${C}Multipuerto (BHTTP/WS/V2Ray/SSH) 80:${NC}" && echo -e "  ${W}$SERVER_IP:80@$USR_NAME:$USR_PASS${NC}" && echo ""
+    if systemctl is-active --quiet bhttp-internal 2>/dev/null && [ -s "$CONFIG_BHTTP_DB" ]; then
+        B_P=$(paste -sd "," "$CONFIG_BHTTP_DB")
+        echo -e "  ${C}BHTTP (Puerto ${B_P}):${NC}"
+        echo -e "  ${W}$SERVER_IP:${B_P}@$USR_NAME:$USR_PASS${NC}"
+        echo ""
+    fi
 
-    systemctl is-active --quiet stunnel4 2>/dev/null && echo -e "  ${C}SSL/TLS 443:${NC}" && echo -e "  ${W}$SERVER_IP:443@$USR_NAME:$USR_PASS${NC}" && echo ""
+    if systemctl is-active --quiet ws-proxy-internal 2>/dev/null && [ -s /etc/dealer-adm/public_ports_ws.db ]; then
+        W_P=$(paste -sd "," /etc/dealer-adm/public_ports_ws.db)
+        echo -e "  ${C}WebSocket (Puerto ${W_P}):${NC}"
+        echo -e "  ${W}$SERVER_IP:${W_P}@$USR_NAME:$USR_PASS${NC}"
+        echo ""
+    fi
+
+    if systemctl is-active --quiet stunnel4 2>/dev/null; then
+        S_P=$(cat /etc/dealer-adm/ssl_port 2>/dev/null || echo "443")
+        echo -e "  ${C}SSL/TLS (${S_P}):${NC}"
+        echo -e "  ${W}$SERVER_IP:${S_P}@$USR_NAME:$USR_PASS${NC}"
+        echo ""
+    fi
 
     ps aux | grep -i "udp-custom\|UDP-Custom" | grep -v grep | grep -q . && echo -e "  ${C}UDP Custom:${NC}" && echo -e "  ${W}$SERVER_IP:1-65535@$USR_NAME:$USR_PASS${NC}" && echo ""
 
@@ -4093,130 +4038,6 @@ desinstalar_bot() {
     sleep 2
 }
 
-# ══════════════════════════════════════════════════════════════════════
-#   MÓDULO MULTIPUERTO COMPARTIDO (BHTTP + WS + V2RAY + HCR + SSH)
-# ══════════════════════════════════════════════════════════════════════
-
-MULTI_CONFIG="/etc/dealer-adm/multiport.json"
-MULTI_DB="/etc/dealer-adm/multiport_ports.db"
-
-configurar_rutas_multipuerto() {
-    mkdir -p /etc/dealer-adm
-    touch "$MULTI_DB"
-    if [ ! -f "$MULTI_CONFIG" ]; then
-        cat > "$MULTI_CONFIG" << 'EOF'
-{
-  "bhttp": "127.0.0.1:10090",
-  "ws": "127.0.0.1:10081",
-  "v2ray": "127.0.0.1:10080",
-  "v2ray_path": "/v2ray",
-  "ssh": "127.0.0.1:22"
-}
-EOF
-    fi
-}
-
-menu_multipuerto() {
-    configurar_rutas_multipuerto
-    while true; do
-        banner; sep
-        echo -e "  ${Y}  MULTIPUERTO COMPARTIDO (ALL-IN-ONE)${NC}"; sep; echo ""
-        echo -e "  ${DIM}Permite usar el mismo puerto (80, 8080, etc.) para:${NC}"
-        echo -e "  ${NEON}◈ BHTTP  ◈ WebSocket  ◈ V2Ray  ◈ HCR/SSH${NC}\n"
-
-        if [ -s "$MULTI_DB" ]; then
-            while read -r P; do
-                [ -z "$P" ] && continue
-                echo -e "  Puerto Compartido ${Y}${P}${NC} $(status_service dealer-multi-${P})"
-            done < "$MULTI_DB"
-        else
-            echo -e "  ${DIM}Sin puertos compartidos activos${NC}"
-        fi
-
-        echo ""; sep
-        echo -e "  ${W}[1]${NC} Activar puerto compartido (ej: 80, 8080, 8880)"
-        echo -e "  ${W}[2]${NC} Configurar puertos internos (BHTTP / WS / V2Ray)"
-        echo -e "  ${W}[3]${NC} Detener y eliminar puerto compartido"
-        echo -e "  ${W}[4]${NC} Reiniciar todos los puertos compartidos"
-        echo -e "  ${W}[0]${NC} Volver"; sep
-        read -p "  Opcion: " OPT
-        case $OPT in
-            1)
-                read -p "  Puerto público a compartir (ej: 80): " MPORT
-                MPORT=$(echo "$MPORT" | tr -dc '0-9')
-                [ -z "$MPORT" ] && continue
-
-                systemctl stop "bhttp-${MPORT}" "ws-proxy-${MPORT}" 2>/dev/null || true
-                systemctl disable "bhttp-${MPORT}" "ws-proxy-${MPORT}" 2>/dev/null || true
-
-                cat > "/etc/systemd/system/dealer-multi-${MPORT}.service" << EOF
-[Unit]
-Description=Dealer Multi-Protocol Router Port ${MPORT}
-After=network.target
-
-[Service]
-Type=simple
-User=root
-ExecStart=/usr/bin/python3 -O /usr/local/bin/dealer-router --port ${MPORT}
-Restart=always
-RestartSec=2
-LimitNOFILE=1048576
-
-[Install]
-WantedBy=multi-user.target
-EOF
-                bhttp_abrir_firewall "$MPORT"
-                systemctl daemon-reload
-                systemctl enable "dealer-multi-${MPORT}" >/dev/null 2>&1
-                systemctl restart "dealer-multi-${MPORT}"
-
-                grep -v "^${MPORT}$" "$MULTI_DB" > "${MULTI_DB}.tmp" 2>/dev/null || true
-                mv "${MULTI_DB}.tmp" "$MULTI_DB"
-                echo "$MPORT" >> "$MULTI_DB"
-                echo -e "\n  ${G}[OK] Puerto ${MPORT} ahora comparte BHTTP + WS + V2Ray + SSH${NC}"
-                sleep 2 ;;
-            2)
-                echo ""
-                read -p "  Puerto interno BHTTP [10090]: " P_BHTTP; P_BHTTP=${P_BHTTP:-10090}
-                read -p "  Puerto interno WebSocket [10081]: " P_WS; P_WS=${P_WS:-10081}
-                read -p "  Puerto interno V2Ray [10080]: " P_V2; P_V2=${P_V2:-10080}
-                read -p "  Path de V2Ray [/v2ray]: " V2_P; V2_P=${V2_P:-/v2ray}
-                read -p "  Puerto interno SSH/HCR [22]: " P_SSH; P_SSH=${P_SSH:-22}
-
-                cat > "$MULTI_CONFIG" << EOF
-{
-  "bhttp": "127.0.0.1:${P_BHTTP}",
-  "ws": "127.0.0.1:${P_WS}",
-  "v2ray": "127.0.0.1:${P_V2}",
-  "v2ray_path": "${V2_P}",
-  "ssh": "127.0.0.1:${P_SSH}"
-}
-EOF
-                echo -e "\n  ${G}[OK] Rutas internas actualizadas.${NC}"
-                sleep 2 ;;
-            3)
-                read -p "  Puerto compartido a eliminar: " DEL_P
-                DEL_P=$(echo "$DEL_P" | tr -dc '0-9')
-                [ -z "$DEL_P" ] && continue
-                systemctl stop "dealer-multi-${DEL_P}" 2>/dev/null
-                systemctl disable "dealer-multi-${DEL_P}" 2>/dev/null
-                rm -f "/etc/systemd/system/dealer-multi-${DEL_P}.service"
-                grep -v "^${DEL_P}$" "$MULTI_DB" > "${MULTI_DB}.tmp" 2>/dev/null || true
-                mv "${MULTI_DB}.tmp" "$MULTI_DB"
-                systemctl daemon-reload
-                echo -e "\n  ${Y}Puerto ${DEL_P} eliminado del modo compartido.${NC}"
-                sleep 2 ;;
-            4)
-                while read -r P; do
-                    [ -n "$P" ] && systemctl restart "dealer-multi-${P}" 2>/dev/null
-                done < "$MULTI_DB"
-                echo -e "\n  ${G}[OK] Puertos compartidos reiniciados.${NC}"
-                sleep 2 ;;
-            0) break ;;
-        esac
-    done
-}
-
 # ══════════════════════════════════════════
 #   SUBMENÚ HERRAMIENTAS Y PROTOCOLOS
 # ══════════════════════════════════════════
@@ -4225,11 +4046,16 @@ menu_herramientas() {
     while true; do
         banner; sep
         echo -e "  ${Y}  HERRAMIENTAS Y PROTOCOLOS${NC}"; sep; echo ""
-        printf " ${NEON}◈${NC} ${W}Multipuerto${NC} %-10b ${NEON}◈${NC} ${W}BadVPN 7200${NC} %b\n" "$(status_port 80)" "$(status_service badvpn-7200)"
-        printf " ${NEON}◈${NC} ${W}UDP Custom${NC}  %-10b ${NEON}◈${NC} ${W}BadVPN 7300${NC} %b\n" "$(ps aux | grep -i UDP-Custom | grep -v grep | grep -q . && echo -e "${NEON}◆ ON${NC}" || echo -e "${R}◇ OFF${NC}")" "$(status_service badvpn-7300)"
-        printf " ${NEON}◈${NC} ${W}SSL/TLS${NC}     %-10b ${NEON}◈${NC} ${W}V2Ray${NC}       %b\n" "$(status_service stunnel4)" "$(status_service v2ray)"
-        printf " ${NEON}◈${NC} ${W}ZIVPN${NC}       %-10b ${NEON}◈${NC} ${W}SlowDNS${NC}     %b\n" "$(status_service zivpn)" "$(status_service server-sldns)"
-        printf " ${NEON}◈${NC} ${W}Dropbear${NC}    %-10b ${NEON}◈${NC} ${W}UDP-HYSTERIA${NC} %b\n" "$(status_service dropbear)" "$(status_service hysteria-server)"
+
+        WS_ST=$(systemctl is-active --quiet ws-proxy-internal 2>/dev/null && [ -s /etc/dealer-adm/public_ports_ws.db ] && echo -e "${NEON}◆ ON ${NC}" || echo -e "${R}◇ OFF${NC}")
+        V2_ST=$(systemctl is-active --quiet v2ray 2>/dev/null && [ -s /etc/dealer-adm/public_ports_v2ray.db ] && echo -e "${NEON}◆ ON ${NC}" || echo -e "${R}◇ OFF${NC}")
+        BH_ST=$(systemctl is-active --quiet bhttp-internal 2>/dev/null && [ -s "$CONFIG_BHTTP_DB" ] && echo -e "${NEON}◆ ON ${NC}" || echo -e "${R}◇ OFF${NC}")
+
+        printf " ${NEON}◈${NC} ${W}WebSocket${NC}  %-12b ${NEON}◈${NC} ${W}BadVPN 7200${NC} %b\n" "$WS_ST" "$(status_service badvpn-7200)"
+        printf " ${NEON}◈${NC} ${W}UDP Custom${NC} %-11b ${NEON}◈${NC} ${W}BadVPN 7300${NC} %b\n" "$(ps aux | grep -i UDP-Custom | grep -v grep | grep -q . && echo -e "${NEON}◆ ON${NC}" || echo -e "${R}◇ OFF${NC}")" "$(status_service badvpn-7300)"
+        printf " ${NEON}◈${NC} ${W}SSL/TLS${NC}    %-12b ${NEON}◈${NC} ${W}V2Ray${NC}       %b\n" "$(status_service stunnel4)" "$V2_ST"
+        printf " ${NEON}◈${NC} ${W}ZIVPN${NC}      %-12b ${NEON}◈${NC} ${W}SlowDNS${NC}     %b\n" "$(status_service zivpn)" "$(status_service server-sldns)"
+        printf " ${NEON}◈${NC} ${W}Dropbear${NC}   %-12b ${NEON}◈${NC} ${W}BHTTP${NC}       %b\n" "$(status_service dropbear)" "$BH_ST"
         echo ""; sep
         printf " \033[1;97m[1] %-22s [2] %s\033[0m\n" "WebSocket Python" "BadVPN UDP"
         printf " \033[1;97m[3] %-22s [4] %s\033[0m\n" "UDP Custom" "SSL/TLS Stunnel"
@@ -4238,7 +4064,7 @@ menu_herramientas() {
         printf " \033[1;97m[9] %-22s [10] %s\033[0m\n" "Anti-DDoS" "SlowDNS"
         printf " \033[1;97m[11] %-21s [12] %s\033[0m\n" "Dropbear SSH" "UDP Hysteria Mod"
         printf " \033[1;97m[13] %-21s [14] %s\033[0m\n" "Shadowsocks" "Limpieza/Auto-reinicio"
-        printf " \033[1;97m[15] %-21s [16] %s\033[0m\n" "BHTTPTUNNEL" "Multipuerto Compartido"
+        printf " \033[1;97m[15] %-21s\033[0m\n" "BHTTPTUNNEL"
         sep
         printf " ${W}[0]${NC} Volver\n"; sep; echo ""
         read -p " Opcion: " OPT
@@ -4258,7 +4084,6 @@ menu_herramientas() {
             13) menu_shadowsocks ;;
             14) menu_limpieza ;;
             15) menu_bhttp ;;
-            16) menu_multipuerto ;;
             0) break ;;
             *) echo -e "  ${R}Opcion invalida${NC}"; sleep 1 ;;
         esac
@@ -4283,54 +4108,46 @@ menu_principal() {
         printf " ${NEON}◈${NC} ${DIM}CPU:${NC} ${W}%-19s${NC} ${NEON}◈${NC} ${DIM}Fecha:${NC} ${Y}%s${NC}\n" "$SRV_CPU cores" "$SRV_DATE"
         printf " ${NEON}◈${NC} ${DIM}RAM:${NC} ${W}%-19s${NC} ${NEON}◈${NC} ${DIM}Uptime:${NC} ${W}%s${NC}\n" "$SRV_RAM" "$SRV_UPTIME"
         sep
-        WS_PORT=$(cat /etc/dealer-adm/ws_port 2>/dev/null || echo "10081")
         DB_PORT=$(cat /etc/dealer-adm/dropbear_port 2>/dev/null || echo "444")
         C1="" C2=""
-        systemctl is-active --quiet ws-proxy-${WS_PORT} 2>/dev/null && { [ -z "$C1" ] && C1="${NEON}◈${NC} ${W}WebSocket:${WS_PORT}${NC} ${NEON}◆ ON${NC}" || C2="${NEON}◈${NC} ${W}WebSocket:${WS_PORT}${NC} ${NEON}◆ ON${NC}"; }
+
+        # Estado WebSocket (muestra solo puertos publicos elegidos)
+        if systemctl is-active --quiet ws-proxy-internal 2>/dev/null && [ -s /etc/dealer-adm/public_ports_ws.db ]; then
+            WS_PORTS=$(paste -sd "," /etc/dealer-adm/public_ports_ws.db)
+            [ -z "$C1" ] && C1="${NEON}◈${NC} ${W}WebSocket:${WS_PORTS}${NC} ${NEON}◆ ON${NC}" || C2="${NEON}◈${NC} ${W}WebSocket:${WS_PORTS}${NC} ${NEON}◆ ON${NC}"
+        fi
+
         systemctl is-active --quiet badvpn-7200 2>/dev/null && { [ -z "$C1" ] && C1="${NEON}◈${NC} ${W}BadVPN:7200${NC} ${NEON}◆ ON${NC}" || { [ -z "$C2" ] && C2="${NEON}◈${NC} ${W}BadVPN:7200${NC} ${NEON}◆ ON${NC}" || { echo -e " $C1    $C2"; C1="${NEON}◈${NC} ${W}BadVPN:7200${NC} ${NEON}◆ ON${NC}"; C2=""; }; }; }
         systemctl is-active --quiet badvpn-7300 2>/dev/null && { [ -z "$C1" ] && C1="${NEON}◈${NC} ${W}BadVPN:7300${NC} ${NEON}◆ ON${NC}" || { [ -z "$C2" ] && C2="${NEON}◈${NC} ${W}BadVPN:7300${NC} ${NEON}◆ ON${NC}" || { echo -e " $C1    $C2"; C1="${NEON}◈${NC} ${W}BadVPN:7300${NC} ${NEON}◆ ON${NC}"; C2=""; }; }; }
         ps aux | grep -i "UDP-Custom" | grep -v grep | grep -q . && { [ -z "$C1" ] && C1="${NEON}◈${NC} ${W}UDP:36712${NC} ${NEON}◆ ON${NC}" || { [ -z "$C2" ] && C2="${NEON}◈${NC} ${W}UDP:36712${NC} ${NEON}◆ ON${NC}" || { echo -e " $C1    $C2"; C1="${NEON}◈${NC} ${W}UDP:36712${NC} ${NEON}◆ ON${NC}"; C2=""; }; }; }
-        systemctl is-active --quiet stunnel4 2>/dev/null && { [ -z "$C1" ] && C1="${NEON}◈${NC} ${W}SSL/TLS:443${NC} ${NEON}◆ ON${NC}" || { [ -z "$C2" ] && C2="${NEON}◈${NC} ${W}SSL/TLS:443${NC} ${NEON}◆ ON${NC}" || { echo -e " $C1    $C2"; C1="${NEON}◈${NC} ${W}SSL/TLS:443${NC} ${NEON}◆ ON${NC}"; C2=""; }; }; }
-        if systemctl is-active --quiet v2ray 2>/dev/null; then
-            V2P=$(python3 -c "import json; c=json.load(open('/usr/local/etc/v2ray/config.json')); print(','.join([str(ib['port']) for ib in c.get('inbounds',[])]))" 2>/dev/null)
+        
+        if systemctl is-active --quiet stunnel4 2>/dev/null; then
+            SSL_P=$(cat /etc/dealer-adm/ssl_port 2>/dev/null || echo "443")
+            [ -z "$C1" ] && C1="${NEON}◈${NC} ${W}SSL/TLS:${SSL_P}${NC} ${NEON}◆ ON${NC}" || { [ -z "$C2" ] && C2="${NEON}◈${NC} ${W}SSL/TLS:${SSL_P}${NC} ${NEON}◆ ON${NC}" || { echo -e " $C1    $C2"; C1="${NEON}◈${NC} ${W}SSL/TLS:${SSL_P}${NC} ${NEON}◆ ON${NC}"; C2=""; }; }
+        fi
+
+        # Estado V2Ray (muestra solo puertos publicos elegidos)
+        if systemctl is-active --quiet v2ray 2>/dev/null && [ -s /etc/dealer-adm/public_ports_v2ray.db ]; then
+            V2P=$(paste -sd "," /etc/dealer-adm/public_ports_v2ray.db)
             [ -n "$V2P" ] && { [ -z "$C1" ] && C1="${NEON}◈${NC} ${W}V2Ray:${V2P}${NC} ${NEON}◆ ON${NC}" || { [ -z "$C2" ] && C2="${NEON}◈${NC} ${W}V2Ray:${V2P}${NC} ${NEON}◆ ON${NC}" || { echo -e " $C1    $C2"; C1="${NEON}◈${NC} ${W}V2Ray:${V2P}${NC} ${NEON}◆ ON${NC}"; C2=""; }; }; }
         fi
+
         systemctl is-active --quiet zivpn 2>/dev/null && { [ -z "$C1" ] && C1="${NEON}◈${NC} ${W}ZIVPN:5667${NC} ${NEON}◆ ON${NC}" || { [ -z "$C2" ] && C2="${NEON}◈${NC} ${W}ZIVPN:5667${NC} ${NEON}◆ ON${NC}" || { echo -e " $C1    $C2"; C1="${NEON}◈${NC} ${W}ZIVPN:5667${NC} ${NEON}◆ ON${NC}"; C2=""; }; }; }
         systemctl is-active --quiet server-sldns 2>/dev/null && { [ -z "$C1" ] && C1="${NEON}◈${NC} ${W}SlowDNS:5300${NC} ${NEON}◆ ON${NC}" || { [ -z "$C2" ] && C2="${NEON}◈${NC} ${W}SlowDNS:5300${NC} ${NEON}◆ ON${NC}" || { echo -e " $C1    $C2"; C1="${NEON}◈${NC} ${W}SlowDNS:5300${NC} ${NEON}◆ ON${NC}"; C2=""; }; }; }
         systemctl is-active --quiet dropbear 2>/dev/null && { [ -z "$C1" ] && C1="${NEON}◈${NC} ${W}Dropbear:${DB_PORT}${NC} ${NEON}◆ ON${NC}" || { [ -z "$C2" ] && C2="${NEON}◈${NC} ${W}Dropbear:${DB_PORT}${NC} ${NEON}◆ ON${NC}" || { echo -e " $C1    $C2"; C1="${NEON}◈${NC} ${W}Dropbear:${DB_PORT}${NC} ${NEON}◆ ON${NC}"; C2=""; }; }; }
         systemctl is-active --quiet hysteria-server 2>/dev/null && { [ -z "$C1" ] && C1="${NEON}◈${NC} ${W}HYSTERIA:36712${NC} ${NEON}◆ ON${NC}" || { [ -z "$C2" ] && C2="${NEON}◈${NC} ${W}HYSTERIA:36712${NC} ${NEON}◆ ON${NC}" || { echo -e " $C1    $C2"; C1="${NEON}◈${NC} ${W}HYSTERIA:36712${NC} ${NEON}◆ ON${NC}"; C2=""; }; }; }
         
-        # Estado BHTTP
-        if [ -s "$CONFIG_BHTTP_DB" ]; then
-            BHTTP_PORTS=$(awk -F'|' '{print $1}' "$CONFIG_BHTTP_DB" | paste -sd "," -)
-            FIRST_BHTTP=$(awk -F'|' 'NR==1{print $1}' "$CONFIG_BHTTP_DB")
-            if systemctl is-active --quiet "bhttp-$FIRST_BHTTP" 2>/dev/null; then
-                if [ -z "$C1" ]; then
-                    C1="${NEON}◈${NC} ${W}BHTTP:${BHTTP_PORTS}${NC} ${NEON}◆ ON${NC}"
-                elif [ -z "$C2" ]; then
-                    C2="${NEON}◈${NC} ${W}BHTTP:${BHTTP_PORTS}${NC} ${NEON}◆ ON${NC}"
-                else
-                    echo -e " $C1    $C2"
-                    C1="${NEON}◈${NC} ${W}BHTTP:${BHTTP_PORTS}${NC} ${NEON}◆ ON${NC}"
-                    C2=""
-                fi
-            fi
-        fi
-
-        # Estado Multipuerto Compartido
-        if [ -s /etc/dealer-adm/multiport_ports.db ]; then
-            MULTI_PORTS=$(paste -sd "," /etc/dealer-adm/multiport_ports.db)
-            FIRST_MULTI=$(head -n 1 /etc/dealer-adm/multiport_ports.db)
-            if systemctl is-active --quiet "dealer-multi-$FIRST_MULTI" 2>/dev/null; then
-                if [ -z "$C1" ]; then
-                    C1="${NEON}◈${NC} ${W}Multi:${MULTI_PORTS}${NC} ${NEON}◆ ON${NC}"
-                elif [ -z "$C2" ]; then
-                    C2="${NEON}◈${NC} ${W}Multi:${MULTI_PORTS}${NC} ${NEON}◆ ON${NC}"
-                else
-                    echo -e " $C1    $C2"
-                    C1="${NEON}◈${NC} ${W}Multi:${MULTI_PORTS}${NC} ${NEON}◆ ON${NC}"
-                    C2=""
-                fi
+        # Estado BHTTP (muestra solo puertos publicos elegidos)
+        if systemctl is-active --quiet bhttp-internal 2>/dev/null && [ -s "$CONFIG_BHTTP_DB" ]; then
+            BHTTP_PORTS=$(paste -sd "," "$CONFIG_BHTTP_DB")
+            if [ -z "$C1" ]; then
+                C1="${NEON}◈${NC} ${W}BHTTP:${BHTTP_PORTS}${NC} ${NEON}◆ ON${NC}"
+            elif [ -z "$C2" ]; then
+                C2="${NEON}◈${NC} ${W}BHTTP:${BHTTP_PORTS}${NC} ${NEON}◆ ON${NC}"
+            else
+                echo -e " $C1    $C2"
+                C1="${NEON}◈${NC} ${W}BHTTP:${BHTTP_PORTS}${NC} ${NEON}◆ ON${NC}"
+                C2=""
             fi
         fi
 
