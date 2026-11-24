@@ -2,10 +2,10 @@
 # ═══════════════════════════════════════════════════════
 #   SCRIPT DEALER ADM — Gestor de Servicios VPN/SSH
 #   by Dealer • @DealerServices235
-#   Ubuntu 22/24/25
+#   Ubuntu 20/22/24/25 & Debian 10/11/12+
 # ═══════════════════════════════════════════════════════
 
-SCRIPT_VERSION="1.2"
+SCRIPT_VERSION="1.3"
 R='\033[0;31m'
 G='\033[0;32m'
 Y='\033[1;33m'
@@ -161,7 +161,7 @@ configurar_red_udp_global() {
     if ! command -v netfilter-persistent &>/dev/null; then
         echo "iptables-persistent iptables-persistent/autosave_v4 boolean true" | debconf-set-selections 2>/dev/null
         echo "iptables-persistent iptables-persistent/autosave_v6 boolean true" | debconf-set-selections 2>/dev/null
-        DEBIAN_FRONTEND=noninteractive apt install -y -qq iptables-persistent netfilter-persistent >/dev/null 2>&1
+        DEBIAN_FRONTEND=noninteractive apt-get install -y -qq iptables-persistent netfilter-persistent >/dev/null 2>&1
     fi
 
     iptables -t nat -F PREROUTING 2>/dev/null
@@ -186,6 +186,202 @@ configurar_red_udp_global() {
 # Aplicar mapa de red UDP automático
 configurar_red_udp_global
 
+# ======================================================================
+#   AUTO-INSTALACIÓN MOTOR MULTIPUERTO (UBUNTU 20/22/24+ & DEBIAN 10/11/12+)
+# ======================================================================
+instalar_multipuerto_auto() {
+    export DEBIAN_FRONTEND=noninteractive
+
+    if ! command -v python3 >/dev/null 2>&1 || ! command -v ss >/dev/null 2>&1; then
+        apt-get update -qq >/dev/null 2>&1 || true
+        apt-get install -y -qq python3 iproute2 iptables net-tools >/dev/null 2>&1 || true
+    fi
+
+    mkdir -p /etc/dealer-adm /etc/systemd/system
+
+    cat > /usr/local/bin/dealer-router << 'PYEOF'
+#!/usr/bin/env python3
+import socket
+import threading
+import select
+import json
+import os
+import argparse
+
+CONFIG_FILE = "/etc/dealer-adm/multiport.json"
+
+DEFAULT_ROUTES = {
+    "bhttp": "127.0.0.1:10090",
+    "ws": "127.0.0.1:10081",
+    "v2ray": "127.0.0.1:10080",
+    "v2ray_path": "/v2ray",
+    "ssh": "127.0.0.1:22"
+}
+
+def load_routes():
+    if os.path.exists(CONFIG_FILE):
+        try:
+            with open(CONFIG_FILE, "r") as f:
+                data = json.load(f)
+                merged = DEFAULT_ROUTES.copy()
+                merged.update(data)
+                return merged
+        except Exception:
+            pass
+    return DEFAULT_ROUTES.copy()
+
+def parse_host_port(addr_str: str) -> tuple:
+    host, port = addr_str.rsplit(":", 1)
+    return host, int(port)
+
+def detect_target(peek_data: bytes, routes: dict) -> tuple:
+    if not peek_data:
+        return parse_host_port(routes["ssh"])
+
+    first_byte = peek_data[0]
+
+    # 1. Trama binaria directa BHTTP (MODE_PROBE=0 .. MODE_ACK=4)
+    if first_byte in (0, 1, 2, 3, 4):
+        return parse_host_port(routes["bhttp"])
+
+    # 2. SSH Directo o HCR puro
+    if peek_data.startswith(b"SSH-"):
+        return parse_host_port(routes["ssh"])
+
+    # 3. Inspeccion de cabeceras HTTP / WebSocket / Payload / V2Ray / BHTTP Upgrade
+    header_lower = peek_data.lower()
+
+    if b"bhttp" in header_lower or b"bhp1" in header_lower:
+        return parse_host_port(routes["bhttp"])
+
+    v2_path = routes.get("v2ray_path", "/v2ray").encode("utf-8", errors="ignore").lower()
+    if v2_path and v2_path in header_lower:
+        return parse_host_port(routes["v2ray"])
+
+    http_verbs = (b"upgrade: websocket", b"x-real-host", b"get ", b"connect ", b"post ", b"head ", b"put ", b"options ")
+    if any(v in header_lower for v in http_verbs):
+        return parse_host_port(routes["ws"])
+
+    # Respaldo por defecto hacia OpenSSH / HCR
+    return parse_host_port(routes["ssh"])
+
+def pipe(client: socket.socket, target: socket.socket):
+    sockets = [client, target]
+    try:
+        while True:
+            r, _, _ = select.select(sockets, [], [], 180)
+            if not r:
+                break
+            for s in r:
+                data = s.recv(65536)
+                if not data:
+                    return
+                if s is client:
+                    target.sendall(data)
+                else:
+                    client.sendall(data)
+    except Exception:
+        pass
+    finally:
+        try: client.close()
+        except Exception: pass
+        try: target.close()
+        except Exception: pass
+
+def handle_connection(client: socket.socket):
+    try:
+        client.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        client.settimeout(5.0)
+        peek_data = client.recv(2048, socket.MSG_PEEK)
+        client.settimeout(None)
+
+        routes = load_routes()
+        t_host, t_port = detect_target(peek_data, routes)
+
+        target = socket.create_connection((t_host, t_port), timeout=5.0)
+        target.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        target.settimeout(None)
+
+        pipe(client, target)
+    except Exception:
+        try: client.close()
+        except Exception: pass
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--port", type=int, required=True)
+    args = parser.parse_args()
+
+    srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    srv.bind(("0.0.0.0", args.port))
+    srv.listen(4096)
+    while True:
+        try:
+            conn, _ = srv.accept()
+            threading.Thread(target=handle_connection, args=(conn,), daemon=True).start()
+        except Exception:
+            pass
+
+if __name__ == "__main__":
+    main()
+PYEOF
+
+    sed -i 's/\r$//' /usr/local/bin/dealer-router
+    chmod +x /usr/local/bin/dealer-router
+
+    if [ ! -f /etc/dealer-adm/multiport.json ]; then
+        cat > /etc/dealer-adm/multiport.json << 'EOF'
+{
+  "bhttp": "127.0.0.1:10090",
+  "ws": "127.0.0.1:10081",
+  "v2ray": "127.0.0.1:10080",
+  "v2ray_path": "/v2ray",
+  "ssh": "127.0.0.1:22"
+}
+EOF
+    fi
+
+    if [ ! -f /etc/dealer-adm/.multiport_initialized ]; then
+        touch /etc/dealer-adm/multiport_ports.db
+        for DEF_PORT in 80 8080; do
+            systemctl stop "bhttp-${DEF_PORT}" "ws-proxy-${DEF_PORT}" 2>/dev/null || true
+            systemctl disable "bhttp-${DEF_PORT}" "ws-proxy-${DEF_PORT}" 2>/dev/null || true
+
+            cat > "/etc/systemd/system/dealer-multi-${DEF_PORT}.service" << EOF
+[Unit]
+Description=Dealer Multi-Protocol Router Port ${DEF_PORT}
+After=network.target
+
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/bin/python3 -O /usr/local/bin/dealer-router --port ${DEF_PORT}
+Restart=always
+RestartSec=2
+LimitNOFILE=1048576
+
+[Install]
+WantedBy=multi-user.target
+EOF
+            iptables -C INPUT -p tcp --dport "${DEF_PORT}" -j ACCEPT 2>/dev/null || \
+            iptables -I INPUT 1 -p tcp --dport "${DEF_PORT}" -j ACCEPT 2>/dev/null
+            if command -v ufw >/dev/null 2>&1 && ufw status | grep -q "Status: active"; then
+                ufw allow "${DEF_PORT}/tcp" >/dev/null 2>&1 || true
+            fi
+
+            systemctl daemon-reload
+            systemctl enable "dealer-multi-${DEF_PORT}" >/dev/null 2>&1
+            systemctl restart "dealer-multi-${DEF_PORT}" >/dev/null 2>&1
+
+            grep -q "^${DEF_PORT}$" /etc/dealer-adm/multiport_ports.db || echo "${DEF_PORT}" >> /etc/dealer-adm/multiport_ports.db
+        done
+        touch /etc/dealer-adm/.multiport_initialized
+    fi
+}
+
+instalar_multipuerto_auto
+
 # ══════════════════════════════════════════
 # VERIFICACION DE LICENCIA DEALER
 # ══════════════════════════════════════════
@@ -209,9 +405,9 @@ if [ ! -f /etc/dealer-adm/.licensed ]; then
     read -p "  Ingresa tu KEY: " INPUT_KEY
     echo -e "\033[1;92m◆━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━◆\033[0m"
 
-    command -v curl >/dev/null 2>&1 || apt install -y curl >/dev/null 2>&1
+    command -v curl >/dev/null 2>&1 || apt-get install -y -qq curl >/dev/null 2>&1
 
-    echo -e "  \033[0;36m⏳ Verificando key...\033[0m"
+    echo -e "  \033[0;36m[*] Verificando key...\033[0m"
     echo -e "\033[1;92m◆━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━◆\033[0m"
     API_URL="https://dealerbotgenkeys.mcmilton235.workers.dev/validate"
 
@@ -225,18 +421,18 @@ if [ ! -f /etc/dealer-adm/.licensed ]; then
         echo "$INPUT_KEY" > /etc/dealer-adm/.licensed
         echo "$OWNER" > /etc/dealer-adm/reseller
 
-        echo -e "  \033[0;32m Key válida ✅\033[0m"
+        echo -e "  \033[0;32m Key válida [OK]\033[0m"
         echo -e "\033[1;92m◆━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━◆\033[0m"
         sleep 2
     else
         if echo "$RESPONSE" | grep -q '"expired"'; then
-            MSG="⏰ Key expirada ⏰"
+            MSG="[!] Key expirada [!]"
         elif echo "$RESPONSE" | grep -q '"used"'; then
-            MSG="⚠️ Key ya usada ⚠️"
+            MSG="[!] Key ya usada [!]"
         elif echo "$RESPONSE" | grep -q '"not_found"'; then
-            MSG="❌ La key no existe ❌"
+            MSG="[X] La key no existe [X]"
         else
-            MSG="❌ Error de validación ❌"
+            MSG="[X] Error de validación [X]"
         fi
         echo -e "  \033[0;31m$MSG\033[0m"
         echo -e "\033[1;92m◆━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━◆\033[0m"
@@ -245,7 +441,7 @@ if [ ! -f /etc/dealer-adm/.licensed ]; then
     fi
 fi
 
-# Deshabilitar mensajes de bienvenida de Ubuntu
+# Deshabilitar mensajes de bienvenida de Ubuntu/Debian
 touch ~/.hushlogin 2>/dev/null
 chmod -x /etc/update-motd.d/* 2>/dev/null
 > /etc/motd 2>/dev/null
@@ -259,7 +455,7 @@ fi
 # Preguntar nombre ASCII al instalar por primera vez
 if [ ! -f /etc/dealer-adm/server_name ]; then
     mkdir -p /etc/dealer-adm
-    apt install -y figlet > /dev/null 2>&1
+    apt-get install -y -qq figlet > /dev/null 2>&1
     echo -e "\033[1;33mEscribe el nombre para el servidor\033[0m"
     read -p "Nombre: " INSTALL_NAME
     INSTALL_NAME=${INSTALL_NAME:-"Dealer"}
@@ -348,6 +544,7 @@ EOF
     fi
     sleep 1.5
 }
+
 # ══════════════════════════════════════════════════════════════════════
 #   MÓDULO BHTTPTUNNEL (DEALER VPN - EDICIÓN COMPLETA BHTTP.PY MULTI-PUERTO)
 # ══════════════════════════════════════════════════════════════════════
@@ -357,7 +554,6 @@ BHTTP_BIN="$DIR_BHTTP/bhttp-server"
 DIR_SERVICES="/etc/systemd/system"
 CONFIG_BHTTP_DB="/etc/dealer-adm/bhttp/ports.db"
 
-# Colores de interfaz
 W="\033[1;97m"
 G="\033[0;32m"
 R="\033[0;31m"
@@ -376,12 +572,10 @@ bhttp_abrir_firewall() {
 }
 
 bhttp_optimizar_kernel() {
-    # 1. Habilitar módulo BBR
     modprobe tcp_bbr 2>/dev/null
     mkdir -p /etc/modules-load.d
     grep -q "^tcp_bbr" /etc/modules-load.d/bbr.conf 2>/dev/null || echo "tcp_bbr" > /etc/modules-load.d/bbr.conf 2>/dev/null
 
-    # 2. Configuración de kernel exacta + IP Forward
     cat > /etc/sysctl.d/99-bhttp.conf << 'EOF'
 net.ipv4.ip_forward = 1
 net.core.default_qdisc = fq
@@ -406,14 +600,11 @@ fs.file-max = 1048576
 EOF
     sysctl --system >/dev/null 2>&1
 
-    # 3. Regla TCPMSS
     iptables -C FORWARD -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null || \
     iptables -A FORWARD -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null
 
-    # 4. Dependencias del sistema necesarias para BHTTP
-    apt-get install -y python3 python3-pam net-tools >/dev/null 2>&1
+    DEBIAN_FRONTEND=noninteractive apt-get install -y -qq python3 python3-pam net-tools >/dev/null 2>&1
 
-    # 5. Ajustes en OpenSSH (Incluyendo compatibilidad de algoritmos para TrileadSSH2Java)
     if [ -f /etc/ssh/sshd_config ]; then
         sed -i 's/\r$//' /etc/ssh/sshd_config
         sed -i 's/^[[:space:]]*#\?[[:space:]]*AllowTcpForwarding.*/AllowTcpForwarding yes/' /etc/ssh/sshd_config
@@ -423,7 +614,6 @@ EOF
         grep -q "^UseDNS no" /etc/ssh/sshd_config || echo "UseDNS no" >> /etc/ssh/sshd_config
         grep -q "^MaxStartups" /etc/ssh/sshd_config && sed -i 's/^MaxStartups.*/MaxStartups 100:30:200/' /etc/ssh/sshd_config || echo "MaxStartups 100:30:200" >> /etc/ssh/sshd_config
 
-        # Integración oficial de algoritmos legacy para evitar bucle de reconexión en la app
         if ! grep -q "Compatibilidad para TrileadSSH2Java" /etc/ssh/sshd_config; then
             cat >> /etc/ssh/sshd_config << 'EOF'
 
@@ -960,12 +1150,36 @@ PYEOF
     sed -i 's/\r$//' "$BHTTP_BIN"
     chmod +x "$BHTTP_BIN"
 
+    # Crear puerto interno 10090 para el modo Multipuerto Compartido si no existe
+    if ! grep -q "^10090|" "$CONFIG_BHTTP_DB" 2>/dev/null; then
+        cat > "$DIR_SERVICES/bhttp-10090.service" << EOF
+[Unit]
+Description=BHTTP Internal Backend Port 10090 -> 22
+After=network.target
+
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/bin/python3 -O $BHTTP_BIN --host 127.0.0.1 --port 10090 --backend-host 127.0.0.1 --backend-port 22
+Restart=always
+RestartSec=2
+LimitNOFILE=1048576
+
+[Install]
+WantedBy=multi-user.target
+EOF
+        systemctl daemon-reload
+        systemctl enable bhttp-10090 >/dev/null 2>&1
+        systemctl start bhttp-10090 >/dev/null 2>&1
+        echo "10090|22" >> "$CONFIG_BHTTP_DB"
+    fi
+
     # Reiniciar y asegurar firewall en servicios activos si existen
     if [ -s "$CONFIG_BHTTP_DB" ]; then
         while IFS='|' read -r L_PORT T_PORT; do
             L_PORT=$(echo "$L_PORT" | tr -dc '0-9')
             if [ -n "$L_PORT" ]; then
-                bhttp_abrir_firewall "$L_PORT"
+                [ "$L_PORT" != "10090" ] && bhttp_abrir_firewall "$L_PORT"
                 sed -i 's/\r$//' "$DIR_SERVICES/bhttp-$L_PORT.service" 2>/dev/null
                 systemctl daemon-reload
                 systemctl restart "bhttp-$L_PORT" 2>/dev/null
@@ -973,19 +1187,19 @@ PYEOF
         done < "$CONFIG_BHTTP_DB"
     fi
 
-    echo -e "\n${G}Motor BHTTP Original instalado y sincronizado con éxito.${NC}"
+    echo -e "\n${G}Motor BHTTP Oficial instalado y sincronizado con éxito.${NC}"
     sleep 2
 }
 
 bhttp_agregar_puerto() {
     clear
     echo -e "${Y}AGREGAR PUERTO BHTTP (DEALER VPN)${NC}\n"
-    read -p "Ingresa el puerto local BHTTP (ej. 90, 8880, 80): " L_PORT
+    read -p "Ingresa el puerto local BHTTP (ej. 90, 8880, 10090): " L_PORT
     L_PORT=$(echo "$L_PORT" | tr -dc '0-9')
     [ -z "$L_PORT" ] && return
 
-    if netstat -tuln 2>/dev/null | grep -qE ":$L_PORT\b"; then
-        echo -e "\n${R}[!] El puerto $L_PORT ya está en uso por otro proceso.${NC}"
+    if ss -tuln 2>/dev/null | grep -qE ":$L_PORT\b"; then
+        echo -e "\n${R}[!] El puerto $L_PORT ya está en uso por otro proceso (o por Multipuerto).${NC}"
         sleep 2
         return
     fi
@@ -1023,7 +1237,7 @@ EOF
         grep -v "^$L_PORT|" "$CONFIG_BHTTP_DB" 2>/dev/null > "$CONFIG_BHTTP_DB.tmp" || true
         mv "$CONFIG_BHTTP_DB.tmp" "$CONFIG_BHTTP_DB" 2>/dev/null || true
         echo "$L_PORT|$T_PORT" >> "$CONFIG_BHTTP_DB"
-        echo -e "\n${G}✅ Puerto BHTTP $L_PORT activo apuntando a SSH $T_PORT con éxito.${NC}"
+        echo -e "\n${G}[OK] Puerto BHTTP $L_PORT activo apuntando a SSH $T_PORT con éxito.${NC}"
     else
         echo -e "\n${R}[!] Error al iniciar el servicio bhttp-$L_PORT.${NC}"
         journalctl -u "bhttp-$L_PORT" -n 10 --no-pager
@@ -1098,11 +1312,13 @@ bhttp_datos_http_custom() {
     clear
     SRV_IP=$(curl -s -4 ifconfig.me 2>/dev/null || hostname -I | awk '{print $1}')
     PORTS=$(awk -F'|' '{print $1}' "$CONFIG_BHTTP_DB" 2>/dev/null | paste -sd "," -)
+    SHARED=$(cat /etc/dealer-adm/multiport_ports.db 2>/dev/null | paste -sd "," -)
     echo -e "${Y}DATOS DE CONEXIÓN (DEALER VPN)${NC}\n"
-    echo -e "  ${W}IP del Servidor:${NC} ${G}$SRV_IP${NC}"
-    echo -e "  ${W}Puertos Activos:${NC} ${C}${PORTS:-Ninguno}${NC}"
-    echo -e "  ${W}Protocolo:${NC}        BHTTP (Upgrade 101/200 & Multiplexed Chunks)"
-    echo -e "  ${W}Autenticación:${NC}    Cualquier usuario SSH de tu sistema"
+    echo -e "  ${W}IP del Servidor:${NC}     ${G}$SRV_IP${NC}"
+    echo -e "  ${W}Puertos Directos:${NC}    ${C}${PORTS:-Ninguno}${NC}"
+    echo -e "  ${W}Puertos Compartidos:${NC} ${G}${SHARED:-Ninguno}${NC}"
+    echo -e "  ${W}Protocolo:${NC}           BHTTP (Upgrade 101/200 & Multiplexed Chunks)"
+    echo -e "  ${W}Autenticación:${NC}       Cualquier usuario SSH de tu sistema"
     echo ""
     read -p "  Presiona ENTER para continuar..."
 }
@@ -1112,7 +1328,7 @@ bhttp_reiniciar_todos() {
     while IFS='|' read -r L_PORT _; do
         L_PORT=$(echo "$L_PORT" | tr -dc '0-9')
         if [ -n "$L_PORT" ]; then
-            bhttp_abrir_firewall "$L_PORT"
+            [ "$L_PORT" != "10090" ] && bhttp_abrir_firewall "$L_PORT"
             systemctl restart "bhttp-$L_PORT" 2>/dev/null
         fi
     done < "$CONFIG_BHTTP_DB"
@@ -1178,8 +1394,8 @@ menu_bhttp() {
         echo -e "\033[0;33m║\033[0m      \033[43;30m PANEL DE GESTIÓN KTUN OFICIAL \033[0m                    \033[0;33m║\033[0m"
         echo -e "\033[0;33m╚═══════════════════════════════════════════════════════════════════════╝\033[0m"
         echo ""
-        echo -e "       \033[1;97mEstado\033[0m\033[0;32m\xE2\x9C\x85\033[0m: \033[1;97m${ACTIVOS} activo(s)\033[0m"
-        echo -e "       \033[1;97mPuerto(s):\033[0m \033[1;97m${PUERTOS}\033[0m"
+        echo -e "       \033[1;97mEstado [OK]:\033[0m \033[1;97m${ACTIVOS} activo(s)\033[0m"
+        echo -e "       \033[1;97mPuerto(s):\033[0m   \033[1;97m${PUERTOS}\033[0m"
         echo ""
         echo -e "\033[0;33m╞═══════════════════════════════════════════════════════════════════════╡\033[0m"
         echo -e " \033[1;97m[1]\033[0m\033[0;31m\xE2\x9E\xA4\033[0m \033[1;97mInstalar / Re-instalar motor KTUN\033[0m"
@@ -1221,8 +1437,9 @@ menu_bhttp() {
 instalar_ws() {
     banner; sep
     echo -e "  ${Y}Configurar WebSocket Python${NC}"; sep; echo ""
-    read -p "  Puerto WebSocket (ej: 80): " WS_PORT; WS_PORT=${WS_PORT:-80}
-    read -p "  Puerto local SSH (ej: 22): " SSH_PORT; SSH_PORT=${SSH_PORT:-22}
+    echo -e "  ${DIM}(Usa 10081 para compartir con Multipuerto 80/8080)${NC}"
+    read -p "  Puerto WebSocket (default 10081): " WS_PORT; WS_PORT=${WS_PORT:-10081}
+    read -p "  Puerto local SSH (default 22): " SSH_PORT; SSH_PORT=${SSH_PORT:-22}
     echo ""; sep
     echo -e "  ${W}RESPONSE (101 para WebSocket, 200 default):${NC}"
     read -p "  RESPONSE: " STATUS_RESP; STATUS_RESP=${STATUS_RESP:-200}
@@ -1232,6 +1449,8 @@ instalar_ws() {
     echo -e "  ${W}Encabezado personalizado (ENTER para default):${NC}"
     read -p "  Cabecera: " CUSTOM_HEADER
     [ -z "$CUSTOM_HEADER" ] && CUSTOM_HEADER="\r\nContent-length: 0\r\n\r\nHTTP/1.1 200 Connection Established\r\n\r\n"
+
+    echo "$WS_PORT" > /etc/dealer-adm/ws_port
 
     cat > $DIR_SCRIPTS/proxy_ws_${WS_PORT}.py << PYEOF
 #!/usr/bin/env python3
@@ -1433,9 +1652,9 @@ menu_badvpn() {
                 if [ ! -f /usr/local/bin/badvpn-udpgw ] || [ ! -s /usr/local/bin/badvpn-udpgw ]; then
                     rm -f /usr/local/bin/badvpn-udpgw
                     echo -e "\n  ${C}Actualizando repositorios...${NC}"
-                    apt update -y > /dev/null 2>&1
+                    apt-get update -y > /dev/null 2>&1
                     echo -e "  ${C}Instalando dependencias...${NC}"
-                    apt install -y cmake make gcc g++ git > /dev/null 2>&1
+                    DEBIAN_FRONTEND=noninteractive apt-get install -y -qq cmake make gcc g++ git > /dev/null 2>&1
                     echo -e "  ${C}Compilando BadVPN...${NC}"
                     cd /tmp || cd /root
                     rm -rf badvpn
@@ -1544,20 +1763,20 @@ menu_ssl() {
         read -p "  Opcion: " OPT
         case $OPT in
             1)
-                apt install -y stunnel4 > /dev/null 2>&1
+                DEBIAN_FRONTEND=noninteractive apt-get install -y -qq stunnel4 > /dev/null 2>&1
                 read -p "  Puerto SSL (ej: 443): " SSL_PORT; SSL_PORT=${SSL_PORT:-443}
                 
                 echo -e ""
                 echo -e "  ${Y}¿Hacia dónde redirigir el tráfico SSL descifrado?${NC}"
                 echo -e "  ${W}[1]${NC} Directo a SSH (Puerto 22) - Solo SSL sin payload"
-                echo -e "  ${W}[2]${NC} A WebSocket Python (Puerto 80) - Soporta SSL + Payload"
+                echo -e "  ${W}[2]${NC} A Multipuerto (Puerto 80) - Soporta BHTTP + WS + V2Ray + SSL"
                 read -p "  Elige una opción [1-2]: " SSL_REDIR_OPT
                 
                 if [ "$SSL_REDIR_OPT" = "2" ]; then
-                    read -p "  Puerto de tu WebSocket Python (ej: 80): " LOCAL_PORT
+                    read -p "  Puerto destino Multipuerto/WS (default 80): " LOCAL_PORT
                     LOCAL_PORT=${LOCAL_PORT:-80}
                 else
-                    read -p "  Puerto local SSH (ej: 22): " LOCAL_PORT
+                    read -p "  Puerto local SSH (default 22): " LOCAL_PORT
                     LOCAL_PORT=${LOCAL_PORT:-22}
                 fi
 
@@ -1608,11 +1827,11 @@ except: pass
 " 2>/dev/null
         fi
         echo ""; sep
-        printf " ${Y}❬1❭ ⚡ Instalar V2Ray      ❬2❭ ➕ Agregar inbound${NC}\n"
-        printf " ${Y}❬3❭ 🗑  Eliminar inbound    ❬4❭ ▶  Iniciar${NC}\n"
-        printf " ${Y}❬5❭ ⏹  Detener              ❬6❭ 🔄 Reiniciar${NC}\n"
-        printf " ${Y}❬7❭ 👤 Crear usuario        ❬8❭ 📋 Ver usuarios${NC}\n"
-        printf " ${R}❬9❭ 🗑  Desinstalar V2Ray${NC}\n"
+        printf " ${Y}❬1❭ [+] Instalar V2Ray      ❬2❭ [+] Agregar inbound${NC}\n"
+        printf " ${Y}❬3❭ [-] Eliminar inbound    ❬4❭ [>] Iniciar${NC}\n"
+        printf " ${Y}❬5❭ [X] Detener             ❬6❭ [*] Reiniciar${NC}\n"
+        printf " ${Y}❬7❭ [U] Crear usuario       ❬8❭ [L] Ver usuarios${NC}\n"
+        printf " ${R}❬9❭ [!] Desinstalar V2Ray${NC}\n"
         sep
         printf " ${R}❬0❭ Volver${NC}\n"; sep; echo ""
         read -p " Opcion: " OPT
@@ -1623,9 +1842,11 @@ except: pass
                 echo -e "  ${C}Instalando V2Ray...${NC}"
                 bash <(curl -s https://raw.githubusercontent.com/v2fly/fhs-install-v2ray/master/install-release.sh) > /dev/null 2>&1
                 echo -e "  ${C}Obteniendo certificado SSL...${NC}"
-                apt install -y certbot > /dev/null 2>&1
+                DEBIAN_FRONTEND=noninteractive apt-get install -y -qq certbot > /dev/null 2>&1
+                systemctl stop dealer-multi-80 2>/dev/null || true
                 pkill -f "python3.*:80" 2>/dev/null; sleep 1
                 certbot certonly --standalone -d $DOMAIN --non-interactive --agree-tos -m $EMAIL
+                systemctl start dealer-multi-80 2>/dev/null || true
                 chmod 755 /etc/letsencrypt/live/ /etc/letsencrypt/archive/ 2>/dev/null
                 chmod 644 /etc/letsencrypt/live/$DOMAIN/*.pem 2>/dev/null
                 chmod 644 /etc/letsencrypt/archive/$DOMAIN/*.pem 2>/dev/null
@@ -1635,11 +1856,12 @@ EOF
                 mkdir -p /etc/dealer-adm
                 echo "$DOMAIN" > /etc/dealer-adm/v2ray_domain
                 systemctl enable v2ray; systemctl start v2ray
-                echo -e "  ${G}OK V2Ray instalado — Usa ❬2❭ para agregar puertos${NC}"; sleep 2 ;;
+                echo -e "  ${G}OK V2Ray instalado — Usa ❬2❭ para agregar puertos (usa 10080 para compartir puerto 80/8080)${NC}"; sleep 2 ;;
             2)
                 banner; sep
                 echo -e "  ${Y}  AGREGAR INBOUND${NC}"; sep; echo ""
-                read -p "  Puerto: " V2_PORT
+                echo -e "  ${DIM}(Usa 10080 con path /v2ray para compartir puerto 80/8080)${NC}"
+                read -p "  Puerto (default 10080): " V2_PORT; V2_PORT=${V2_PORT:-10080}
                 echo -e "  Protocolo: ${Y}❬1❭${NC} vmess ${Y}❬2❭${NC} vless ${Y}❬3❭${NC} trojan"
                 read -p "  Opcion: " V2_PROTO_OPT
                 case $V2_PROTO_OPT in
@@ -1724,13 +1946,13 @@ with open('/usr/local/etc/v2ray/config.json', 'w') as f: json.dump(config, f, in
 net = ib.get('streamSettings', {}).get('network', 'tcp')
 tls = ib.get('streamSettings', {}).get('security', 'none')
 path = ib.get('streamSettings', {}).get('wsSettings', {}).get('path', '/v2ray') if net == 'ws' else ''
-out_port = "443" if ib['port'] == 8080 else str(ib['port'])
+out_port = "80" if ib['port'] == 10080 else ("443" if ib['port'] == 8080 else str(ib['port']))
 out_tls = "tls" if ib['port'] == 8080 else (tls if tls != "none" else "")
 vmess = {"v":"2","ps":name,"add":domain,"port":out_port,"id":uid,"aid":"0","net":net,"type":"none","host":domain,"path":path,"tls":out_tls}
 link = "vmess://" + base64.b64encode(json.dumps(vmess).encode()).decode()
 print("")
 print("\033[1;96m◆━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━◆\033[0m")
-print("  \033[1;32m✅ CUENTA VMESS CREADA\033[0m")
+print("  \033[1;32m[OK] CUENTA VMESS CREADA\033[0m")
 print("\033[1;96m◆━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━◆\033[0m")
 print(f"  \033[1;96m◈\033[0m \033[2;37mPerfil :\033[0m  \033[1;97m{name}\033[0m")
 print(f"  \033[1;96m◈\033[0m \033[2;37mHost   :\033[0m  \033[1;97m{domain}\033[0m")
@@ -1738,7 +1960,7 @@ print(f"  \033[1;96m◈\033[0m \033[2;37mPuerto :\033[0m  \033[1;33m{out_port}\0
 print(f"  \033[1;96m◈\033[0m \033[2;37mRed    :\033[0m  \033[1;96m{net}\033[0m")
 print(f"  \033[1;96m◈\033[0m \033[2;37mExpira :\033[0m  \033[1;33m$EXP_SHOW\033[0m")
 print("\033[1;96m◆━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━◆\033[0m")
-print("  \033[1;96m🔑 VMESS LINK:\033[0m")
+print("  \033[1;96m[KEY] VMESS LINK:\033[0m")
 print("")
 print("\033[1;97m" + link + "\033[0m")
 print("")
@@ -2077,7 +2299,7 @@ EOF
             echo "$USR_NAME|$USR_PASS|$EXP_DATE|active" >> /etc/zivpn/passwords.db
             if [ -f /etc/dealer-adm/scripts/zivpn_manager.sh ]; then
                 bash /etc/dealer-adm/scripts/zivpn_manager.sh rebuild_zivpn_json
-                echo -e "  ${G}✓ Sincronizado automáticamente con ZIVPN${NC}"
+                echo -e "  ${G}[OK] Sincronizado automáticamente con ZIVPN${NC}"
             fi
         fi
     fi
@@ -2100,7 +2322,7 @@ EOF
     echo -e "  ${W}$SERVER_IP:22@$USR_NAME:$USR_PASS${NC}"
     echo ""
 
-    ss -tlnp | grep -q ":80 " && echo -e "  ${C}WS Puerto 80:${NC}" && echo -e "  ${W}$SERVER_IP:80@$USR_NAME:$USR_PASS${NC}" && echo ""
+    ss -tlnp | grep -q ":80 " && echo -e "  ${C}Multipuerto (BHTTP/WS/V2Ray/SSH) 80:${NC}" && echo -e "  ${W}$SERVER_IP:80@$USR_NAME:$USR_PASS${NC}" && echo ""
 
     systemctl is-active --quiet stunnel4 2>/dev/null && echo -e "  ${C}SSL/TLS 443:${NC}" && echo -e "  ${W}$SERVER_IP:443@$USR_NAME:$USR_PASS${NC}" && echo ""
 
@@ -2711,7 +2933,7 @@ menu_zivpn() {
         printf "   ${NEON}[1]${W} Listar cuentas            ${NEON}[6]${W} Eliminar cuenta\n"
         printf "   ${NEON}[2]${W} Agregar cuenta (Manual)   ${NEON}[7]${W} Editar duración\n"
         printf "   ${NEON}[3]${W} Agregar cuenta (Aleatoria) ${NEON}[8]${W} Reiniciar servicio\n"
-        printf "   ${NEON}[4]${W} Activar cuenta            ${R}[9]🚨 Desinstalar servicio\n"
+        printf "   ${NEON}[4]${W} Activar cuenta            ${R}[9] Desinstalar servicio\n"
         printf "   ${NEON}[5]${W} Desactivar cuenta         ${NEON}[10]${W} Instalar servicio\n"
         echo ""
         echo -e "${NEON}╭──────────────────────────────────────────────────╮${NC}"
@@ -2785,7 +3007,7 @@ eliminar_usuario() {
             ' /etc/hysteria/config.json > "$TMPFILE"
             mv "$TMPFILE" /etc/hysteria/config.json
             systemctl restart hysteria-server >/dev/null 2>&1
-            echo -e "  ${G}✓ Usuario eliminado de Hysteria${NC}"
+            echo -e "  ${G}[OK] Usuario eliminado de Hysteria${NC}"
         fi
 
         if [ -f /etc/zivpn/passwords.db ]; then
@@ -2795,7 +3017,7 @@ eliminar_usuario() {
             fi
         fi
 
-        echo -e "  ${G}✓ Usuario eliminado correctamente${NC}"
+        echo -e "  ${G}[OK] Usuario eliminado correctamente${NC}"
     else
         echo -e "  ${R}Usuario no encontrado${NC}"
     fi
@@ -2863,7 +3085,7 @@ renovar_usuario() {
 
     NOMBRE=$(grep '^nombre:' "/etc/dealer-adm/userDIR/$REN_USR" | cut -d' ' -f2-)
     echo ""
-    echo -e "  ${G}✓ $NOMBRE renovado hasta $EXP_SHOW${NC}"
+    echo -e "  ${G}[OK] $NOMBRE renovado hasta $EXP_SHOW${NC}"
     sleep 2
 }
 
@@ -2950,7 +3172,7 @@ instalar_panel_web() {
         chmod +x /tmp/panel_install/setup_panel.sh
         bash /tmp/panel_install/setup_panel.sh
     else
-        echo -e "  ${R}❌ Error al descargar setup_panel.sh desde el repositorio.${NC}"
+        echo -e "  ${R}[X] Error al descargar setup_panel.sh desde el repositorio.${NC}"
     fi
     
     rm -rf /tmp/panel_install
@@ -2972,7 +3194,7 @@ configurar_cf_domain() {
         echo -e "\n  ${Y}Dominio Cloudflare eliminado.${NC}"
     else
         echo "$NEW_CF" > /etc/dealer-adm/cf_domain
-        echo -e "\n  ${G}✅ Dominio Cloudflare guardado correctamente.${NC}"
+        echo -e "\n  ${G}[OK] Dominio Cloudflare guardado correctamente.${NC}"
     fi
 
     echo ""; sep
@@ -3008,7 +3230,7 @@ estado_panel_web() {
     banner; sep
     echo -e "  ${Y}  ESTADO DEL PANEL WEB${NC}"; sep; echo ""
     
-    echo -ne "  ${W}Servidor Apache2:${NC}  "
+    echo -ne "  ${W}Servidor Apache2:${NC}      "
     status_service apache2
     
     echo -ne "  ${W}Base de Datos MariaDB:${NC} "
@@ -3020,9 +3242,9 @@ estado_panel_web() {
     echo ""; sep
     if ss -tlnp 2>/dev/null | grep -q ":81 "; then
         SERVER_IP=$(curl -s -4 ifconfig.me 2>/dev/null || hostname -I | awk '{print $1}')
-        echo -e "  ${G}✅ Panel Web en línea en:${NC} http://$SERVER_IP:81/login.php"
+        echo -e "  ${G}[OK] Panel Web en línea en:${NC} http://$SERVER_IP:81/login.php"
     else
-        echo -e "  ${R}❌ El Panel Web parece no estar escuchando en el puerto 81.${NC}"
+        echo -e "  ${R}[X] El Panel Web parece no estar escuchando en el puerto 81.${NC}"
     fi
     echo ""; read -p "  Presiona ENTER para continuar..."
 }
@@ -3044,9 +3266,9 @@ actualizar_panel_web() {
     for file in "${FILES[@]}"; do
         wget -q -O "/var/www/html/$file" "$REPO_URL/$file"
         if [ $? -eq 0 ]; then
-            echo -e "  ${G}✓ Actualizado:${NC} $file"
+            echo -e "  ${G}[OK] Actualizado:${NC} $file"
         else
-            echo -e "  ${R}✗ Error al actualizar:${NC} $file"
+            echo -e "  ${R}[X] Error al actualizar:${NC} $file"
         fi
     done
     
@@ -3054,7 +3276,7 @@ actualizar_panel_web() {
     chmod -R 755 /var/www/html
     
     echo ""; sep
-    echo -e "  ${G}¡Panel Web actualizado correctamente!${NC}"
+    echo -e "  ${G}Panel Web actualizado correctamente.${NC}"
     echo -e "  ${Y}Tu base de datos y configuración (db.php) se mantuvieron intactas.${NC}"
     echo ""; read -p "  Presiona ENTER para continuar..."
 }
@@ -3064,7 +3286,7 @@ credenciales_panel_web() {
     echo -e "  ${Y}  URL Y CREDENCIALES DEL PANEL WEB${NC}"; sep; echo ""
     
     if [ ! -f /var/www/html/db.php ]; then
-        echo -e "  ${R}❌ No se encontró la configuración de la base de datos (/var/www/html/db.php).${NC}"
+        echo -e "  ${R}[X] No se encontró la configuración de la base de datos (/var/www/html/db.php).${NC}"
         sleep 2 && return
     fi
     
@@ -3075,12 +3297,12 @@ credenciales_panel_web() {
         ADM_USER=$(echo "$ADMIN_DATA" | awk '{print $1}')
         ADM_PASS=$(echo "$ADMIN_DATA" | awk '{print $2}')
         
-        echo -e "  ${W}🌐 URL de Acceso:${NC} http://$SERVER_IP:81/login.php"
-        echo -e "  ${W}👤 Usuario Admin:${NC} \033[1;33m$ADM_USER\033[0m"
-        echo -e "  ${W}🔑 Contraseña:   ${NC} \033[1;32m$ADM_PASS\033[0m"
+        echo -e "  ${W}URL de Acceso:${NC} http://$SERVER_IP:81/login.php"
+        echo -e "  ${W}Usuario Admin:${NC} \033[1;33m$ADM_USER\033[0m"
+        echo -e "  ${W}Contraseña:   ${NC} \033[1;32m$ADM_PASS\033[0m"
     else
-        echo -e "  ${W}🌐 URL de Acceso:${NC} http://$SERVER_IP:81/login.php"
-        echo -e "  ${R}⚠️ No se pudo consultar el usuario Admin en la base de datos.${NC}"
+        echo -e "  ${W}URL de Acceso:${NC} http://$SERVER_IP:81/login.php"
+        echo -e "  ${R}[!] No se pudo consultar el usuario Admin en la base de datos.${NC}"
     fi
     
     echo ""; sep
@@ -3116,7 +3338,7 @@ desinstalar_panel_web() {
     systemctl restart apache2 2>/dev/null
     
     echo ""; sep
-    echo -e "  ${G}✅ Panel Web desinstalado correctamente.${NC}"
+    echo -e "  ${G}[OK] Panel Web desinstalado correctamente.${NC}"
     echo ""; read -p "  Presiona ENTER para continuar..."
 }
 
@@ -3125,7 +3347,7 @@ cambiar_creds_panel_web() {
     echo -e "  ${Y}  CAMBIAR CREDENCIALES ADMIN DEL PANEL WEB${NC}"; sep; echo ""
 
     if [ ! -f /var/www/html/db.php ]; then
-        echo -e "  ${R}❌ No se encontró la configuración de la base de datos (/var/www/html/db.php).${NC}"
+        echo -e "  ${R}[X] No se encontró la configuración de la base de datos (/var/www/html/db.php).${NC}"
         sleep 2 && return
     fi
 
@@ -3139,7 +3361,7 @@ cambiar_creds_panel_web() {
     ' 2>/dev/null)
 
     if [ -z "$ADMIN_INFO" ]; then
-        echo -e "  ${R}❌ No se encontró ninguna cuenta de Administrador en la base de datos.${NC}"
+        echo -e "  ${R}[X] No se encontró ninguna cuenta de Administrador en la base de datos.${NC}"
         sleep 2 && return
     fi
 
@@ -3150,13 +3372,13 @@ cambiar_creds_panel_web() {
 
     read -p "  Nuevo usuario Admin: " NEW_ADM_USER
     if [ -z "$NEW_ADM_USER" ]; then
-        echo -e "  ${R}❌ El usuario no puede estar vacío.${NC}"
+        echo -e "  ${R}[X] El usuario no puede estar vacío.${NC}"
         sleep 2 && return
     fi
 
     read -p "  Nueva contraseña Admin: " NEW_ADM_PASS
     if [ -z "$NEW_ADM_PASS" ]; then
-        echo -e "  ${R}❌ La contraseña no puede estar vacía.${NC}"
+        echo -e "  ${R}[X] La contraseña no puede estar vacía.${NC}"
         sleep 2 && return
     fi
 
@@ -3184,16 +3406,16 @@ cambiar_creds_panel_web() {
 
     if [ "$RESULT" = "OK" ]; then
         echo ""; sep
-        echo -e "  ${G}✅ Credenciales actualizadas correctamente.${NC}"
-        echo -e "  ${W}👤 Usuario:${NC}    \033[1;33m$NEW_ADM_USER\033[0m"
-        echo -e "  ${W}🔑 Contraseña:${NC} \033[1;32m$NEW_ADM_PASS\033[0m"
+        echo -e "  ${G}[OK] Credenciales actualizadas correctamente.${NC}"
+        echo -e "  ${W}Usuario:${NC}    \033[1;33m$NEW_ADM_USER\033[0m"
+        echo -e "  ${W}Contraseña:${NC} \033[1;32m$NEW_ADM_PASS\033[0m"
     elif [ "$RESULT" = "EXISTS" ]; then
         echo ""; sep
-        echo -e "  ${R}❌ El usuario '$NEW_ADM_USER' ya está registrado por otra cuenta.${NC}"
+        echo -e "  ${R}[X] El usuario '$NEW_ADM_USER' ya está registrado por otra cuenta.${NC}"
         echo -e "  ${Y}Por favor prueba con otro nombre.${NC}"
     else
         echo ""; sep
-        echo -e "  ${R}❌ Error al actualizar la base de datos.${NC}"
+        echo -e "  ${R}[X] Error al actualizar la base de datos.${NC}"
         [ -n "$RESULT" ] && echo -e "  ${Y}Detalle: $RESULT${NC}"
     fi
 
@@ -3245,7 +3467,7 @@ instalar_motd() {
     read -p "  Nombre del servidor: " SRV_NAME
     [ -z "$SRV_NAME" ] && SRV_NAME="Dealer"
 
-    apt install -y figlet > /dev/null 2>&1
+    apt-get install -y -qq figlet > /dev/null 2>&1
     INSTALL_DATE=$(date +%d-%m-%Y)
 
     echo "$INSTALL_DATE" > /etc/dealer-adm/install_date
@@ -3256,12 +3478,12 @@ instalar_motd() {
     
     cat > /etc/profile.d/sshfree-motd.sh << MOTDEOF
 #!/bin/bash
-PURPLE='[0;35m'
-CYAN='[0;36m'
-GREEN='[0;32m'
-YELLOW='[1;33m'
-WHITE='[1;37m'
-NC='[0m'
+PURPLE='\033[0;35m'
+CYAN='\033[0;36m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+WHITE='\033[1;37m'
+NC='\033[0m'
 
 INSTALL_DATE=\$(cat /etc/dealer-adm/install_date 2>/dev/null || echo "N/A")
 SRV_NAME=\$(cat /etc/dealer-adm/server_name 2>/dev/null || echo "Script Dealer")
@@ -3298,7 +3520,7 @@ MOTDEOF
 }
 
 # ══════════════════════════════════════════
-#   MENÚ PRINCIPAL
+#   UTILIDADES DE DESINSTALACIÓN Y ACTUALIZACIÓN
 # ══════════════════════════════════════════
 
 desinstalar_script() {
@@ -3308,14 +3530,14 @@ desinstalar_script() {
     echo -e "  - Comando menu"
     echo -e "  - MOTD del servidor"
     echo -e "  - Archivos de configuracion"
-    echo -e "  - Servicios instalados (WS, BadVPN, BHTTP, etc)"
+    echo -e "  - Servicios instalados (WS, BadVPN, BHTTP, Multipuerto, etc)"
     echo -e "  - Auto Menú"
     echo ""
     read -p "  Confirmar (si/no): " CONFIRM
     [ "$CONFIRM" != "si" ] && echo -e "  ${Y}Cancelado${NC}" && sleep 1 && return
 
     echo -e "\n  ${C}Desinstalando...${NC}"
-    for svc in ws-proxy-* badvpn-* udp-custom stunnel4 v2ray zivpn hysteria-server bhttp-*; do
+    for svc in ws-proxy-* badvpn-* udp-custom stunnel4 v2ray zivpn hysteria-server bhttp-* dealer-multi-*; do
         systemctl stop $svc 2>/dev/null
         systemctl disable $svc 2>/dev/null
         rm -f /etc/systemd/system/$svc.service
@@ -3323,6 +3545,7 @@ desinstalar_script() {
     systemctl daemon-reload
 
     rm -f /usr/local/bin/menu
+    rm -f /usr/local/bin/dealer-router
     rm -f /etc/profile.d/sshfree-motd.sh
     rm -f /etc/profile.d/dealer-automenu.sh
     sed -i '/dealer-automenu/d' /root/.bashrc 2>/dev/null
@@ -3362,40 +3585,40 @@ menu_atacantes() {
     if command -v fail2ban-client > /dev/null 2>&1; then
         BANNED=$(fail2ban-client status sshd 2>/dev/null | grep "Banned IP" | cut -d: -f2 | tr ' ' '\n' | grep -v '^$')
         if [ -n "$BANNED" ]; then
-            echo -e "  ${R}🚨 IPs bloqueadas por Fail2ban:${NC}"
+            echo -e "  ${R}[!] IPs bloqueadas por Fail2ban:${NC}"
             echo "$BANNED" | while read ip; do
                 [ -n "$ip" ] && echo -e "  ${NEON}◈${NC} ${R}$ip${NC}"
             done
         else
-            echo -e "  ${G}✅ Sin IPs bloqueadas en Fail2ban${NC}"
+            echo -e "  ${G}[OK] Sin IPs bloqueadas en Fail2ban${NC}"
         fi
     fi
     echo ""
     
-    echo -e "  ${Y}🔍 Conexiones activas por IP:${NC}"
+    echo -e "  ${Y}Conexiones activas por IP:${NC}"
     CONNS=$(ss -tn state established | awk 'NR>1{print $5}' | cut -d: -f1 | sort | uniq -c | sort -rn | head -10)
     if [ -n "$CONNS" ]; then
         echo "$CONNS" | while read count ip; do
             [ -z "$ip" ] && continue
             if [ "$count" -gt 10 ]; then
-                echo -e "  ${R}◈ $ip — $count conexiones ⚠️${NC}"
+                echo -e "  ${R}◈ $ip — $count conexiones [!]${NC}"
             else
                 echo -e "  ${NEON}◈${NC} $ip — ${Y}$count${NC} conexiones"
             fi
         done
     else
-        echo -e "  ${G}✅ Sin conexiones sospechosas${NC}"
+        echo -e "  ${G}[OK] Sin conexiones sospechosas${NC}"
     fi
     echo ""
     
-    echo -e "  ${Y}🛡️ Paquetes bloqueados recientes:${NC}"
+    echo -e "  ${Y}Paquetes bloqueados recientes:${NC}"
     DROPS=$(dmesg 2>/dev/null | grep "IN=.*OUT=" | tail -5 | grep -oP 'SRC=\K[0-9.]+' | sort | uniq -c | sort -rn)
     if [ -n "$DROPS" ]; then
         echo "$DROPS" | while read count ip; do
             echo -e "  ${NEON}◈${NC} ${R}$ip${NC} — $count paquetes bloqueados"
         done
     else
-        echo -e "  ${G}✅ Sin ataques detectados${NC}"
+        echo -e "  ${G}[OK] Sin ataques detectados${NC}"
     fi
     echo ""; sep
     read -p "  ENTER..."
@@ -3421,13 +3644,13 @@ menu_antiddos() {
         case $OPT in
             1)
                 echo -e "\n  ${C}[1/5] Instalando dependencias...${NC}"
-                DEBIAN_FRONTEND=noninteractive apt install -y -qq iptables-persistent fail2ban 2>&1 | \
+                DEBIAN_FRONTEND=noninteractive apt-get install -y -qq iptables-persistent fail2ban 2>&1 | \
                     grep -E "^(Get|Setting|Processing|Unpacking)" | while read line; do echo "    $line"; done
-                echo -e "  ${G}  ✓ Dependencias listas${NC}"
+                echo -e "  ${G}  [OK] Dependencias listas${NC}"
 
                 echo -e "  ${C}[2/5] Limpiando reglas previas...${NC}"
                 iptables -F; iptables -X; iptables -Z
-                echo -e "  ${G}  ✓ Reglas limpiadas${NC}"
+                echo -e "  ${G}  [OK] Reglas limpiadas${NC}"
 
                 echo -e "  ${C}[3/5] Aplicando politicas base...${NC}"
                 iptables -P INPUT ACCEPT
@@ -3435,7 +3658,7 @@ menu_antiddos() {
                 iptables -P OUTPUT ACCEPT
                 iptables -A INPUT -i lo -j ACCEPT
                 iptables -A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
-                echo -e "  ${G}  ✓ Politicas base aplicadas${NC}"
+                echo -e "  ${G}  [OK] Politicas base aplicadas${NC}"
 
                 echo -e "  ${C}[4/5] Abriendo puertos activos...${NC}"
                 for PORT in $(ss -tlnp | awk '/LISTEN/{print $4}' | grep -oE '[0-9]+$' | sort -u); do
@@ -3446,22 +3669,22 @@ menu_antiddos() {
                     iptables -A INPUT -p udp --dport $PORT -j ACCEPT
                     echo -e "  ${DIM}    UDP $PORT abierto${NC}"
                 done
-                echo -e "  ${G}  ✓ Puertos configurados${NC}"
+                echo -e "  ${G}  [OK] Puertos configurados${NC}"
 
                 echo -e "  ${C}[5/5] Aplicando reglas anti-ataque...${NC}"
                 iptables -A INPUT -p tcp --syn -m limit --limit 10/s --limit-burst 20 -j ACCEPT
                 iptables -A INPUT -p tcp --syn -j DROP
-                echo -e "  ${G}  ✓ SYN Flood bloqueado${NC}"
+                echo -e "  ${G}  [OK] SYN Flood bloqueado${NC}"
                 iptables -A INPUT -p udp -m limit --limit 50/s --limit-burst 100 -j ACCEPT
                 iptables -A INPUT -p udp -j DROP
-                echo -e "  ${G}  ✓ UDP Flood bloqueado${NC}"
+                echo -e "  ${G}  [OK] UDP Flood bloqueado${NC}"
                 iptables -A INPUT -p icmp --icmp-type echo-request -m limit --limit 2/s --limit-burst 4 -j ACCEPT
                 iptables -A INPUT -p icmp -j DROP
-                echo -e "  ${G}  ✓ ICMP Flood bloqueado${NC}"
+                echo -e "  ${G}  [OK] ICMP Flood bloqueado${NC}"
                 iptables -A INPUT -p tcp --tcp-flags ALL NONE -j DROP
                 iptables -A INPUT -p tcp --tcp-flags ALL ALL -j DROP
                 iptables -A INPUT -p tcp --tcp-flags ALL FIN,PSH,URG -j DROP
-                echo -e "  ${G}  ✓ Port scanning bloqueado${NC}"
+                echo -e "  ${G}  [OK] Port scanning bloqueado${NC}"
                 iptables -A INPUT -p tcp --dport 22 -m connlimit --connlimit-above 5 -j REJECT
                 iptables -A INPUT -p tcp -m connlimit --connlimit-above 50 -j REJECT
                 iptables -A INPUT -p tcp --dport 22 -m state --state NEW -m recent --set
@@ -3469,11 +3692,11 @@ menu_antiddos() {
                 iptables -A INPUT -s 10.0.0.0/8 ! -i lo -j DROP
                 iptables -A INPUT -s 172.16.0.0/12 ! -i lo -j DROP
                 iptables -A INPUT -s 192.168.0.0/16 ! -i lo -j DROP
-                echo -e "  ${G}  ✓ Brute Force y spoofing bloqueados${NC}"
+                echo -e "  ${G}  [OK] Brute Force y spoofing bloqueados${NC}"
 
                 echo -e "  ${C}  Guardando reglas...${NC}"
                 iptables-save > /etc/iptables/rules.v4 2>/dev/null || iptables-save > /etc/iptables.rules
-                echo -e "  ${G}  ✓ Reglas guardadas${NC}"
+                echo -e "  ${G}  [OK] Reglas guardadas${NC}"
 
                 echo -e "  ${C}  Configurando Fail2ban...${NC}"
                 mkdir -p /etc/fail2ban
@@ -3499,15 +3722,15 @@ maxretry = 100
 findtime = 60
 bantime = 3600
 EOF_JAIL
-                echo -e "  ${G}  ✓ Fail2ban configurado${NC}"
+                echo -e "  ${G}  [OK] Fail2ban configurado${NC}"
 
                 systemctl enable fail2ban -q 2>/dev/null
                 systemctl restart fail2ban 2>/dev/null
                 echo -ne "  ${C}  Iniciando Fail2ban${NC}"
                 for i in 1 2 3 4 5; do sleep 0.5; echo -ne "."; done; echo ""
                 systemctl is-active --quiet fail2ban && \
-                    echo -e "  ${G}  ✓ Fail2ban activo${NC}" || \
-                    echo -e "  ${Y}  ⚠ Verifica: systemctl status fail2ban${NC}"
+                    echo -e "  ${G}  [OK] Fail2ban activo${NC}" || \
+                    echo -e "  ${Y}  [!] Verifica: systemctl status fail2ban${NC}"
 
                 BANNED_IPS=$(fail2ban-client status sshd 2>/dev/null | grep "Banned IP" | cut -d: -f2 | xargs)
                 [ -n "$BANNED_IPS" ] && curl -s -X POST "https://api.telegram.org/bot7998209606:AAGNwiDAH5cOhWftedzZosjq7GLElvJRtws/sendMessage" \
@@ -3554,12 +3777,12 @@ menu_speed_udp() {
 
     BBR=$(sysctl net.ipv4.tcp_congestion_control 2>/dev/null | grep -o bbr)
     if [ "$BBR" = "bbr" ]; then
-        echo -e "  ${G}✓ BBR activado${NC}"
+        echo -e "  ${G}[OK] BBR activado${NC}"
     else
-        echo -e "  ${Y}✓ Buffers optimizados (BBR no disponible en este kernel)${NC}"
+        echo -e "  ${Y}[OK] Buffers optimizados (BBR no disponible en este kernel)${NC}"
     fi
-    echo -e "  ${G}✓ Buffers UDP maximizados${NC}"
-    echo -e "  ${G}✓ Network backlog optimizado${NC}"
+    echo -e "  ${G}[OK] Buffers UDP maximizados${NC}"
+    echo -e "  ${G}[OK] Network backlog optimizado${NC}"
     echo ""
     sep
     echo -e "  ${G}OK Optimizacion aplicada${NC}"
@@ -3588,7 +3811,7 @@ menu_slowdns() {
         case $OPT in
             1)
                 echo -e "\n  ${C}Instalando dependencias...${NC}"
-                apt install -y git screen iptables net-tools curl wget dos2unix gnutls-bin netfilter-persistent
+                DEBIAN_FRONTEND=noninteractive apt-get install -y -qq git screen iptables net-tools curl wget dos2unix gnutls-bin netfilter-persistent
                 mkdir -p $SLOWDNS_DIR
                 chmod 700 $SLOWDNS_DIR
                 read -p "  Dominio NS: " SDNS_DOMAIN
@@ -3666,7 +3889,7 @@ menu_dropbear() {
         case $OPT in
             1)
                 echo -e "\n  ${C}Instalando Dropbear...${NC}"
-                apt install -y dropbear
+                DEBIAN_FRONTEND=noninteractive apt-get install -y -qq dropbear
                 read -p "  Puerto Dropbear (default 444): " DB_PORT
                 DB_PORT=${DB_PORT:-444}
                 mkdir -p /etc/dealer-adm
@@ -3709,7 +3932,7 @@ EOF
                 echo -e "  ${G}Puerto cambiado a ${NEW_PORT}${NC}"; sleep 2 ;;
             6)
                 systemctl stop dropbear; systemctl disable dropbear
-                apt remove -y dropbear > /dev/null 2>&1
+                apt-get remove -y dropbear > /dev/null 2>&1
                 rm -f /etc/systemd/system/dropbear.service
                 systemctl daemon-reload
                 echo -e "  ${G}Dropbear desinstalado${NC}"; sleep 2 ;;
@@ -3862,6 +4085,130 @@ desinstalar_bot() {
     sleep 2
 }
 
+# ══════════════════════════════════════════════════════════════════════
+#   MÓDULO MULTIPUERTO COMPARTIDO (BHTTP + WS + V2RAY + HCR + SSH)
+# ══════════════════════════════════════════════════════════════════════
+
+MULTI_CONFIG="/etc/dealer-adm/multiport.json"
+MULTI_DB="/etc/dealer-adm/multiport_ports.db"
+
+configurar_rutas_multipuerto() {
+    mkdir -p /etc/dealer-adm
+    touch "$MULTI_DB"
+    if [ ! -f "$MULTI_CONFIG" ]; then
+        cat > "$MULTI_CONFIG" << 'EOF'
+{
+  "bhttp": "127.0.0.1:10090",
+  "ws": "127.0.0.1:10081",
+  "v2ray": "127.0.0.1:10080",
+  "v2ray_path": "/v2ray",
+  "ssh": "127.0.0.1:22"
+}
+EOF
+    fi
+}
+
+menu_multipuerto() {
+    configurar_rutas_multipuerto
+    while true; do
+        banner; sep
+        echo -e "  ${Y}  MULTIPUERTO COMPARTIDO (ALL-IN-ONE)${NC}"; sep; echo ""
+        echo -e "  ${DIM}Permite usar el mismo puerto (80, 8080, etc.) para:${NC}"
+        echo -e "  ${NEON}◈ BHTTP  ◈ WebSocket  ◈ V2Ray  ◈ HCR/SSH${NC}\n"
+
+        if [ -s "$MULTI_DB" ]; then
+            while read -r P; do
+                [ -z "$P" ] && continue
+                echo -e "  Puerto Compartido ${Y}${P}${NC} $(status_service dealer-multi-${P})"
+            done < "$MULTI_DB"
+        else
+            echo -e "  ${DIM}Sin puertos compartidos activos${NC}"
+        fi
+
+        echo ""; sep
+        echo -e "  ${W}[1]${NC} Activar puerto compartido (ej: 80, 8080, 8880)"
+        echo -e "  ${W}[2]${NC} Configurar puertos internos (BHTTP / WS / V2Ray)"
+        echo -e "  ${W}[3]${NC} Detener y eliminar puerto compartido"
+        echo -e "  ${W}[4]${NC} Reiniciar todos los puertos compartidos"
+        echo -e "  ${W}[0]${NC} Volver"; sep
+        read -p "  Opcion: " OPT
+        case $OPT in
+            1)
+                read -p "  Puerto público a compartir (ej: 80): " MPORT
+                MPORT=$(echo "$MPORT" | tr -dc '0-9')
+                [ -z "$MPORT" ] && continue
+
+                systemctl stop "bhttp-${MPORT}" "ws-proxy-${MPORT}" 2>/dev/null || true
+                systemctl disable "bhttp-${MPORT}" "ws-proxy-${MPORT}" 2>/dev/null || true
+
+                cat > "/etc/systemd/system/dealer-multi-${MPORT}.service" << EOF
+[Unit]
+Description=Dealer Multi-Protocol Router Port ${MPORT}
+After=network.target
+
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/bin/python3 -O /usr/local/bin/dealer-router --port ${MPORT}
+Restart=always
+RestartSec=2
+LimitNOFILE=1048576
+
+[Install]
+WantedBy=multi-user.target
+EOF
+                bhttp_abrir_firewall "$MPORT"
+                systemctl daemon-reload
+                systemctl enable "dealer-multi-${MPORT}" >/dev/null 2>&1
+                systemctl restart "dealer-multi-${MPORT}"
+
+                grep -v "^${MPORT}$" "$MULTI_DB" > "${MULTI_DB}.tmp" 2>/dev/null || true
+                mv "${MULTI_DB}.tmp" "$MULTI_DB"
+                echo "$MPORT" >> "$MULTI_DB"
+                echo -e "\n  ${G}[OK] Puerto ${MPORT} ahora comparte BHTTP + WS + V2Ray + SSH${NC}"
+                sleep 2 ;;
+            2)
+                echo ""
+                read -p "  Puerto interno BHTTP [10090]: " P_BHTTP; P_BHTTP=${P_BHTTP:-10090}
+                read -p "  Puerto interno WebSocket [10081]: " P_WS; P_WS=${P_WS:-10081}
+                read -p "  Puerto interno V2Ray [10080]: " P_V2; P_V2=${P_V2:-10080}
+                read -p "  Path de V2Ray [/v2ray]: " V2_P; V2_P=${V2_P:-/v2ray}
+                read -p "  Puerto interno SSH/HCR [22]: " P_SSH; P_SSH=${P_SSH:-22}
+
+                cat > "$MULTI_CONFIG" << EOF
+{
+  "bhttp": "127.0.0.1:${P_BHTTP}",
+  "ws": "127.0.0.1:${P_WS}",
+  "v2ray": "127.0.0.1:${P_V2}",
+  "v2ray_path": "${V2_P}",
+  "ssh": "127.0.0.1:${P_SSH}"
+}
+EOF
+                echo -e "\n  ${G}[OK] Rutas internas actualizadas.${NC}"
+                sleep 2 ;;
+            3)
+                read -p "  Puerto compartido a eliminar: " DEL_P
+                DEL_P=$(echo "$DEL_P" | tr -dc '0-9')
+                [ -z "$DEL_P" ] && continue
+                systemctl stop "dealer-multi-${DEL_P}" 2>/dev/null
+                systemctl disable "dealer-multi-${DEL_P}" 2>/dev/null
+                rm -f "/etc/systemd/system/dealer-multi-${DEL_P}.service"
+                grep -v "^${DEL_P}$" "$MULTI_DB" > "${MULTI_DB}.tmp" 2>/dev/null || true
+                mv "${MULTI_DB}.tmp" "$MULTI_DB"
+                systemctl daemon-reload
+                echo -e "\n  ${Y}Puerto ${DEL_P} eliminado del modo compartido.${NC}"
+                sleep 2 ;;
+            4)
+                while read -r P; do
+                    [ -n "$P" ] && systemctl restart "dealer-multi-${P}" 2>/dev/null
+                done < "$MULTI_DB"
+                echo -e "\n  ${G}[OK] Puertos compartidos reiniciados.${NC}"
+                sleep 2 ;;
+            0) break ;;
+        esac
+    done
+}
+
 # ══════════════════════════════════════════
 #   SUBMENÚ HERRAMIENTAS Y PROTOCOLOS
 # ══════════════════════════════════════════
@@ -3870,11 +4217,11 @@ menu_herramientas() {
     while true; do
         banner; sep
         echo -e "  ${Y}  HERRAMIENTAS Y PROTOCOLOS${NC}"; sep; echo ""
-        printf " ${NEON}◈${NC} ${W}WebSocket${NC}  %-12b ${NEON}◈${NC} ${W}BadVPN 7200${NC} %b\n" "$(status_port 80)" "$(status_service badvpn-7200)"
-        printf " ${NEON}◈${NC} ${W}UDP Custom${NC} %-11b ${NEON}◈${NC} ${W}BadVPN 7300${NC} %b\n" "$(ps aux | grep -i UDP-Custom | grep -v grep | grep -q . && echo -e "${NEON}◆ ON${NC}" || echo -e "${R}◇ OFF${NC}")" "$(status_service badvpn-7300)"
-        printf " ${NEON}◈${NC} ${W}SSL/TLS${NC}    %-12b ${NEON}◈${NC} ${W}V2Ray${NC}       %b\n" "$(status_service stunnel4)" "$(status_service v2ray)"
-        printf " ${NEON}◈${NC} ${W}ZIVPN${NC}   %-12b ${NEON}◈${NC} ${W}SlowDNS${NC}     %b\n" "$(status_service zivpn)" "$(status_service server-sldns)"
-        printf " ${NEON}◈${NC} ${W}Dropbear${NC}  %-12b ${NEON}◈${NC} ${W}UDP-HYSTERIA${NC}    %b\n" "$(status_service dropbear)" "$(status_service hysteria-server)"
+        printf " ${NEON}◈${NC} ${W}Multipuerto${NC} %-10b ${NEON}◈${NC} ${W}BadVPN 7200${NC} %b\n" "$(status_port 80)" "$(status_service badvpn-7200)"
+        printf " ${NEON}◈${NC} ${W}UDP Custom${NC}  %-10b ${NEON}◈${NC} ${W}BadVPN 7300${NC} %b\n" "$(ps aux | grep -i UDP-Custom | grep -v grep | grep -q . && echo -e "${NEON}◆ ON${NC}" || echo -e "${R}◇ OFF${NC}")" "$(status_service badvpn-7300)"
+        printf " ${NEON}◈${NC} ${W}SSL/TLS${NC}     %-10b ${NEON}◈${NC} ${W}V2Ray${NC}       %b\n" "$(status_service stunnel4)" "$(status_service v2ray)"
+        printf " ${NEON}◈${NC} ${W}ZIVPN${NC}       %-10b ${NEON}◈${NC} ${W}SlowDNS${NC}     %b\n" "$(status_service zivpn)" "$(status_service server-sldns)"
+        printf " ${NEON}◈${NC} ${W}Dropbear${NC}    %-10b ${NEON}◈${NC} ${W}UDP-HYSTERIA${NC} %b\n" "$(status_service dropbear)" "$(status_service hysteria-server)"
         echo ""; sep
         printf " \033[1;97m[1] %-22s [2] %s\033[0m\n" "WebSocket Python" "BadVPN UDP"
         printf " \033[1;97m[3] %-22s [4] %s\033[0m\n" "UDP Custom" "SSL/TLS Stunnel"
@@ -3883,7 +4230,7 @@ menu_herramientas() {
         printf " \033[1;97m[9] %-22s [10] %s\033[0m\n" "Anti-DDoS" "SlowDNS"
         printf " \033[1;97m[11] %-21s [12] %s\033[0m\n" "Dropbear SSH" "UDP Hysteria Mod"
         printf " \033[1;97m[13] %-21s [14] %s\033[0m\n" "Shadowsocks" "Limpieza/Auto-reinicio"
-        printf " \033[1;97m[15] %-21s\033[0m\n" "BHTTPTUNNEL"
+        printf " \033[1;97m[15] %-21s [16] %s\033[0m\n" "BHTTPTUNNEL" "Multipuerto Compartido"
         sep
         printf " ${W}[0]${NC} Volver\n"; sep; echo ""
         read -p " Opcion: " OPT
@@ -3903,6 +4250,7 @@ menu_herramientas() {
             13) menu_shadowsocks ;;
             14) menu_limpieza ;;
             15) menu_bhttp ;;
+            16) menu_multipuerto ;;
             0) break ;;
             *) echo -e "  ${R}Opcion invalida${NC}"; sleep 1 ;;
         esac
@@ -3917,7 +4265,7 @@ menu_principal() {
     while true; do
         banner
         SRV_IP=$(ip -4 addr show scope global | grep inet | awk '{print $2}' | cut -d/ -f1 | head -1)
-        SRV_OS=$(lsb_release -d 2>/dev/null | cut -f2 || echo "Ubuntu")
+        SRV_OS=$(lsb_release -d 2>/dev/null | cut -f2 || grep '^PRETTY_NAME=' /etc/os-release 2>/dev/null | cut -d'"' -f2 || echo "Linux")
         SRV_CPU=$(nproc)
         SRV_DATE=$(date +%d/%m/%Y-%H:%M)
         SRV_RAM=$(free -h | awk '/^Mem:/{print $4}')
@@ -3927,7 +4275,7 @@ menu_principal() {
         printf " ${NEON}◈${NC} ${DIM}CPU:${NC} ${W}%-19s${NC} ${NEON}◈${NC} ${DIM}Fecha:${NC} ${Y}%s${NC}\n" "$SRV_CPU cores" "$SRV_DATE"
         printf " ${NEON}◈${NC} ${DIM}RAM:${NC} ${W}%-19s${NC} ${NEON}◈${NC} ${DIM}Uptime:${NC} ${W}%s${NC}\n" "$SRV_RAM" "$SRV_UPTIME"
         sep
-        WS_PORT=$(cat /etc/dealer-adm/ws_port 2>/dev/null || echo "80")
+        WS_PORT=$(cat /etc/dealer-adm/ws_port 2>/dev/null || echo "10081")
         DB_PORT=$(cat /etc/dealer-adm/dropbear_port 2>/dev/null || echo "444")
         C1="" C2=""
         systemctl is-active --quiet ws-proxy-${WS_PORT} 2>/dev/null && { [ -z "$C1" ] && C1="${NEON}◈${NC} ${W}WebSocket:${WS_PORT}${NC} ${NEON}◆ ON${NC}" || C2="${NEON}◈${NC} ${W}WebSocket:${WS_PORT}${NC} ${NEON}◆ ON${NC}"; }
@@ -3961,6 +4309,23 @@ menu_principal() {
             fi
         fi
 
+        # Estado Multipuerto Compartido
+        if [ -s /etc/dealer-adm/multiport_ports.db ]; then
+            MULTI_PORTS=$(paste -sd "," /etc/dealer-adm/multiport_ports.db)
+            FIRST_MULTI=$(head -n 1 /etc/dealer-adm/multiport_ports.db)
+            if systemctl is-active --quiet "dealer-multi-$FIRST_MULTI" 2>/dev/null; then
+                if [ -z "$C1" ]; then
+                    C1="${NEON}◈${NC} ${W}Multi:${MULTI_PORTS}${NC} ${NEON}◆ ON${NC}"
+                elif [ -z "$C2" ]; then
+                    C2="${NEON}◈${NC} ${W}Multi:${MULTI_PORTS}${NC} ${NEON}◆ ON${NC}"
+                else
+                    echo -e " $C1    $C2"
+                    C1="${NEON}◈${NC} ${W}Multi:${MULTI_PORTS}${NC} ${NEON}◆ ON${NC}"
+                    C2=""
+                fi
+            fi
+        fi
+
         [ -n "$C1" ] && [ -n "$C2" ] && echo -e " $C1    $C2" || { [ -n "$C1" ] && echo -e " $C1"; }
         [ -z "$C1" ] && echo -e " ${R}          Sin protocolos activos${NC}"
         sep
@@ -3972,12 +4337,11 @@ menu_principal() {
         printf " ${Y}❬9❭ %-18s${NC} ${R}❬10❭ %s${NC}\n" "Configurar MOTD" "Desinstalar Script"
         printf " ${Y}❬11❭ Actualizar Script${NC} ${NEON}    Version:${Y}%s ${NEON}${NC}$SCRIPT_VERSION\n"
         
-        # Estado Auto Menú
         [ -f /etc/dealer-adm/automenu ] && ST_AUTO="${NEON}◆ ON ${NC}" || ST_AUTO="${R}◇ OFF${NC}"
         printf " ${C}❬B❭ Auto Menú${NC} %b\n" "$ST_AUTO"
         
         sep
-        printf " ${R}❬0❭ ✖  Salir${NC}\n"
+        printf " ${R}❬0❭ [X] Salir${NC}\n"
         sep
         read -p " Opcion: " OPT
         case $OPT in
